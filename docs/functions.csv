@@ -1,10 +1,10 @@
 address,name,status,notes
 0x497860,gt20_decompress,verified,src/game/gt20.c. In-place LZ77 decoder for ROLLCAGE.IMG entries. Native test vs all 344 entries; in game since 2026-10-08
-0x496590,archive_load_entry,understood,"(index, dest|0): allocates margin+unpacked+7 if dest is 0, reads blob into aligned tail, calls 0x497860 when stored != unpacked"
-0x496570,archive_get_record,understood,"index -> in-memory index record {u32 offset, u32 stored, u32 unpacked, s16 margin, s16 link}"
+0x496590,archive_entry_load,verified,"src/game/crt_ca.c. read entry `index` into `buf` (allocated when 0: unpacked size + record +0xc + 7). An entry can be stored more than once, the copies chained by record +0xe (0 ends); the copy closest to the current file position is read. A packed entry (stored size +4 != unpacked +8) is read to the end of the buffer (4-aligned) and unpacked in place. Emulator fuzz"
+0x496570,archive_get_record,verified,src/game/crt_ca.c. the index record of entry `index` (a word). Emulator fuzz
 0x43b550,archive_find_by_name,verified,"src/game/st_sb.c. name -> entry index via table at 0x4ad000 ({char *name, s16 entry}, count at 0x4adaa0); -1 if missing. Emulator fuzz"
 0x43b5a0,archive_name_equal,verified,"src/game/setup_v.c. names equal: toupper (CRT 0x498540 by address), '\' = '/', '_' = '.', '__' = '/'. Emulator fuzz"
-0x43b630,archive_load_by_index,verified,"src/game/st_sb.c. wraps 0x496590 with allocator save/restore (0x496680/0x496510). Emulator fuzz"
+0x43b630,archive_load_by_index,verified,src/game/st_sb.c. wraps 0x496590 with allocator save/restore (0x496680/0x496510). Emulator fuzz
 0x43b660,archive_load_by_name,understood,temporarily swaps alloc/free hooks 0x4b4a84/0x4b4a88 to 0x4445e0/0x444570 around the load
 0x43b6c0,file_open_any,verified,"src/game/st_sb.c. archive entry by name if present (memory file, table 0x6c25c0), else disk via 0x476c30. Emulator fuzz"
 0x43b7f0,file_read_any,verified,"src/game/st_sb.c. memory file (table 0x6c25c0: {u8 *data, u32 pos}) or disk via 0x476e20. Emulator fuzz"
@@ -28,12 +28,12 @@ address,name,status,notes
 0x489900,joy_axis_z,verified,"src/game/st_sc.c. joy_axis(joy, 2). Emulator fuzz"
 0x48a170,fe_joy_axis_edge,verified,"src/game/fe_o.c. |v| >= 0x40 -> 3/0 (neg first/held), 5/2 (pos), else 4/1; -1 no pad. Emulator fuzz"
 0x48a270,fe_joy_button_edge,verified,"src/game/fe_o.c. 1 pressed, 3 held, 0 released, 2 up, -1 invalid. Emulator fuzz"
-0x48a2f0,joy_pov_edge,verified,"src/game/gl_gd.c. (+ 0x48a3e0 / 3f0 / 400 / 410 for the four directions): POV edge latch bytes 0x4d96e4 + 0x90 *. Emulator fuzz; in game via verify"
+0x48a2f0,joy_pov_edge,verified,src/game/gl_gd.c. (+ 0x48a3e0 / 3f0 / 400 / 410 for the four directions): POV edge latch bytes 0x4d96e4 + 0x90 *. Emulator fuzz; in game via verify
 0x48a420,input_capture_binding,verified,"src/game/gl_gd.c. scans axes 0-11, the 4 POV directions, then buttons; 0x5d6234 / 38 / 3c. Fuzz ok.. Emulator fuzz"
 0x449bf0,binding_get,verified,src/game/setup_u.c. control n (0..0x1a) of pad set 0..3 at 0x6bf180/0x6bf340/0x6bf500/0x6bf6c0 (0x10 each). Also used by the menus. Emulator fuzz
 0x449f10,fe_menu_action_pressed,verified,src/game/fe_o.c. button bound to action (binding tables of 4 players) pressed/held. Emulator fuzz
 0x427b10,controls_read,verified,"src/game/st_sc.c. (player, flag) -> action bitmask from the player's 27 bindings. Emulator fuzz"
-0x427d00,controls_mask_menu_keys,verified,"src/game/st_sc.c. clears actions bound to arrows/Enter/Space/Esc while those keys are held. Emulator fuzz"
+0x427d00,controls_mask_menu_keys,verified,src/game/st_sc.c. clears actions bound to arrows/Enter/Space/Esc while those keys are held. Emulator fuzz
 0x428d70,controls_nav_bits,verified,"src/game/st_sc.c. menu directions straight from stick X/Y (threshold 0x40), ignoring bindings. Emulator fuzz"
 0x428e10,controls_packet,verified,"src/game/controls.c. Per-player 64-bit packet: low = controls_read mask; high bytes = nav bits, raw axis X, Y, Z. Deliberate change: Y (analog throttle) taken from the triggers (Z) instead of the stick"
 0x436958,sim_steps_due,verified,"src/game/gl_gc.c. (now - base) / 33 - done, at least 1 (unsigned). Fuzz ok; clock: fuzz-only.. Emulator fuzz"
@@ -53,7 +53,7 @@ address,name,status,notes
 0x4611d0,grid_unlink,verified,"src/game/post_f.c. unlinks a world object from its grid cell (object+0xc cell, +4/+6 link indices; pool 0x6b9b90, 0x80 per index). Emulator fuzz; in game"
 0x460fb0,grid_link,verified,src/game/post_f.c. finds the grid cell for object +0x34 (0x419420) and links the object into it. Emulator fuzz; in game
 0x442890,trigger_queue_process,verified,"src/game/gl_gc.c. drops duplicate queued triggers, fires each, empties the queue. Fuzz ok; in game. Emulator fuzz; in game via verify"
-0x442c20,trigger_fire,verified,"src/game/gl_gc.c. an object's up to 5 trigger actions (+0x16a). Fuzz ok.. Emulator fuzz"
+0x442c20,trigger_fire,verified,src/game/gl_gc.c. an object's up to 5 trigger actions (+0x16a). Fuzz ok.. Emulator fuzz
 0x441450,particles_update,verified,"src/game/gl_gc.c. dynamic lights per step: light +0x12 countdown, the countdown list 0x5d71e0 (top 3 bits),. Emulator fuzz"
 0x41c2c0,rumble_update,verified,"src/game/gl_gc.c. per human car, force feedback by wheel surface roughness and speed (0x489ab0 / 0x489bc0).. Emulator fuzz"
 0x43692a,game_time,understood,returns timeGetTime()
@@ -152,7 +152,7 @@ address,name,status,notes
 0x40d6f0,surface_kind,verified,"src/game/drive.c. 0 none, 1 (below 0x3d0) or 2. Verified in game (REROLL_VERIFY, 0 of 3000+ steps differ; coverage logged)."
 0x40d760,tyre_grip,verified,"src/game/drive.c. Holds below 8x grip, else slides with force = grip; surface n cuts grip by n/32. Verified in game (REROLL_VERIFY, 0 of 3000+ steps differ; coverage logged)."
 0x40d8a0,wheel_spin,verified,"src/game/drive.c. Spin from road force and torque, no sign flip in one step; wheel angle +0x78 follows. Verified in game (REROLL_VERIFY, 0 of 3000+ steps differ; coverage logged)."
-0x46ecb0,wheel_skid_marks,verified,"src/game/gl_gc.c. skid marking by slip / surface / setting +0x2c; new segments when moved. Fuzz ok (3 args).. Emulator fuzz"
+0x46ecb0,wheel_skid_marks,verified,src/game/gl_gc.c. skid marking by slip / surface / setting +0x2c; new segments when moved. Fuzz ok (3 args).. Emulator fuzz
 0x42b4d0,wheel_sparks,verified,src/game/post_h.c. spawns a dust/spark particle (pool 0x4be128). Emulator fuzz; in game
 0x419420,track_cell,verified,"src/game/track.c. Returns the cell layer record (eax; Ghidra shows void). Row spans at 0x6bfad4, 6 tries, then layers by height. Verified in game (REROLL_VERIFY, 0 of 3000+ steps differ)."
 0x461030,track_nearest_cell,verified,"src/game/track.c. Nearest occupied cell, alternating rows outward. Verified in game (REROLL_VERIFY, 0 of 3000+ steps differ)."
@@ -1044,23 +1044,23 @@ address,name,status,notes
 0x48b780,network_sessions_list,verified,src/game/fe_z.c. Emulator fuzz
 0x48d630,menu_water_update,verified,src/game/fe_z.c. menu background water simulation + drop at the cursor / a corner. Emulator fuzz
 0x401000,cpu_detect_amd,verified,"src/game/st_sa.c. / 0x43c320 cpu_detect_intel   cpuid helper chain -> 0x4b5e44/48, 0x4beb30/34. Fuzz.. Emulator fuzz"
-0x405320,records_defaults,verified,"src/game/st_sa.c. 0x150 dwords 0x4a7150 -> config +0x444. Fuzz.. Emulator fuzz"
+0x405320,records_defaults,verified,src/game/st_sa.c. 0x150 dwords 0x4a7150 -> config +0x444. Fuzz.. Emulator fuzz
 0x405340,records_mark_old,verified,"src/game/st_sa.c. record entries (+0x451, 16 x 6 x 0xe): bit 0 off, bits 3..6 on. Fuzz.. Emulator fuzz"
 0x405570,time_entry_lap,verified,"src/game/st_sa.c. / 0x4055b0 time_entry_race   0x405480(out, slot, -1, 1 / 0). Fuzz.. Emulator fuzz"
-0x4055b0,time_entry_race,verified,"src/game/st_sa.c. . Emulator fuzz"
-0x4055d0,record_insert_slot,verified,"src/game/st_sa.c. car slot's lap time into a track table. Fuzz.. Emulator fuzz"
+0x4055b0,time_entry_race,verified,src/game/st_sa.c. . Emulator fuzz
+0x4055d0,record_insert_slot,verified,src/game/st_sa.c. car slot's lap time into a track table. Fuzz.. Emulator fuzz
 0x405620,record_find_rank,verified,"src/game/st_sa.c. rank in track table config + (track+0xd)*0x54, or -1. Fuzz.. Emulator fuzz"
 0x405680,record_beats,verified,"src/game/st_sa.c. BCD time compare; unset (00 00 00 / 59 59 99) never beats, always beaten. Fuzz.. Emulator fuzz"
-0x405720,record_insert_at,verified,"src/game/st_sa.c. shift down and insert a 14-byte entry. Fuzz.. Emulator fuzz"
-0x4057c0,records_insert_players,verified,"src/game/st_sa.c. human players' lap times with their names (+0xd8c). Fuzz.. Emulator fuzz"
+0x405720,record_insert_at,verified,src/game/st_sa.c. shift down and insert a 14-byte entry. Fuzz.. Emulator fuzz
+0x4057c0,records_insert_players,verified,src/game/st_sa.c. human players' lap times with their names (+0xd8c). Fuzz.. Emulator fuzz
 0x42df90,strings_load,verified,"src/game/st_sa.c. strings_load_entry, returns 0. Fuzz.. Emulator fuzz"
-0x42dfa0,strings_unload,verified,"src/game/st_sa.c. . Emulator fuzz"
-0x42dfb0,strings_free,verified,"src/game/st_sa.c. / 0x42dfa0 strings_unload   free the string file. Fuzz.. Emulator fuzz"
+0x42dfa0,strings_unload,verified,src/game/st_sa.c. . Emulator fuzz
+0x42dfb0,strings_free,verified,src/game/st_sa.c. / 0x42dfa0 strings_unload   free the string file. Fuzz.. Emulator fuzz
 0x42dfe0,strings_load_entry,verified,"src/game/st_sa.c. archive entry -> 0x4be2ec (size 0x4be2f0); control chars except tab -> 1, '~~' -> NUL. Fuzz.. Emulator fuzz"
-0x42e350,frontend_buffers_free,verified,"src/game/st_sa.c. / 0x430e00 frontend_textures_free / 0x444790 menu_table_free / 0x430ac0 frontend_free_all   CRT free + zero. Fuzz.. Emulator fuzz"
-0x42e3c0,language_set,verified,"src/game/st_sa.c. u16 0x4be2f4. Fuzz.. Emulator fuzz"
-0x430ac0,frontend_free_all,verified,"src/game/st_sa.c. . Emulator fuzz"
-0x430e00,frontend_textures_free,verified,"src/game/st_sa.c. . Emulator fuzz"
+0x42e350,frontend_buffers_free,verified,src/game/st_sa.c. / 0x430e00 frontend_textures_free / 0x444790 menu_table_free / 0x430ac0 frontend_free_all   CRT free + zero. Fuzz.. Emulator fuzz
+0x42e3c0,language_set,verified,src/game/st_sa.c. u16 0x4be2f4. Fuzz.. Emulator fuzz
+0x430ac0,frontend_free_all,verified,src/game/st_sa.c. . Emulator fuzz
+0x430e00,frontend_textures_free,verified,src/game/st_sa.c. . Emulator fuzz
 0x4351e0,game_main,verified,"src/game/st_sa.c. WinMain body: init steps, ShowCursor, message pump (Peek/Get/Translate/Dispatch), per-frame input / front end or race / present, 0x4be48c window close, display restart loop (0x4be450, 0x435607), retur. Emulator fuzz"
 0x435515,shutdown_final,verified,"src/game/st_sa.c. 0x45e890 (result unused), CoUninitialize, cwd back, ShowCursor(1) if 0x4acc34, mutex close. Fuzz.. Emulator fuzz"
 0x4356ab,startup_init,verified,"src/game/st_sa.c. debug env var, Japanese LangID refused (MessageBox), instance mutex, cwd, rollcage.img path (cwd or registry Source), command line, string file, CD check, option defaults+load, language, texts, memory. Emulator fuzz"
@@ -1071,127 +1071,127 @@ address,name,status,notes
 0x435e2c,shutdown_all,verified,"src/game/st_sa.c. once (0x4be4a8): timer, CRT, sound, front end, network, input, D3D, DDraw, pool; exit 0x496410 or error dialog. Fuzz.. Emulator fuzz"
 0x435e99,shutdown_restart,verified,"src/game/st_sa.c. window closing: chained relaunch (0x4d4660: shutdown_all(1), 0x474cf0) or replays deleted. Fuzz.. Emulator fuzz"
 0x4365a4,timer_stop,verified,"src/game/st_sa.c. kill the frame timer (0x477090), wait <= 1000 ms while 0x4be468, 0x4be46c = 0. Fuzz.. Emulator fuzz"
-0x436688,stristr,verified,"src/game/st_sa.c. case-insensitive strstr (CRT toupper/tolower by address). Fuzz.. Emulator fuzz"
+0x436688,stristr,verified,src/game/st_sa.c. case-insensitive strstr (CRT toupper/tolower by address). Fuzz.. Emulator fuzz
 0x43677b,command_line_parse,verified,"src/game/st_sa.c. /PLAYBACK, /MONO=path, /MONO-, /MONO+, /FRONTEND, NOCD (case-insensitive), /W, /E (strstr). Fuzz.. Emulator fuzz"
 0x4370b2,startup_mode_dialog,verified,"src/game/st_sa.c. display mode dialog (resource 0x81) -> screen w/h/bpp from mode list 0x4d5fe4 (12 bytes, index = result >> 16); -2 uninstaller. Fuzz.. Emulator fuzz"
-0x43756d,strings_load_once,verified,"src/game/st_sa.c. string file entry 8 once (0x4be4bc). Fuzz.. Emulator fuzz"
+0x43756d,strings_load_once,verified,src/game/st_sa.c. string file entry 8 once (0x4be4bc). Fuzz.. Emulator fuzz
 0x43758f,error_dialog,verified,"src/game/st_sa.c. error dialog (resource 0x83) when config +0x48 != -1, then -1. Fuzz.. Emulator fuzz"
-0x43c320,cpu_detect_intel,verified,"src/game/st_sa.c. . Emulator fuzz"
-0x444790,menu_table_free,verified,"src/game/st_sa.c. . Emulator fuzz"
+0x43c320,cpu_detect_intel,verified,src/game/st_sa.c. . Emulator fuzz
+0x444790,menu_table_free,verified,src/game/st_sa.c. . Emulator fuzz
 0x444800,race_result_flow,verified,"src/game/st_sa.c. (/FRONTEND restart only) result menu 0x4af650 for race kind (+0x57c 7/8/9, +0x551), records, rankings. Fuzz.. Emulator fuzz"
-0x444dd0,league_won_texts,verified,"src/game/st_sa.c. league won texts (0x4ca52c..0x4ca7ac) and unlock bits race +0x720/+0x721. Fuzz.. Emulator fuzz"
-0x445160,config_flag_9d_set,verified,"src/game/st_sa.c. / 0x4480b0 result_menu_return   trivial. Fuzz.. Emulator fuzz"
+0x444dd0,league_won_texts,verified,src/game/st_sa.c. league won texts (0x4ca52c..0x4ca7ac) and unlock bits race +0x720/+0x721. Fuzz.. Emulator fuzz
+0x445160,config_flag_9d_set,verified,src/game/st_sa.c. / 0x4480b0 result_menu_return   trivial. Fuzz.. Emulator fuzz
 0x445170,race_rankings,verified,"src/game/st_sa.c. race order 0x4ca84c by time, wins counter config +0x9c0, points and championship order 0x4c24c8. Fuzz.. Emulator fuzz"
-0x4480b0,result_menu_return,verified,"src/game/st_sa.c. . Emulator fuzz"
-0x4498d0,config_series_set,verified,"src/game/st_sa.c. config +0x40 = 0..2. Fuzz; in-game verify (sample 1; called from 0x451bf5).. Emulator fuzz; in game via verify"
-0x4498f0,bindings_reset_all,verified,"src/game/st_sa.c. / 0x449910 bindings_reset_player   clear and set the 0x1b bindings of each player. Fuzz.. Emulator fuzz"
-0x449910,bindings_reset_player,verified,"src/game/st_sa.c. . Emulator fuzz"
+0x4480b0,result_menu_return,verified,src/game/st_sa.c. . Emulator fuzz
+0x4498d0,config_series_set,verified,src/game/st_sa.c. config +0x40 = 0..2. Fuzz; in-game verify (sample 1; called from 0x451bf5).. Emulator fuzz; in game via verify
+0x4498f0,bindings_reset_all,verified,src/game/st_sa.c. / 0x449910 bindings_reset_player   clear and set the 0x1b bindings of each player. Fuzz.. Emulator fuzz
+0x449910,bindings_reset_player,verified,src/game/st_sa.c. . Emulator fuzz
 0x449960,binding_default,verified,"src/game/st_sa.c. binding from the saved one (config +0x1b0 + set*0x90, kind 2 saved / 1 unbound) or the default tables for the player's device. Fuzz.. Emulator fuzz"
 0x449ab0,binding_from_table,verified,"src/game/st_sa.c. first default-table entry (0x4ac398/498/508/578, joystick 0x4ac5e8) with the activity's mask. Fuzz.. Emulator fuzz"
-0x449c40,binding_saved_get,verified,"src/game/st_sa.c. saved binding pointer. Fuzz; in-game verify (sample 1; called from the controls menu).. Emulator fuzz; in game via verify"
-0x449c70,activity_index,verified,"src/game/st_sa.c. activity table 0x4af7a0 lookup. Fuzz.. Emulator fuzz"
-0x45e890,network_average,verified,"src/game/st_sa.c. *out = 0x5d5978 / 0x5d597c or 0. Fuzz.. Emulator fuzz"
-0x473c50,config_default_texts,verified,"src/game/st_sa.c. network session / player / network message / information texts from the string file. Fuzz.. Emulator fuzz"
+0x449c40,binding_saved_get,verified,src/game/st_sa.c. saved binding pointer. Fuzz; in-game verify (sample 1; called from the controls menu).. Emulator fuzz; in game via verify
+0x449c70,activity_index,verified,src/game/st_sa.c. activity table 0x4af7a0 lookup. Fuzz.. Emulator fuzz
+0x45e890,network_average,verified,src/game/st_sa.c. *out = 0x5d5978 / 0x5d597c or 0. Fuzz.. Emulator fuzz
+0x473c50,config_default_texts,verified,src/game/st_sa.c. network session / player / network message / information texts from the string file. Fuzz.. Emulator fuzz
 0x473d50,config_defaults,verified,"src/game/st_sa.c. clear config (0x1854) and game state (0xb85b8), option defaults, language, user name (GetUserNameA into +0x120), record defaults, texts, game state defaults. Fuzz.. Emulator fuzz"
 0x4740c0,config_load,verified,"src/game/st_sa.c. DataPC / DataPSX from the registry (0x474030), display settings, bindings, name fill-ins; 0 or -1. Fuzz.. Emulator fuzz"
 0x4743e0,replays_delete,verified,"src/game/st_sa.c. six replay files (+0xccc, 0x20 apart, 0x474360) and the DataReplay value. Fuzz.. Emulator fuzz"
 0x4745e0,settings_load_65,verified,"src/game/st_sa.c. 0x474500(0x65, 0x4b21a0). Fuzz.. Emulator fuzz"
-0x4745f0,config_display_apply,verified,"src/game/st_sa.c. config +0x42c.. -> screen globals. Fuzz.. Emulator fuzz"
-0x474770,language_from_registry,verified,"src/game/st_sa.c. Installer\Language 0..4 else 0. Fuzz.. Emulator fuzz"
-0x474cb0,chain_event_signal,verified,"src/game/st_sa.c. open/set/close the ATDGFXCHAINING event. Fuzz.. Emulator fuzz"
-0x474dc0,command_token_copy,verified,"src/game/st_sa.c. first command-line token (space/comma outside quotes). Fuzz.. Emulator fuzz"
+0x4745f0,config_display_apply,verified,src/game/st_sa.c. config +0x42c.. -> screen globals. Fuzz.. Emulator fuzz
+0x474770,language_from_registry,verified,src/game/st_sa.c. Installer\Language 0..4 else 0. Fuzz.. Emulator fuzz
+0x474cb0,chain_event_signal,verified,src/game/st_sa.c. open/set/close the ATDGFXCHAINING event. Fuzz.. Emulator fuzz
+0x474dc0,command_token_copy,verified,src/game/st_sa.c. first command-line token (space/comma outside quotes). Fuzz.. Emulator fuzz
 0x474e80,unquote_copy,verified,"src/game/st_sa.c. copy without ''', max 0x103. Fuzz.. Emulator fuzz"
 0x48a5c0,joystick_usable,verified,"src/game/st_sa.c. device exists, not flag 0x400, >= 10 buttons. Fuzz.. Emulator fuzz"
 0x41c400,replay_files_load,verified,"src/game/st_sb.c. the replay car files (0x1e884 bytes each, up to six, paths at settings +0xccc + 0x20 * i) into the. Emulator fuzz"
 0x428850,view_rect_set,verified,"src/game/st_sb.c. view (x, y, w, h): 0x426200(w/2, h/2), 0x417ed0 (floats + 0x6ccd00), 0x41f2d0. Fuzz only (DirectDraw. Emulator fuzz"
 0x42d5b0,movie_path,verified,"src/game/st_sb.c. '..\movies\<name>' at 0x4be1b0, else the same under the registry install folder. Emulator fuzz"
 0x42d7e0,movie_play,verified,"src/game/st_sb.c. if the file exists, runs the movie player (0x493210) with a 0x28-byte stack config (flags 0x18c04 /. Emulator fuzz"
-0x42da20,movie_psygnosis,verified,"src/game/st_sb.c. psyg.fmv. Fuzz only.. Emulator fuzz"
-0x42da40,movie_atd,verified,"src/game/st_sb.c. atd.fmv. Fuzz only.. Emulator fuzz"
-0x42da60,movie_intro,verified,"src/game/st_sb.c. intro.fmv. Fuzz only.. Emulator fuzz"
+0x42da20,movie_psygnosis,verified,src/game/st_sb.c. psyg.fmv. Fuzz only.. Emulator fuzz
+0x42da40,movie_atd,verified,src/game/st_sb.c. atd.fmv. Fuzz only.. Emulator fuzz
+0x42da60,movie_intro,verified,src/game/st_sb.c. intro.fmv. Fuzz only.. Emulator fuzz
 0x42da80,credits_play,verified,"src/game/st_sb.c. 64 'CREDITS' lines from the text file (0x42e6d0), queued in pairs 2000 / (last line / 2 + 2). Emulator fuzz"
-0x42db90,movie_cop_loses,verified,"src/game/st_sb.c. coploses.fmv. Fuzz only.. Emulator fuzz"
-0x42dbb0,movie_cop_challenge,verified,"src/game/st_sb.c. copchal.fmv. Fuzz only.. Emulator fuzz"
-0x42dbd0,movie_expert,verified,"src/game/st_sb.c. expert.fmv. Fuzz only.. Emulator fuzz"
+0x42db90,movie_cop_loses,verified,src/game/st_sb.c. coploses.fmv. Fuzz only.. Emulator fuzz
+0x42dbb0,movie_cop_challenge,verified,src/game/st_sb.c. copchal.fmv. Fuzz only.. Emulator fuzz
+0x42dbd0,movie_expert,verified,src/game/st_sb.c. expert.fmv. Fuzz only.. Emulator fuzz
 0x42dbf0,movie_win,verified,"src/game/st_sb.c. winner's movie by language 0..6 (uk, ital, ger, jap, amer, fren, pol). Fuzz only.. Emulator fuzz"
 0x42dc60,movie_texts_free,verified,"src/game/st_sb.c. frees the queued movie texts, count 0x4be2b8 = 0. Fuzz only (free).. Emulator fuzz"
 0x42dcb0,movie_text_add,verified,"src/game/st_sb.c. queue a text (record 0x6cc400 + 0x10 * n: x centred, side * 25, y, copy). Fuzz only (malloc).. Emulator fuzz"
 0x430130,level_name_set,verified,"src/game/st_sb.c. 'high\lev%d' / 'low\lev%d' (race +0x579 + 1) at 0x4be3f4. Fuzz; in-game verify, sample 1.. Emulator fuzz; in game via verify"
 0x430ae0,rand_next,verified,"src/game/st_sb.c. the game's random: x = (x + 0x4d2) * 0x41a7 & 0x7fffffff, seeded from the clock once (0x4ac998);. Emulator fuzz"
-0x430b50,rand_coin,verified,"src/game/st_sb.c. rand_next(64) >= 32. Fuzz only.. Emulator fuzz"
-0x430b70,mask_full,verified,"src/game/st_sb.c. low n bits all set. Fuzz; in-game verify 31.. Emulator fuzz; in game via verify"
+0x430b50,rand_coin,verified,src/game/st_sb.c. rand_next(64) >= 32. Fuzz only.. Emulator fuzz
+0x430b70,mask_full,verified,src/game/st_sb.c. low n bits all set. Fuzz; in-game verify 31.. Emulator fuzz; in game via verify
 0x430ba0,mask_pick,verified,"src/game/st_sb.c. random index below n not in the mask (steps on 5..36 times), `none` when full. Fuzz only (random).. Emulator fuzz"
-0x432b70,start_kind_set,verified,"src/game/st_sb.c. settings +0x26 from +0x27 (3 = random 0/1/2). Fuzz only.. Emulator fuzz"
-0x432bd0,weapons_flags_set,verified,"src/game/st_sb.c. race +0x553 / +0x555. Fuzz only.. Emulator fuzz"
-0x432c80,race_option554_set,verified,"src/game/st_sb.c. race +0x554. Fuzz only.. Emulator fuzz"
-0x432ec0,race_init,verified,"src/game/st_sb.c. the race from the settings (the front end's choices). -1 for a bad kind / mode; replay branch. Emulator fuzz"
+0x432b70,start_kind_set,verified,src/game/st_sb.c. settings +0x26 from +0x27 (3 = random 0/1/2). Fuzz only.. Emulator fuzz
+0x432bd0,weapons_flags_set,verified,src/game/st_sb.c. race +0x553 / +0x555. Fuzz only.. Emulator fuzz
+0x432c80,race_option554_set,verified,src/game/st_sb.c. race +0x554. Fuzz only.. Emulator fuzz
+0x432ec0,race_init,verified,src/game/st_sb.c. the race from the settings (the front end's choices). -1 for a bad kind / mode; replay branch. Emulator fuzz
 0x433670,race_track_choose,verified,"src/game/st_sb.c. the race's track, cached in 0x4acab0, by game kind 1..13; the 5 choice records reset (+0x51..) unless. Emulator fuzz"
 0x433980,pick_next_random,verified,"src/game/st_sb.c. record {value, step, used bits}: random pick avoiding locked tracks and the last value. Returns the. Emulator fuzz"
 0x433a00,pick_next_step,verified,"src/game/st_sb.c. the record's step round the tracks, past locked ones; 0x4be370 = 1. Returns the value. Fuzz.. Emulator fuzz"
-0x433a50,track_choice,verified,"src/game/st_sb.c. random (100) / next (101) / given choice for a world's record. Returns the value. Fuzz only (random).. Emulator fuzz"
+0x433a50,track_choice,verified,src/game/st_sb.c. random (100) / next (101) / given choice for a world's record. Returns the value. Fuzz only (random).. Emulator fuzz
 0x433ab0,race_slots_init,verified,"src/game/st_sb.c. the six car slots: players 1..4 and their controllers, grid places, characters. Fuzz only (random).. Emulator fuzz"
 0x433bf0,character_pick,verified,"src/game/st_sb.c. a character for a car slot (6 first when asked, else first free or random). Fuzz only (random).. Emulator fuzz"
-0x433ca0,slot_value_free,verified,"src/game/st_sb.c. no car slot (race +0x1c..) holds the value. Fuzz; in-game verify 31.. Emulator fuzz; in game via verify"
+0x433ca0,slot_value_free,verified,src/game/st_sb.c. no car slot (race +0x1c..) holds the value. Fuzz; in-game verify 31.. Emulator fuzz; in game via verify
 0x435607,front_end_return,verified,"src/game/st_sb.c. screen done, arena 0, sound reset, settings +0x48/+0x4c = -1, boot data save, flags, race set-up;. Emulator fuzz"
 0x4359f1,startup_movies,verified,"src/game/st_sb.c. movies when wanted: display set-up 0x4885d0 (fail -> 0), font, logos / intro, credits texts,. Emulator fuzz"
 0x43605a,debug_key_event,verified,"src/game/st_sb.c. 0x7a / 0x7b flags; with 0x4beb3c: 0x42 steps setting +5, 0x4a toggles +8. Fuzz; in-game verify, sample 1.. Emulator fuzz; in game via verify"
-0x436b9d,loading_screen_show,verified,"src/game/st_sb.c. screen clear / loading picture rounds (the picture 0x436c2c stays original). Fuzz only.. Emulator fuzz"
-0x43b760,file_close_any,verified,"src/game/st_sb.c. release a memory file or close the OS handle. Fuzz only.. Emulator fuzz"
-0x43b7b0,file_slot_find,verified,"src/game/st_sb.c. slot of a memory file handle or 0xffff (low 16 bits; for a null handle the original's upper half. Emulator fuzz"
-0x443260,bitmap_scan,verified,"src/game/st_sb.c. first row with a non-zero byte. Fuzz.. Emulator fuzz"
+0x436b9d,loading_screen_show,verified,src/game/st_sb.c. screen clear / loading picture rounds (the picture 0x436c2c stays original). Fuzz only.. Emulator fuzz
+0x43b760,file_close_any,verified,src/game/st_sb.c. release a memory file or close the OS handle. Fuzz only.. Emulator fuzz
+0x43b7b0,file_slot_find,verified,src/game/st_sb.c. slot of a memory file handle or 0xffff (low 16 bits; for a null handle the original's upper half. Emulator fuzz
+0x443260,bitmap_scan,verified,src/game/st_sb.c. first row with a non-zero byte. Fuzz.. Emulator fuzz
 0x443780,font_cells_build,verified,"src/game/st_sb.c. FONT.BMP: alpha table 0x4c2004, blank pixels cleared, per-cell margins -> 16-byte records. Emulator fuzz"
 0x443a10,font_map_init,verified,"src/game/st_sb.c. font map: FONT.BMP cells (16 wide, row 0x36, 100 rows, 0x46 cells), palette convert 0x477460,. Emulator fuzz"
-0x443b00,font_image_release,verified,"src/game/st_sb.c. 0x477810 on the font image if loaded. Fuzz.. Emulator fuzz"
+0x443b00,font_image_release,verified,src/game/st_sb.c. 0x477810 on the font image if loaded. Fuzz.. Emulator fuzz
 0x443b20,font_image_info,verified,"src/game/st_sb.c. pixels, palette, stride out of the font image. Fuzz.. Emulator fuzz"
 0x444c50,movie_mode,verified,"src/game/st_sb.c. 1 / 2 / 0: which intro movies. Fuzz; in-game verify, sample 1.. Emulator fuzz; in game via verify"
 0x444ca0,credits_wanted,verified,"src/game/st_sb.c. Fuzz; in-game verify, sample 1.. Emulator fuzz; in game via verify"
 0x444ce0,movies_wanted,verified,"src/game/st_sb.c. Fuzz; in-game verify, sample 1.. Emulator fuzz; in game via verify"
-0x444d00,movie_texts_build,verified,"src/game/st_sb.c. the texts over the movies. Fuzz only.. Emulator fuzz"
+0x444d00,movie_texts_build,verified,src/game/st_sb.c. the texts over the movies. Fuzz only.. Emulator fuzz
 0x4483c0,setting5_next,verified,"src/game/st_sb.c. settings +5 steps 0..2, 0x4cb58c = 1. Fuzz; in-game verify, sample 1.. Emulator fuzz; in game via verify"
-0x448580,track_title,verified,"src/game/st_sb.c. the title text of a track (0x4485b0 with world 0x433570 and place 0x4335c0: Ghidra shows. Emulator fuzz"
+0x448580,track_title,verified,src/game/st_sb.c. the title text of a track (0x4485b0 with world 0x433570 and place 0x4335c0: Ghidra shows. Emulator fuzz
 0x474030,registry_load,verified,"src/game/st_sb.c. boot value into a buffer, old bytes kept and restored (-1) when too few came. Fuzz only.. Emulator fuzz"
-0x474200,replay_load,verified,"src/game/st_sb.c. 'DataReplay' into the race block; 0x4d46f8 = 1. 0 / -1. Fuzz only.. Emulator fuzz"
-0x474230,registry_save,verified,"src/game/st_sb.c. 0 / -1. Fuzz only.. Emulator fuzz"
+0x474200,replay_load,verified,src/game/st_sb.c. 'DataReplay' into the race block; 0x4d46f8 = 1. 0 / -1. Fuzz only.. Emulator fuzz
+0x474230,registry_save,verified,src/game/st_sb.c. 0 / -1. Fuzz only.. Emulator fuzz
 0x474260,boot_data_save,verified,"src/game/st_sb.c. save the settings / race ('DataPC', 'DataPSX') once. Fuzz only.. Emulator fuzz"
-0x474330,replay_save,verified,"src/game/st_sb.c. 0 / -1. Fuzz only.. Emulator fuzz"
+0x474330,replay_save,verified,src/game/st_sb.c. 0 / -1. Fuzz only.. Emulator fuzz
 0x474500,table_copy,verified,"src/game/st_sb.c. {kind, field, other} records both ways. Fuzz; in-game verify, sample 1.. Emulator fuzz; in game via verify"
 0x4745d0,settings_table_load,verified,"src/game/st_sb.c. the table 0x4b21a0 copied other -> field. Fuzz; in-game verify, sample 1.. Emulator fuzz; in game via verify"
 0x4746b0,settings_screen_store,verified,"src/game/st_sb.c. screen mode into the settings (+0x42c..+0x41f). Fuzz; in-game verify, sample 1.. Emulator fuzz; in game via verify"
 0x488c30,text_width,verified,"src/game/st_sb.c. width of a string in the font map (0x6c1a7c, 0x6c0a80, gaps 0x6c0a70/74). Fuzz; in-game verify 31.. Emulator fuzz; in game via verify"
 0x48d370,flags_5d622c_clear,verified,"src/game/st_sb.c. low two bits of 0x5d622c cleared. Fuzz; in-game verify, sample 1.. Emulator fuzz; in game via verify"
 0x435b64,game_load_step,verified,"src/game/st_sc.c. load step on front end <-> race switch: input/front end/tick timer + 100 ms settles, or view distance clamp (x87 compares done as ordered C compares; NaN -> 65536) + race_setup. fuzz ok. Emulator fuzz"
-0x435df6,net_session_start,verified,"src/game/st_sc.c. three network start steps then 0x48d350; 0 on failure. fuzz ok. Emulator fuzz"
+0x435df6,net_session_start,verified,src/game/st_sc.c. three network start steps then 0x48d350; 0 on failure. fuzz ok. Emulator fuzz
 0x436565,tick_timer_start,verified,"src/game/st_sc.c. clears 0x4be3e8, starts the 16 ms timer (0x476f90, callback 0x4365ed). fuzz ok. Emulator fuzz"
-0x436595,tick_count_reset,verified,"src/game/st_sc.c. 0x4be3e8 = 0. fuzz ok. Emulator fuzz"
+0x436595,tick_count_reset,verified,src/game/st_sc.c. 0x4be3e8 = 0. fuzz ok. Emulator fuzz
 0x4365ed,tick_callback,verified,"src/game/st_sc.c. 60 Hz tick (stdcall, 5 args): count, tick hook, 1 s stamp (0x4968b0 every 4th s unless config+0x410), fade, 512 counter. fuzz ok (runs on the timer thread: not verifiable). Emulator fuzz"
 0x43699c,quit_request,verified,"src/game/st_sc.c. 0x4be48c = 1, sound stop 0x46f650(0). fuzz ok. Emulator fuzz"
-0x43775a,game_speed_set,verified,"src/game/st_sc.c. 0x4acc50 = 45000 / 20000 / 0x10000 by config+0x97; 0x10000 in network games. fuzz ok. Emulator fuzz"
+0x43775a,game_speed_set,verified,src/game/st_sc.c. 0x4acc50 = 45000 / 20000 / 0x10000 by config+0x97; 0x10000 in network games. fuzz ok. Emulator fuzz
 0x430190,fade_step,verified,"src/game/st_sc.c. counts 0x4be320, fades 0x4ac990 by 0x15 toward 0x100 / 0. fuzz ok. Emulator fuzz"
-0x429210,tick_hook_call,verified,"src/game/st_sc.c. calls *0x4be114 if set (tail jump in the original). fuzz ok. Emulator fuzz"
-0x463c70,frame_counter_step,verified,"src/game/st_sc.c. 0x6b8d68 counts 0..0x1ff while 0x4d1198. fuzz ok. Emulator fuzz"
+0x429210,tick_hook_call,verified,src/game/st_sc.c. calls *0x4be114 if set (tail jump in the original). fuzz ok. Emulator fuzz
+0x463c70,frame_counter_step,verified,src/game/st_sc.c. 0x6b8d68 counts 0..0x1ff while 0x4d1198. fuzz ok. Emulator fuzz
 0x435552,frame_net_step,verified,"src/game/st_sc.c. catch-up ticks ((now - 0x4be470) * 60 / 1000, unsigned) + network service and lost-session quit. fuzz ok. Emulator fuzz"
 0x4369b5,controls_gather,verified,"src/game/st_sc.c. keyboard state 0x43c420 and key tables, the binding readers. Fuzz: tests/emu_st_sc.py EXE. Emulator fuzz"
 0x43c420,keyboard_update,verified,"src/game/st_sc.c. key state with auto-repeat (8 then every 3 frames), last-press events 0x4af438/450/468, modifier/navigation flags 0x4beb38..74. 0x43c616 (register-argument helper, edi = event, eax = code, reads the c. Emulator fuzz; in game via verify"
 0x43c3f0,keyboard_init,verified,"src/game/st_sc.c. first use: clears the key state, builds the tables. fuzz ok. Emulator fuzz"
-0x43c6a0,key_tables_init,verified,"src/game/st_sc.c. scan code -> char / VK / game code tables; US layout + 15 keys of a second (German) layout when 0x4beb7c. Table extracted from the store sequence by script and fuzzed against the original. fuzz ok. Emulator fuzz"
+0x43c6a0,key_tables_init,verified,src/game/st_sc.c. scan code -> char / VK / game code tables; US layout + 15 keys of a second (German) layout when 0x4beb7c. Table extracted from the store sequence by script and fuzzed against the original. fuzz ok. Emulator fuzz
 0x43d270,key_layout_set,verified,"src/game/st_sc.c. 0x4beb7c = arg, rebuild tables (tail jump in the original). fuzz ok. Emulator fuzz"
-0x428d20,keyboard_nav_bits,verified,"src/game/st_sc.c. arrows / Enter+Space / Escape -> bits 1..0x20. fuzz ok. Emulator fuzz"
-0x444050,car_position_sum,verified,"src/game/st_sc.c. x + y + z of the car in a player slot. fuzz ok. Emulator fuzz"
+0x428d20,keyboard_nav_bits,verified,src/game/st_sc.c. arrows / Enter+Space / Escape -> bits 1..0x20. fuzz ok. Emulator fuzz
+0x444050,car_position_sum,verified,src/game/st_sc.c. x + y + z of the car in a player slot. fuzz ok. Emulator fuzz
 0x4301f0,frontend_load,verified,"src/game/st_sc.c. front-end load sequence (backdrop, data by colour depth, menus, sprites, models, particles, pads). fuzz ok. Emulator fuzz"
 0x430c10,frontend_data_load,verified,"src/game/st_sc.c. loads the model block + palette, relocates its offsets, publishes pointers, work area 0x60ae0. fuzz ok (void: the tail call's eax is never read). Emulator fuzz"
 0x430d80,frontend_backdrop_load,verified,"src/game/st_sc.c. load entry, palette, 256x128 upload, free; first argument unused. fuzz ok. Emulator fuzz"
-0x430e40,frontend_palette_set,verified,"src/game/st_sc.c. 0x428130 from the image header at 0x4be348. fuzz ok. Emulator fuzz"
-0x433cd0,race_option_clamp,verified,"src/game/st_sc.c. race+0x585 limited by race+0x720 flags. fuzz ok. Emulator fuzz"
-0x439fd0,key_slots_reset,verified,"src/game/st_sc.c. 12 dwords at 0x4beaf0 / 0x4beb08 = -1. fuzz ok. Emulator fuzz"
+0x430e40,frontend_palette_set,verified,src/game/st_sc.c. 0x428130 from the image header at 0x4be348. fuzz ok. Emulator fuzz
+0x433cd0,race_option_clamp,verified,src/game/st_sc.c. race+0x585 limited by race+0x720 flags. fuzz ok. Emulator fuzz
+0x439fd0,key_slots_reset,verified,src/game/st_sc.c. 12 dwords at 0x4beaf0 / 0x4beb08 = -1. fuzz ok. Emulator fuzz
 0x4446f0,menu_system_init,verified,"src/game/st_sc.c. menu table malloc (first time), sprites, pads, main menu. fuzz ok. Emulator fuzz"
-0x4461d0,menu_sprites_setup,verified,"src/game/st_sc.c. four 0x4316d0 calls. fuzz ok. Emulator fuzz"
-0x453730,model_top_point,verified,"src/game/st_sc.c. vertex with the greatest y. fuzz ok. Emulator fuzz"
-0x453780,frontend_models_setup,verified,"src/game/st_sc.c. 53 front-end model records (0x48 bytes at 0x4cba80). fuzz ok. Emulator fuzz"
+0x4461d0,menu_sprites_setup,verified,src/game/st_sc.c. four 0x4316d0 calls. fuzz ok. Emulator fuzz
+0x453730,model_top_point,verified,src/game/st_sc.c. vertex with the greatest y. fuzz ok. Emulator fuzz
+0x453780,frontend_models_setup,verified,src/game/st_sc.c. 53 front-end model records (0x48 bytes at 0x4cba80). fuzz ok. Emulator fuzz
 0x462a20,particles_init,verified,"src/game/st_sc.c. 255 particles of 0x4c bytes at *0x4d108c, rand drift. fuzz ok. Emulator fuzz"
-0x46a030,game_heap_setup,verified,"src/game/st_sc.c. 0x444500 then 0x423880. fuzz ok. Emulator fuzz"
-0x48a0e0,pad_config_reset,verified,"src/game/st_sc.c. 0x90-byte pad config defaults at 0x4d9658. fuzz ok. Emulator fuzz"
-0x48a140,pad_configs_reset,verified,"src/game/st_sc.c. for each pad. fuzz ok. Emulator fuzz"
-0x452d20,menu_dirty_set,verified,"src/game/st_sc.c. 0x4cb58c = 1. fuzz ok. Emulator fuzz"
+0x46a030,game_heap_setup,verified,src/game/st_sc.c. 0x444500 then 0x423880. fuzz ok. Emulator fuzz
+0x48a0e0,pad_config_reset,verified,src/game/st_sc.c. 0x90-byte pad config defaults at 0x4d9658. fuzz ok. Emulator fuzz
+0x48a140,pad_configs_reset,verified,src/game/st_sc.c. for each pad. fuzz ok. Emulator fuzz
+0x452d20,menu_dirty_set,verified,src/game/st_sc.c. 0x4cb58c = 1. fuzz ok. Emulator fuzz
 0x452fa0,race_options_set,verified,"src/game/st_sc.c. five config bytes, then 0x452d20. fuzz ok. Emulator fuzz"
 0x4484a0,driver_name,verified,"src/game/st_sc.c. driver name text (section by config+5) via 0x42e6d0, strcpy. fuzz ok. Emulator fuzz"
 0x46f080,snd_box_merge,verified,"src/game/snd_da.c. (holder, box) merge a 0x124-byte pool record's box into the holder's (+0xb8) when the two. Emulator fuzz; in game via verify"
@@ -1199,96 +1199,96 @@ address,name,status,notes
 0x46f4f0,snd_init,verified,"src/game/snd_da.c. once: rate (0x46f6e0), clear the 64 channels and the session description 0x4d44e0, InitEx; on. Emulator fuzz"
 0x46f610,snd_shutdown,verified,"src/game/snd_da.c. voices exit (0x4713b0), deactivate, CloseSession, clears the init/open flags. Fuzz only.. Emulator fuzz"
 0x46f650,snd_activate,verified,"src/game/snd_da.c. (on) Activate; fills each channel's kind (+1), buffer (+0x38), voice data (+0x34) or zeroes them;. Emulator fuzz"
-0x46f6e0,snd_rate_for,verified,"src/game/snd_da.c. requested rate -> 11025 / 22050 / 44100. Fuzz; in-game verify (once).. Emulator fuzz; in game via verify"
-0x46f720,snd_dsound,verified,"src/game/snd_da.c. GetDirectSound result or 0. Fuzz only (QMixer).. Emulator fuzz"
+0x46f6e0,snd_rate_for,verified,src/game/snd_da.c. requested rate -> 11025 / 22050 / 44100. Fuzz; in-game verify (once).. Emulator fuzz; in game via verify
+0x46f720,snd_dsound,verified,src/game/snd_da.c. GetDirectSound result or 0. Fuzz only (QMixer).. Emulator fuzz
 0x46f760,snd_set_rolloff,verified,"src/game/snd_da.c. SetListenerRolloff(session, bits, 0). Fuzz only.. Emulator fuzz"
 0x46f7a0,snd_channel_params,verified,"src/game/snd_da.c. GetChannelParams into a 0xdc-byte block (cleared, size field first). Fuzz only.. Emulator fuzz"
 0x46f7f0,snd_channel_kind,verified,"src/game/snd_da.c. kind code (0x15/0x29/0x49/0x85, 0x16/0x2a/0x4a/0x86) from the QMixer flags. Fuzz only.. Emulator fuzz"
-0x46f8f0,snd_channel_buffer,verified,"src/game/snd_da.c. GetDirectSoundBuffer result or 0. Fuzz only.. Emulator fuzz"
+0x46f8f0,snd_channel_buffer,verified,src/game/snd_da.c. GetDirectSoundBuffer result or 0. Fuzz only.. Emulator fuzz
 0x46f940,snd_open_channels,verified,"src/game/snd_da.c. OpenChannel(session, 0, 1). Fuzz only.. Emulator fuzz"
 0x46f970,snd_channels_reset,verified,"src/game/snd_da.c. every channel: caches -10 / 0xc7f12000 / 100.0f, then volume 0, frequency 0, position (0, 10, 0),. Emulator fuzz"
-0x46fa00,snd_wave_format,verified,"src/game/snd_da.c. fills the 0x12-byte PCM format; returns it. Only the low 16 bits of tag / channels / bits count. Emulator fuzz"
+0x46fa00,snd_wave_format,verified,src/game/snd_da.c. fills the 0x12-byte PCM format; returns it. Only the low 16 bits of tag / channels / bits count. Emulator fuzz
 0x46fa60,snd_wave_open,verified,"src/game/snd_da.c. OpenWaveEx(session, {format, data, size, 0, index}, 8). Fuzz only.. Emulator fuzz"
-0x46fad0,snd_wave_free,verified,"src/game/snd_da.c. FreeWave. Fuzz only.. Emulator fuzz"
+0x46fad0,snd_wave_free,verified,src/game/snd_da.c. FreeWave. Fuzz only.. Emulator fuzz
 0x46fb00,snd_waves_free,verified,"src/game/snd_da.c. free every wave handle (+0x10 of the 0x40-byte records), free the block. Fuzz only (void).. Emulator fuzz"
 0x46fb80,snd_waves_load,verified,"src/game/snd_da.c. free, load the wave file (0x496590), open each record; returns eax as the original leaves it.. Emulator fuzz"
 0x46fc40,snd_chan_play,verified,"src/game/snd_da.c. (wave, channel, loop) PlayEx + RestartChannel, record: bit 1/looped, timer 10, wave index. Fuzz only.. Emulator fuzz"
 0x46fd40,snd_chan_stop,verified,"src/game/snd_da.c. FlushChannel, clears the playing bit and the timer. Fuzz only.. Emulator fuzz"
-0x46fda0,snd_chan_pause,verified,"src/game/snd_da.c. 0x46fe00 snd_chan_pause / snd_chan_resume   PauseChannel / RestartChannel unless bit 8; bit 4. Fuzz only.. Emulator fuzz"
-0x46fe00,snd_chan_resume,verified,"src/game/snd_da.c. . Emulator fuzz"
-0x46fe60,snd_pause_all,verified,"src/game/snd_da.c. 0x46fe90 snd_pause_all / snd_resume_all     over the channels with a kind. Fuzz only (void).. Emulator fuzz"
-0x46fe90,snd_resume_all,verified,"src/game/snd_da.c. . Emulator fuzz"
-0x46fec0,snd_chan_busy,verified,"src/game/snd_da.c. 1 while playing; 0 and clears bit 0 when QMixer says done. Fuzz only.. Emulator fuzz"
+0x46fda0,snd_chan_pause,verified,src/game/snd_da.c. 0x46fe00 snd_chan_pause / snd_chan_resume   PauseChannel / RestartChannel unless bit 8; bit 4. Fuzz only.. Emulator fuzz
+0x46fe00,snd_chan_resume,verified,src/game/snd_da.c. . Emulator fuzz
+0x46fe60,snd_pause_all,verified,src/game/snd_da.c. 0x46fe90 snd_pause_all / snd_resume_all     over the channels with a kind. Fuzz only (void).. Emulator fuzz
+0x46fe90,snd_resume_all,verified,src/game/snd_da.c. . Emulator fuzz
+0x46fec0,snd_chan_busy,verified,src/game/snd_da.c. 1 while playing; 0 and clears bit 0 when QMixer says done. Fuzz only.. Emulator fuzz
 0x46ff30,snd_chan_find,verified,"src/game/snd_da.c. round-robin next free audible channel after 0x4b1c6c, marks wave index -1; -1 if none. Fuzz only.. Emulator fuzz"
-0x46ffa0,snd_chan_claim,verified,"src/game/snd_da.c. find + timer 10 (arg unused). Fuzz only.. Emulator fuzz"
+0x46ffa0,snd_chan_claim,verified,src/game/snd_da.c. find + timer 10 (arg unused). Fuzz only.. Emulator fuzz
 0x46ffd0,snd_chan_frequency,verified,"src/game/snd_da.c. / 0x470040 snd_chan_volume   |v| clamped (0xffff / 0x7fff), cached (+8 / +0xc), QMixer call only. Emulator fuzz"
-0x470040,snd_chan_volume,verified,"src/game/snd_da.c. . Emulator fuzz"
+0x470040,snd_chan_volume,verified,src/game/snd_da.c. . Emulator fuzz
 0x4700b0,snd_chan_position,verified,"src/game/snd_da.c. x87 file but the float part is only compares: three floats at +0x10 vs the arguments, 'equal or. Emulator fuzz"
 0x4702a0,snd_distance_map,verified,"src/game/snd_da.c. descriptor {0x10, 0x4b1c90, 0x4b1c94, 0} at 0x4d44c8, SetDistanceMapping. Fuzz only.. Emulator fuzz"
 0x470300,snd_options_apply,verified,"src/game/snd_da.c. SetOptions(session, 4 if 0x4d4548 | 3 if 0x4b1c78, 7). Fuzz only.. Emulator fuzz"
-0x470350,snd_channels_enable,verified,"src/game/snd_da.c. EnableChannel for each channel in use with the flags from the settings and the channel's QMixer. Emulator fuzz"
+0x470350,snd_channels_enable,verified,src/game/snd_da.c. EnableChannel for each channel in use with the flags from the settings and the channel's QMixer. Emulator fuzz
 0x470470,snd_channel_limit,verified,"src/game/snd_da.c. clamp 0x4b1c74 to 8..32, refresh (0x470ef0, x87, original). Fuzz only.. Emulator fuzz"
 0x4704b0,snd_voice_flags,verified,"src/game/snd_da.c. crowded flag 0x4d452c (0x470e70), audible bit (0x10) of each channel, refresh. Fuzz only.. Emulator fuzz"
 0x470530,snd_speakers,verified,"src/game/snd_da.c. speaker mode 0x4d454c -> SetSpeakerPlacement (0->0, 1->3, 2->1, 3->2). Fuzz only.. Emulator fuzz"
 0x4705d0,snd_settings_apply,verified,"src/game/snd_da.c. 0x470470, 0x4704b0, 0x470530, 0x470300, 0x470350, then returns 0x470ef0's result. Fuzz only.. Emulator fuzz"
 0x4705f0,snd_speaker_cycle,verified,"src/game/snd_da.c. (next, allow3) step the speaker mode, apply. Fuzz only.. Emulator fuzz"
 0x470640,snd_channel_count_add,verified,"src/game/snd_da.c. (delta) channel count 8..32, apply when changed. Fuzz only.. Emulator fuzz"
-0x470680,snd_stats_clear,verified,"src/game/snd_da.c. zero the profile statistics (0x600160.. via 0x4706e0 / 0x470720). Fuzz; in-game verify (once).. Emulator fuzz; in game via verify"
+0x470680,snd_stats_clear,verified,src/game/snd_da.c. zero the profile statistics (0x600160.. via 0x4706e0 / 0x470720). Fuzz; in-game verify (once).. Emulator fuzz; in game via verify
 0x4706e0,snd_zero16,verified,"src/game/snd_da.c. / 0x470720 snd_zero6   zero 16 / 6 dwords, return the pointer. Fuzz.. Emulator fuzz"
-0x470720,snd_zero6,verified,"src/game/snd_da.c. . Emulator fuzz"
+0x470720,snd_zero6,verified,src/game/snd_da.c. . Emulator fuzz
 0x470740,snd_profile_start,verified,"src/game/snd_da.c. StartProfile once (0x4d4558), clears the statistics first when 0x4b1cb0. Fuzz only.. Emulator fuzz"
 0x470ca0,snd_stats_format,verified,"src/game/snd_da.c. sprintf(dst, 0x4b1cb4, 29 doubles of the statistics as dword pairs, 0). Fuzz only (sprintf stub).. Emulator fuzz"
 0x470e40,snd_stats_log,verified,"src/game/snd_da.c. format into a 0x800 buffer, write with 0x4963c0 (0x4b1e48). Fuzz only.. Emulator fuzz"
 0x471370,sound_eax_open,verified,"src/game/snd_db.c. reads EAX room / room HF into 0x4b1ca4/0x4b1ca8, device level 1.0, room 1. Fuzz ok.. Emulator fuzz"
-0x4713b0,sound_eax_close,verified,"src/game/snd_db.c. puts the saved EAX room levels back. Fuzz ok.. Emulator fuzz"
+0x4713b0,sound_eax_close,verified,src/game/snd_db.c. puts the saved EAX room levels back. Fuzz ok.. Emulator fuzz
 0x471700,sound_eax_first,verified,"src/game/snd_db.c. first voice's EAX property set (0x6cb534 + 0x3c*i), 0 if EAX off. Fuzz ok; in game verified (sample 1).. Emulator fuzz; in game via verify"
 0x471850,sound_cd_desc_init,verified,"src/game/snd_db.c. CD track descriptor (*0x5ff384, 0x14 bytes). Fuzz ok.. Emulator fuzz"
 0x471880,sound_cd_info_init,verified,"src/game/snd_db.c. clears the CD info record (*0x6000d0, 0x28 bytes) and applies it. Fuzz ok.. Emulator fuzz"
 0x471970,sound_voices_reset,verified,"src/game/snd_db.c. voice table reset, optional CD descriptor alloc, CD info alloc. Returns al 0 / 0xf8. Fuzz ok.. Emulator fuzz"
-0x471a60,sound_volume_mix,verified,"src/game/snd_db.c. master volume 0x4d45a0 then the mixer (through thunk 0x472040). Fuzz ok.. Emulator fuzz"
-0x471aa0,voice_set_near,verified,"src/game/snd_db.c. voice byte +6 (EAX level choice). Fuzz ok.. Emulator fuzz"
-0x471ac0,sound_settings_set,verified,"src/game/snd_db.c. 0x4b1e80 / 0x4d4596 / 0x4d4594. Fuzz ok.. Emulator fuzz"
-0x471af0,sound_cd_volume,verified,"src/game/snd_db.c. CD volume into the info record and to the player. Fuzz ok.. Emulator fuzz"
+0x471a60,sound_volume_mix,verified,src/game/snd_db.c. master volume 0x4d45a0 then the mixer (through thunk 0x472040). Fuzz ok.. Emulator fuzz
+0x471aa0,voice_set_near,verified,src/game/snd_db.c. voice byte +6 (EAX level choice). Fuzz ok.. Emulator fuzz
+0x471ac0,sound_settings_set,verified,src/game/snd_db.c. 0x4b1e80 / 0x4d4596 / 0x4d4594. Fuzz ok.. Emulator fuzz
+0x471af0,sound_cd_volume,verified,src/game/snd_db.c. CD volume into the info record and to the player. Fuzz ok.. Emulator fuzz
 0x471b30,sound_cd_volume_keep,verified,"src/game/snd_db.c. the same, also race +0xa7e. Fuzz ok.. Emulator fuzz"
 0x471b80,sound_volume_set,verified,"src/game/snd_db.c. master volume, also race +0xa7c. Fuzz ok; in game verified (sample 1).. Emulator fuzz; in game via verify"
-0x471ba0,sound_cd_channels,verified,"src/game/snd_db.c. CD channel mapping. Fuzz ok.. Emulator fuzz"
+0x471ba0,sound_cd_channels,verified,src/game/snd_db.c. CD channel mapping. Fuzz ok.. Emulator fuzz
 0x471c00,sound_cd_track,verified,"src/game/snd_db.c. plays CD track, 0x4d45a2 = 1. Fuzz ok.. Emulator fuzz"
-0x471c30,sound_cd_pause,verified,"src/game/snd_db.c. CD pause / resume by 0x4d45a2. Fuzz ok.. Emulator fuzz"
-0x471d50,sound_play_flagged,verified,"src/game/snd_db.c. sound_play with 0x4d459c = (flag == 1). Fuzz ok (6 args: verify_call2 takes 2).. Emulator fuzz"
-0x471e60,sound_moving_flagged,verified,"src/game/snd_db.c. 0x471da0 with 0x4d459c = (flag == 1). Fuzz ok (8 args).. Emulator fuzz"
+0x471c30,sound_cd_pause,verified,src/game/snd_db.c. CD pause / resume by 0x4d45a2. Fuzz ok.. Emulator fuzz
+0x471d50,sound_play_flagged,verified,src/game/snd_db.c. sound_play with 0x4d459c = (flag == 1). Fuzz ok (6 args: verify_call2 takes 2).. Emulator fuzz
+0x471e60,sound_moving_flagged,verified,src/game/snd_db.c. 0x471da0 with 0x4d459c = (flag == 1). Fuzz ok (8 args).. Emulator fuzz
 0x471eb0,voice_start,verified,"src/game/snd_db.c. fills a voice record, state 0x40. Fuzz ok (only called by 0x471c90/0x471da0).. Emulator fuzz"
 0x471f40,sound_voice_stop,verified,"src/game/snd_db.c. volume 0, pitch 0, state 0x41. Fuzz ok (writes only the voice table, which the verifier excludes).. Emulator fuzz"
 0x471f80,voice_set_pitch,verified,"src/game/snd_db.c. voice +0x14 = clamp(int16, 0, 0x3fff). Fuzz ok (voice table only).. Emulator fuzz"
-0x471fc0,voice_set_volume,verified,"src/game/snd_db.c. voice +8 / +0xa. Fuzz ok (voice table only).. Emulator fuzz"
-0x471ff0,sound_distance,verified,"src/game/snd_db.c. 2 * isqrt(sum ((a-b)>>17)^2). Fuzz ok.. Emulator fuzz"
+0x471fc0,voice_set_volume,verified,src/game/snd_db.c. voice +8 / +0xa. Fuzz ok (voice table only).. Emulator fuzz
+0x471ff0,sound_distance,verified,src/game/snd_db.c. 2 * isqrt(sum ((a-b)>>17)^2). Fuzz ok.. Emulator fuzz
 0x472050,sound_listener_set,verified,"src/game/snd_db.c. listener slot copies (pos/vel/matrix), index not range checked (sic). Fuzz ok (4 args).. Emulator fuzz"
-0x4721f0,sound_cd_apply,verified,"src/game/snd_db.c. CD volume to the MCI player when flags & 0xc0. Fuzz ok.. Emulator fuzz"
-0x472220,sound_cd_play,verified,"src/game/snd_db.c. CD track unless config +0x410. Fuzz ok.. Emulator fuzz"
-0x472250,sound_cd_command,verified,"src/game/snd_db.c. CD pause / stop / resume unless config +0x410. Fuzz ok.. Emulator fuzz"
+0x4721f0,sound_cd_apply,verified,src/game/snd_db.c. CD volume to the MCI player when flags & 0xc0. Fuzz ok.. Emulator fuzz
+0x472220,sound_cd_play,verified,src/game/snd_db.c. CD track unless config +0x410. Fuzz ok.. Emulator fuzz
+0x472250,sound_cd_command,verified,src/game/snd_db.c. CD pause / stop / resume unless config +0x410. Fuzz ok.. Emulator fuzz
 0x4722d0,sound_mix,verified,"src/game/snd_db.c. per-frame mixer (start / update / stop voices, nearest-listener and per-listener linked voices,. Emulator fuzz"
 0x472920,voice_alloc,verified,"src/game/snd_db.c. device voice for a sound; with 0x4ac984 set, level / pitch / volume / position. Fuzz ok.. Emulator fuzz"
-0x472a40,sound_play_volume,verified,"src/game/snd_db.c. sound_play with an unscaled volume unless 0xffff. Fuzz ok.. Emulator fuzz"
-0x472a90,voice_play_plain,verified,"src/game/snd_db.c. non-positional voice started at once. Fuzz ok.. Emulator fuzz"
-0x472b70,voice_play_plain_volume,verified,"src/game/snd_db.c. the same with an unscaled volume unless -1. Fuzz ok.. Emulator fuzz"
-0x472e90,sound_debug_toggle,verified,"src/game/snd_db.c. voice debug display toggle. Fuzz ok.. Emulator fuzz"
-0x472ed0,sound_debug_tick,verified,"src/game/snd_db.c. every 4th frame refreshes it (config +0x411). Fuzz ok.. Emulator fuzz"
+0x472a40,sound_play_volume,verified,src/game/snd_db.c. sound_play with an unscaled volume unless 0xffff. Fuzz ok.. Emulator fuzz
+0x472a90,voice_play_plain,verified,src/game/snd_db.c. non-positional voice started at once. Fuzz ok.. Emulator fuzz
+0x472b70,voice_play_plain_volume,verified,src/game/snd_db.c. the same with an unscaled volume unless -1. Fuzz ok.. Emulator fuzz
+0x472e90,sound_debug_toggle,verified,src/game/snd_db.c. voice debug display toggle. Fuzz ok.. Emulator fuzz
+0x472ed0,sound_debug_tick,verified,src/game/snd_db.c. every 4th frame refreshes it (config +0x411). Fuzz ok.. Emulator fuzz
 0x472f10,sound_engine_start,verified,"src/game/snd_db.c. copies 3 settings, two float scales, device start, voice reset, output mode, volume. Fuzz ok.. Emulator fuzz"
 0x472f70,sound_engine_restart,verified,"src/game/snd_db.c. 0x4b1c6c = -1, device restart, voice reset. Fuzz ok.. Emulator fuzz"
 0x472f90,race_music_start,verified,"src/game/snd_db.c. CD open, first track, repeat, volume (random first time), channels, track by. Emulator fuzz"
 0x408360,camera_director,verified,"src/game/gl_ga.c. the chase/replay camera director, once per viewport per step (sim_step 0x444120): trackside. Emulator fuzz; in game via verify"
-0x40a720,camera_place_offset,verified,"src/game/gl_ga.c. 0x428e90 7/7 (table build under every control word). About 4% of director cases fault in both runs. Emulator fuzz"
+0x40a720,camera_place_offset,verified,src/game/gl_ga.c. 0x428e90 7/7 (table build under every control word). About 4% of director cases fault in both runs. Emulator fuzz
 0x428e90,controls_curve,verified,"src/game/gl_ga.c. analogue response curve; builds its 129-entry table (0x4bdf04, flag 0x4be110) on first use. Emulator fuzz"
 0x404480,sky_set,verified,"src/game/gl_gb.c. sky record 0x6d0a40, height / 4 at 0x6d0a7c and as float 0x4b5fac (fild qword of the zero-extended int, sic: a negative height gives ~4e9). Fuzz ok; in game verified (sample 1).. Emulator fuzz; in game via verify"
 0x404550,sky_packets_build,verified,"src/game/gl_gb.c. backdrop quads (vertices *0x6d0a3c, packets *0x4b5fc8, lowest texture of all) and cloud quads (halved / dropped by config +0x33; *0x6d0a38, *0x4b5fcc, prim_flag 0x4270e0), horizon 0x404980 with 0x6cd4. Emulator fuzz"
 0x4050f0,shock_falloff_apply,verified,"src/game/gl_gb.c. while 0x6ccbac, strength byte +6 of the 16-byte records at 0x6d06e0 (count 0x6d06c0) minus shock_falloff. Fuzz ok; in game verified (sample 31).. Emulator fuzz; in game via verify"
-0x405210,shock_falloff,verified,"src/game/gl_gb.c. (0x6ccbb0 << 15) / max squared axis distance (1/4 units) from the centre 0x6ccba0 (16.16) - 1. Fuzz ok (called inside the verified 0x4050f0).. Emulator fuzz"
+0x405210,shock_falloff,verified,src/game/gl_gb.c. (0x6ccbb0 << 15) / max squared axis distance (1/4 units) from the centre 0x6ccba0 (16.16) - 1. Fuzz ok (called inside the verified 0x4050f0).. Emulator fuzz
 0x40da70,car_wheels_setup,verified,"src/game/gl_gb.c. the car's 4 wheel records (+0x324, 0xc4 each): object 0x460ba0 kind 0x8c0b, wheel_place 0x40dff0, offsets from 0x4a7b40 / 0x4a7b60 (mirrored for odd wheels), inertia terms. The float GTE matrix copy g. Emulator fuzz"
 0x40eb60,car_hit_callback,verified,"src/game/gl_gb.c. the car's hit callback (+0x148): hit force, AI / human reactions (0x410050..0x410110, 0x40fd40), strongest hit +0x65f and its direction +0x670, flip flag +0x661, hit sound 0x45be10, sparks 0x46d760. R. Emulator fuzz"
 0x40fd40,car_hit_timer_start,verified,"src/game/gl_gb.c. +0x6b4 = 0x100, +0x6b6 = random length (AI seed 0x4a7148, difficulty 0x4a714c, class table *0x6cf654). The original also writes the class into the low byte of its own first argument slot (unobservable. Emulator fuzz; in game via verify"
 0x410050,car_hit_ai_hard,verified,"src/game/gl_gb.c. / 0x410090 car_hit_ai_object / 0x4100e0 car_hit_human / 0x410110 car_hit_human_object: dispatch to 0x40feb0 / 0x40fe00 (force, or 150 / 25 for object kinds 0xc / 0x11). Fuzz ok, fuzz-only (callees not. Emulator fuzz"
-0x410090,car_hit_ai_object,verified,"src/game/gl_gb.c. . Emulator fuzz"
-0x4100e0,car_hit_human,verified,"src/game/gl_gb.c. . Emulator fuzz"
-0x410110,car_hit_human_object,verified,"src/game/gl_gb.c. . Emulator fuzz"
+0x410090,car_hit_ai_object,verified,src/game/gl_gb.c. . Emulator fuzz
+0x4100e0,car_hit_human,verified,src/game/gl_gb.c. . Emulator fuzz
+0x410110,car_hit_human_object,verified,src/game/gl_gb.c. . Emulator fuzz
 0x426090,projection_init,verified,"src/game/gl_gb.c. clears GTE 0x6ccbe0 and projection state 0x6ccd00, screen 0x4283d0(150, 400, 507), depth limits, FOV scale 0x6cd41c = max(width * 0.6 / 640, 0.6) (x87 compare, NaN -> 0.6), 0x6cd418 = 1.5x, matrix fou. Emulator fuzz"
 0x428290,game_clock_read,verified,"src/game/gl_gb.c. ftol(time / 100.0 * 2048.0) with the time as unsigned 64-bit. Fuzz ok, fuzz-only (clock).. Emulator fuzz"
 0x42a610,effects_init,verified,"src/game/gl_gb.c. effect pools (0x42a710, 0x42a8f0, 0x42c2b0, 0x42a9e0(1), 0x42c1d0, 0x42c200), smoke records linked both ways (+0xa8 / +0xac; with 0 records it still clears pool - 0x54, sic), smoke amount config +0x68. Emulator fuzz"
@@ -1296,72 +1296,129 @@ address,name,status,notes
 0x4377c0,hud_layout,verified,"src/game/gl_gb.c. HUD positions (int16 pairs 0x6c7dc8.., scale width * 256 / 0x4acff0, 0x226 in split screen), lap time digit rows 0x6c7dfc, items shown 0x6c7f5a by race mode / kind, 2 sprite packets per item at 0x6c3e. Emulator fuzz"
 0x43fa60,track_load,verified,"src/game/gl_gb.c. track file + texture file load, offsets relocated, light colours scaled (x87 + ftol, clamp 255), packets, objects / flares / glows / pick-ups from the object records, lights table 0x6cfbe0. Returns 0 . Emulator fuzz"
 0x46bb50,object_face_blast,verified,"src/game/gl_gb.c. a model face's centre rotated by the object's matrix, two explosions 0x42aa30 below / above it; the velocity is scaled by 1/512 in place. The original's GTE vector halfword 0x6ccc6a is a leftover stac. Emulator fuzz"
-0x403950,pair_users_release,verified,"src/game/gl_gc.c. decrements the use byte (+3 of a 12-byte record in *(*0x6c1e30+0x60)) of the first key. Emulator fuzz; in game via verify"
-0x41ac20,object_trigger_1a,verified,"src/game/gl_gc.c. type-0x1a objects: 0x426060 when n < 100. Fuzz ok (3 args).. Emulator fuzz"
-0x4219c0,flag_4bcd54_clear,verified,"src/game/gl_gc.c. *0x4bcd54 == 0. Fuzz ok.. Emulator fuzz"
+0x403950,pair_users_release,verified,src/game/gl_gc.c. decrements the use byte (+3 of a 12-byte record in *(*0x6c1e30+0x60)) of the first key. Emulator fuzz; in game via verify
+0x41ac20,object_trigger_1a,verified,src/game/gl_gc.c. type-0x1a objects: 0x426060 when n < 100. Fuzz ok (3 args).. Emulator fuzz
+0x4219c0,flag_4bcd54_clear,verified,src/game/gl_gc.c. *0x4bcd54 == 0. Fuzz ok.. Emulator fuzz
 0x4219e0,car_wheel_dust,verified,"src/game/gl_gc.c. rear wheels' dust particles by surface kind, count by speed, doubled by the detail setting. Emulator fuzz; in game via verify"
 0x426060,object_trigger_set,verified,"src/game/gl_gc.c. n == 2: +0x180 = 3, else word +0x184. Fuzz ok (3 args).. Emulator fuzz"
-0x427d90,pause_pad_bits,verified,"src/game/gl_gc.c. packet bits to pad bits. Fuzz ok (only called from pause_menu_input).. Emulator fuzz"
+0x427d90,pause_pad_bits,verified,src/game/gl_gc.c. packet bits to pad bits. Fuzz ok (only called from pause_menu_input).. Emulator fuzz
 0x43693f,sim_clock_start,verified,"src/game/gl_gc.c. step clock base = timeGetTime, steps done 0. Fuzz ok; clock: fuzz-only.. Emulator fuzz"
-0x4416a0,light_shape_step,verified,"src/game/gl_gc.c. colour-shape animation (15-bit colours). Fuzz ok.. Emulator fuzz"
+0x4416a0,light_shape_step,verified,src/game/gl_gc.c. colour-shape animation (15-bit colours). Fuzz ok.. Emulator fuzz
 0x441720,light_fade_step,verified,"src/game/gl_gc.c. fading light (fixed orange or flicker), freed at 0. Fuzz ok.. Emulator fuzz"
-0x4417e0,light_object_step,verified,"src/game/gl_gc.c. light on an object coloured by +0x1b4. Fuzz ok.. Emulator fuzz"
-0x441840,light_object_step2,verified,"src/game/gl_gc.c. light on an object coloured by +0x2a38. Fuzz ok.. Emulator fuzz"
+0x4417e0,light_object_step,verified,src/game/gl_gc.c. light on an object coloured by +0x1b4. Fuzz ok.. Emulator fuzz
+0x441840,light_object_step2,verified,src/game/gl_gc.c. light on an object coloured by +0x2a38. Fuzz ok.. Emulator fuzz
 0x4418a0,light_head_step,verified,"src/game/gl_gc.c. a car's head light (colour + pulse, dimmed by energy, placed via gte_rotate). x87 matrix.. Emulator fuzz"
-0x442c90,body_point_world,verified,"src/game/gl_gc.c. int16 point through a body's float matrix + position (0x426620). x87 matrix / offsets.. Emulator fuzz"
-0x442e40,trigger_light_colour,verified,"src/game/gl_gc.c. action 2: light colour into an object's +0x108. Fuzz ok.. Emulator fuzz"
-0x442eb0,trigger_glint,verified,"src/game/gl_gc.c. action 3: every third time a glint at a track point. Fuzz ok.. Emulator fuzz"
-0x442f20,trigger_glint2,verified,"src/game/gl_gc.c. action 4: a glint at a track point. Fuzz ok.. Emulator fuzz"
+0x442c90,body_point_world,verified,src/game/gl_gc.c. int16 point through a body's float matrix + position (0x426620). x87 matrix / offsets.. Emulator fuzz
+0x442e40,trigger_light_colour,verified,src/game/gl_gc.c. action 2: light colour into an object's +0x108. Fuzz ok.. Emulator fuzz
+0x442eb0,trigger_glint,verified,src/game/gl_gc.c. action 3: every third time a glint at a track point. Fuzz ok.. Emulator fuzz
+0x442f20,trigger_glint2,verified,src/game/gl_gc.c. action 4: a glint at a track point. Fuzz ok.. Emulator fuzz
 0x4599c0,car_blast_hit,verified,"src/game/gl_gc.c. a hit on a car: a blast mark, or a random spin kick, an explosion effect and its motion. Emulator fuzz; in game via verify"
-0x45bd30,body_sparks,verified,"src/game/gl_gc.c. n sparks below a body. Fuzz ok; in game verified (sample 1).. Emulator fuzz; in game via verify"
-0x45be10,contact_particle,verified,"src/game/gl_gc.c. a particle at a contact point. Fuzz ok (3 args).. Emulator fuzz"
-0x463970,pause_is_local,verified,"src/game/gl_gc.c. the paused car is the local player's. Fuzz ok.. Emulator fuzz"
+0x45bd30,body_sparks,verified,src/game/gl_gc.c. n sparks below a body. Fuzz ok; in game verified (sample 1).. Emulator fuzz; in game via verify
+0x45be10,contact_particle,verified,src/game/gl_gc.c. a particle at a contact point. Fuzz ok (3 args).. Emulator fuzz
+0x463970,pause_is_local,verified,src/game/gl_gc.c. the paused car is the local player's. Fuzz ok.. Emulator fuzz
 0x463b70,pause_frame,verified,"src/game/gl_gc.c. the race frame's pause check (network pause follow, the menu, its drawing, resume). Fuzz ok;. Emulator fuzz"
 0x463ca0,pause_open,verified,"src/game/gl_gc.c. opens the pause screen (state, volumes, sound, the panel's 9 sprites, first page). The sprite. Emulator fuzz"
 0x464030,pause_menu_input,verified,"src/game/gl_gc.c. the pause menu's input: sliders (0x464c10), pad presses, up / down, CD / master volume,. Emulator fuzz"
 0x469bb0,camera_cycle,verified,"src/game/gl_gc.c. car camera choice +/- delta (wrapping 0..5), settings, view, handling, race +0x1c. Fuzz ok.. Emulator fuzz"
-0x469c50,camera_setting_copy,verified,"src/game/gl_gc.c. 0x469cd0 camera_view_copy: record copies. Fuzz ok.. Emulator fuzz"
-0x469cd0,camera_view_copy,verified,"src/game/gl_gc.c. . Emulator fuzz"
+0x469c50,camera_setting_copy,verified,src/game/gl_gc.c. 0x469cd0 camera_view_copy: record copies. Fuzz ok.. Emulator fuzz
+0x469cd0,camera_view_copy,verified,src/game/gl_gc.c. . Emulator fuzz
 0x46c1a0,body_velocity_gap,verified,"src/game/gl_gc.c. body callback (+0x148): squared velocity gap into +0x160, returns 1. Fuzz ok; in game. Emulator fuzz; in game via verify"
 0x46d760,blast_mark,verified,"src/game/gl_gc.c. a blast on a car: first-time sound and hit counter, then the blast direction in the car frame. Emulator fuzz"
 0x46ed80,skid_mark_start,verified,"src/game/gl_gc.c. a new 0x124-byte segment (*0x6002d8, wrapping), merged with the previous box. Fuzz ok.. Emulator fuzz"
 0x46ee30,skid_mark_point,verified,"src/game/gl_gc.c. the contact point less the side direction, packed direction bits in +0xa8. Fuzz ok.. Emulator fuzz"
-0x46efa0,skid_mark_moved,verified,"src/game/gl_gc.c. moved more than 0xa0 or velocity turned. Fuzz ok.. Emulator fuzz"
+0x46efa0,skid_mark_moved,verified,src/game/gl_gc.c. moved more than 0xa0 or velocity turned. Fuzz ok.. Emulator fuzz
 0x478430,pair_list_remove,verified,"src/game/gl_gc.c. removes a key from list 0x5f7220 (last moved over it; no match copies past the end,. Emulator fuzz; in game via verify"
 0x48f930,snatch_mesh_update,verified,"src/game/gl_gc.c. snatch mesh: 6 x 12 ring points in world space (0x426620), centre, ring colours (fade,. Emulator fuzz; in game via verify"
 0x41d280,d3d_enum_device,verified,"src/game/gl_gd.c. Direct3D device enumeration callback (stdcall, 6 args, returns 1): keeps devices usable. Emulator fuzz"
 0x41d640,ddraw_depth_flag,verified,"src/game/gl_gd.c. bit depth -> DDBD flag (1:0x4000 2:0x2000 4:0x1000 8:0x800 15,16:0x400 24:0x200 32:0x100,. Emulator fuzz; in game via verify"
-0x435d43,network_session_poll,verified,"src/game/gl_gd.c. lobby step (mode 1/2) over 12 network calls; returns 0/1/2/3. Fuzz ok.. Emulator fuzz"
+0x435d43,network_session_poll,verified,src/game/gl_gd.c. lobby step (mode 1/2) over 12 network calls; returns 0/1/2/3. Fuzz ok.. Emulator fuzz
 0x4360e1,cheat_code_char,verified,"src/game/gl_gd.c. WM_CHAR cheat typing (33-char buffer 0x4be3bc, codes at 0x4acd5c...); toggles options,. Emulator fuzz"
-0x4474e0,menu_hold_clear,verified,"src/game/gl_gd.c. 0x447500 menu_hold_reset: held-button words 0x4cb5a8.. . Fuzz ok; verify (every 31st).. Emulator fuzz; in game via verify"
-0x447500,menu_hold_reset,verified,"src/game/gl_gd.c. . Emulator fuzz; in game via verify"
+0x4474e0,menu_hold_clear,verified,src/game/gl_gd.c. 0x447500 menu_hold_reset: held-button words 0x4cb5a8.. . Fuzz ok; verify (every 31st).. Emulator fuzz; in game via verify
+0x447500,menu_hold_reset,verified,src/game/gl_gd.c. . Emulator fuzz; in game via verify
 0x447f60,config_flag7_toggle,verified,"src/game/gl_gd.c. config +7 flip, menu flagged in mode 4. Fuzz ok; verify (every call).. Emulator fuzz; in game via verify"
 0x448330,menu_pick_available,verified,"src/game/gl_gd.c. *p += step wrapped 0..3 until 0x48d450(*p), at most 4 steps. Fuzz ok.. Emulator fuzz"
-0x448380,config_mirror_flag,verified,"src/game/gl_gd.c. config +0x83 / +0x93 = (+0x80 == 0). Fuzz ok; verify.. Emulator fuzz; in game via verify"
-0x44d000,menu_param_callback,verified,"src/game/gl_gd.c. callback for a two-word value item (commands 0x12-0x16). Fuzz ok.. Emulator fuzz"
+0x448380,config_mirror_flag,verified,src/game/gl_gd.c. config +0x83 / +0x93 = (+0x80 == 0). Fuzz ok; verify.. Emulator fuzz; in game via verify
+0x44d000,menu_param_callback,verified,src/game/gl_gd.c. callback for a two-word value item (commands 0x12-0x16). Fuzz ok.. Emulator fuzz
 0x44ebb0,menu_call_with_zero,verified,"src/game/gl_gd.c. 0x4479f0(a, b, 0). Fuzz ok.. Emulator fuzz"
-0x4503c0,race_setting_trim,verified,"src/game/gl_gd.c. lowers race +0x585 while mode 0x4af794 says it is not allowed. Fuzz ok; verify.. Emulator fuzz; in game via verify"
+0x4503c0,race_setting_trim,verified,src/game/gl_gd.c. lowers race +0x585 while mode 0x4af794 says it is not allowed. Fuzz ok; verify.. Emulator fuzz; in game via verify
 0x450c00,menu_choice_callback,verified,"src/game/gl_gd.c. callback for a choice item (0x12 clamps + shows text, 0x14 down, 0x15/0x16 up). Fuzz ok.. Emulator fuzz"
 0x452640,control_entry_set,verified,"src/game/gl_gd.c. 0x4526f0 control_type_set, 0x452900 control_button_set: controls table setters on. Emulator fuzz"
-0x4526f0,control_type_set,verified,"src/game/gl_gd.c. . Emulator fuzz"
+0x4526f0,control_type_set,verified,src/game/gl_gd.c. . Emulator fuzz
 0x452730,menu_state_reset,verified,"src/game/gl_gd.c. menu flagged, four state words reset (0x4475d0..0x447630). Fuzz ok.. Emulator fuzz"
-0x452900,control_button_set,verified,"src/game/gl_gd.c. . Emulator fuzz"
+0x452900,control_button_set,verified,src/game/gl_gd.c. . Emulator fuzz
 0x46b510,pair_lookup,verified,"src/game/gl_gd.c. 0x46b7b0 pair_lookup_ok, 0x474b70 pair_lookup_default: 0x46b240 / 0x46b330 / 0x46b200 chain.. Emulator fuzz"
-0x46b7b0,pair_lookup_ok,verified,"src/game/gl_gd.c. . Emulator fuzz"
-0x474b70,pair_lookup_default,verified,"src/game/gl_gd.c. . Emulator fuzz"
-0x48a230,joy_axis_edge_call,verified,"src/game/gl_gd.c. 0x48a170. Fuzz ok.. Emulator fuzz"
-0x48a3e0,joy_pov_edge_0,verified,"src/game/gl_gd.c. . Emulator fuzz; in game via verify"
-0x48a3f0,joy_pov_edge_1,verified,"src/game/gl_gd.c. . Emulator fuzz; in game via verify"
-0x48a400,joy_pov_edge_2,verified,"src/game/gl_gd.c. . Emulator fuzz; in game via verify"
-0x48a410,joy_pov_edge_3,verified,"src/game/gl_gd.c. . Emulator fuzz; in game via verify"
-0x48a560,input_capture_any,verified,"src/game/gl_gd.c. first joystick with a capture. Fuzz ok.. Emulator fuzz"
+0x46b7b0,pair_lookup_ok,verified,src/game/gl_gd.c. . Emulator fuzz
+0x474b70,pair_lookup_default,verified,src/game/gl_gd.c. . Emulator fuzz
+0x48a230,joy_axis_edge_call,verified,src/game/gl_gd.c. 0x48a170. Fuzz ok.. Emulator fuzz
+0x48a3e0,joy_pov_edge_0,verified,src/game/gl_gd.c. . Emulator fuzz; in game via verify
+0x48a3f0,joy_pov_edge_1,verified,src/game/gl_gd.c. . Emulator fuzz; in game via verify
+0x48a400,joy_pov_edge_2,verified,src/game/gl_gd.c. . Emulator fuzz; in game via verify
+0x48a410,joy_pov_edge_3,verified,src/game/gl_gd.c. . Emulator fuzz; in game via verify
+0x48a560,input_capture_any,verified,src/game/gl_gd.c. first joystick with a capture. Fuzz ok.. Emulator fuzz
 0x48a590,joy_record,verified,"src/game/gl_gd.c. &0x4d74a0[joy * 0x43c], 0 past the count. Fuzz ok; verify (every 31st).. Emulator fuzz; in game via verify"
 0x48ac40,joy_names_collect,verified,"src/game/gl_gd.c. DirectInput device-name enumeration (stdcall, 4 args, returns 1): copies a multi-string. Emulator fuzz"
 0x488d60,joy_device_value,verified,"src/game/gl_gd.c. word 0 of 0x4d667c[joy * 0x224], 0 past 0x4d623c. Fuzz ok; verify.. Emulator fuzz; in game via verify"
-0x488470,video_mode_list_fill,verified,"src/game/gl_gd.c. fills the video mode combo box (messages through slot 0x4a3290 =. Emulator fuzz"
+0x488470,video_mode_list_fill,verified,src/game/gl_gd.c. fills the video mode combo box (messages through slot 0x4a3290 =. Emulator fuzz
 0x447d80,menu_slider_step,verified,"src/game/gl_gd.c. (x87): slider value +- step (coarse step / scale if 0x4beb38), clamp, callback, click. Emulator fuzz"
-0x44cb10,menu_slider_begin,verified,"src/game/gl_gd.c. (x87): float slider item builder in the item template (0x4c9df8): range sorted and. Emulator fuzz"
-0x451110,sound_menu_build,verified,"src/game/gl_gd.c. (x87 only for int16 -> float of the two volumes): the sound options menu. Fuzz ok.. Emulator fuzz"
+0x44cb10,menu_slider_begin,verified,src/game/gl_gd.c. (x87): float slider item builder in the item template (0x4c9df8): range sorted and. Emulator fuzz
+0x451110,sound_menu_build,verified,src/game/gl_gd.c. (x87 only for int16 -> float of the two volumes): the sound options menu. Fuzz ok.. Emulator fuzz
 0x471580,eax_voice_fade_step,verified,"src/game/gl_gd.c. (x87): one fade step of a voice's EAX level, calls 0x4714c0. Fuzz ok.. Emulator fuzz"
-0x472bb0,voice_3d_place,verified,"src/game/gl_gd.c. (x87 + CRT sqrt / atan2 / fmod / sin / cos): 3D placement of a voice (0x4700b0) and its. Emulator fuzz"
+0x472bb0,voice_3d_place,verified,src/game/gl_gd.c. (x87 + CRT sqrt / atan2 / fmod / sin / cos): 3D placement of a voice (0x4700b0) and its. Emulator fuzz
 0x470ef0,sound_channels_refresh,verified,"src/game/gl_gd.c. (x87 compares + ftol; QMixer through slots 0x4a31f8 IsChannelDone, 0x4a31fc. Emulator fuzz"
+0x4962c0,debug_log_set_path,verified,src/game/crt_ca.c. set the log path (closing an open log first). Emulator fuzz
+0x496340,debug_log_printf,verified,src/game/crt_ca.c. printf to the log with a newline (0x4b4a80) appended; at most 0x7ce characters of formatted text. Emulator fuzz
+0x4963c0,debug_log_print,verified,src/game/crt_ca.c. printf to the log as is (at most 0x7cf characters). Emulator fuzz
+0x496410,debug_log_close,verified,src/game/crt_ca.c. close the log file. Emulator fuzz
+0x496430,archive_open,verified,"src/game/crt_ca.c. open the archive: `path` names the .I?? file; the index (.IDX, `count` records of 16 bytes) is read into a block from the allocator pointer at 0x4b4a84, then the .IMG is opened. The original copies the path to a 0x20-byte stack buffer (longer paths overran its frame); this one is larger (sic). Emulator fuzz"
+0x496510,archive_select,verified,src/game/crt_ca.c. open (0) or close (nonzero) the .IMG; the state is a word. Opening resets the position; the fopen result is not checked. Emulator fuzz
+0x496660,archive_free,verified,src/game/crt_ca.c. free an archive block (allocator pointer 0x4b4a88). Emulator fuzz
+0x496680,archive_state,verified,src/game/crt_ca.c. the .IMG state word (0 open). The original leaves the upper half of eax as it was; callers use the word. Emulator fuzz
+0x496690,cdaudio_open,verified,src/game/crt_ca.c. open the CD player if closed. Emulator fuzz
+0x496700,cdaudio_close,verified,"src/game/crt_ca.c. close the player: stop, restore the CD volumes, close the device. Emulator fuzz"
+0x496770,cdaudio_play,verified,src/game/crt_ca.c. play `track` (closes the archive: same disc). Emulator fuzz
+0x4967a0,cdaudio_stop,verified,src/game/crt_ca.c. stop playing (or paused) and reopen the archive. Emulator fuzz
+0x4967f0,cdaudio_pause,verified,src/game/crt_ca.c. pause: remember the position (TMSF) and stop. Emulator fuzz
+0x496890,cdaudio_resume,verified,src/game/crt_ca.c. resume after a pause. Emulator fuzz
+0x4968b0,cdaudio_poll,verified,src/game/crt_ca.c. per-frame check while playing: the track ended (mode stopped) -> the next one; not ready / door open -> reopen the device first. Emulator fuzz
+0x496c50,cdaudio_set_shuffle,verified,src/game/crt_ca.c. shuffle mode. Emulator fuzz
+0x496c80,cdaudio_set_skip_first,verified,src/game/crt_ca.c. shuffle skips track 1. Emulator fuzz
+0x496c90,cdaudio_set_volume,verified,"src/game/crt_ca.c. CD volume (each 0..0xffff, clamped): mixer controls and aux outputs. Only with the player open. Emulator fuzz"
+0x496e50,aux_query,verified,"src/game/crt_ca.c. aux device `dev`: -1 past the last device, 0 not a CD audio output (or caps failed), 1 with its volume read into *volume, 2 no volume (*volume = 0). volume 0: just 1 / 2 by the volume capability. Emulator fuzz"
+0x4a1c36,crt_dsound_create,verified,"src/game/crt_ca.c. the DirectSoundCreate import thunk (dsound #1, stdcall with three arguments): a jump through the import slot, as the original (it reads no arguments itself). Emulator fuzz"
+0x4a1c3c,crt_strlwr,verified,src/game/crt_ca.c. strlwr / strupr. With a locale set the runtime maps the string through LCMapString under its locale lock (kept as calls to the runtime: the game never sets a locale). Emulator fuzz
+0x4a1d70,crt_strupr,verified,src/game/crt_ca.c. strupr. Emulator fuzz
+0x4a1ea4,crt_hypot,verified,"src/game/crt_ca.c. _hypot(x, y) (0x4a1ec1 with op 0x18): at extended precision, m = max(|x|, |y|), sqrt((x/m)^2 + (y/m)^2) * m with the exponents added separately; every intermediate is stored as a double, as in the original. Infinities give +inf, NaNs and over / underflow (and an unmasked precision exception) go to the runtime's error reporting. Emulator fuzz"
+0x497630,cd_volume_get,verified,"src/game/crt_cb.c. the CD volume, from the mixer line if there is one, else the auxiliary output; 0 if CD audio is off or neither exists. Emulator fuzz"
+0x4977b0,cd_volume_available,verified,src/game/crt_cb.c. 1 if the CD volume can be read (mixer line or auxiliary output). Emulator fuzz
+0x4979f0,msvc_sprintf,verified,src/game/crt_cb.c. sprintf. Emulator fuzz
+0x497a50,msvc_chkstk,verified,"src/game/crt_cb.c. _chkstk / _alloca_probe: move esp down by eax bytes, touching each page on the way; ecx kept. Emulator fuzz"
+0x497a80,msvc_ftol,verified,"src/game/crt_cb.c. _ftol: st(0) to a 64-bit integer, truncating. Emulator fuzz"
+0x497ac4,msvc_cos,verified,"src/game/crt_cb.c. cos (at the 0x27f control word; |x| >= 2^63 reduced by 2 pi first). Infinity: the indefinite NaN, error 1. Emulator fuzz"
+0x497b74,msvc_sin,verified,"src/game/crt_cb.c. sin, as cos. Emulator fuzz"
+0x497c24,msvc_atan,verified,src/game/crt_cb.c. atan (fpatan with 1); atan(+-infinity) = +-pi / 2. Emulator fuzz
+0x497cc9,msvc_pow,verified,"src/game/crt_cb.c. pow(x, y) at the caller's precision: y * log2 |x|, then 2^that, negated for a negative x and odd integer y; zero, infinite and NaN arguments as the original (_powhlp 0x49ab37 for infinities). Emulator fuzz"
+0x498046,msvc_atoi,verified,"src/game/crt_cb.c. atoi (atol 0x497fbb): optional spaces and sign, decimal digits. Emulator fuzz"
+0x498051,msvc_isctype,verified,"src/game/crt_cb.c. _isctype(c, mask): table lookup for -1..255, else the locale's string type of the one or two bytes (__crtGetStringTypeA 0x49aee3). Emulator fuzz"
+0x4980d0,msvc_strstr,verified,src/game/crt_cb.c. strstr (a one-character needle goes through strchr 0x49b046). Emulator fuzz
+0x498180,msvc_allmul,verified,"src/game/crt_cb.c. __allmul: 64-bit product (stdcall, edx:eax). Emulator fuzz"
+0x4981d4,msvc_sqrt,verified,"src/game/crt_cb.c. sqrt at the caller's precision; sqrt(-0) = -0, a negative argument the indefinite NaN, error 1. Emulator fuzz"
+0x49827a,msvc_free,verified,src/game/crt_cb.c. free. Emulator fuzz
+0x4982c2,msvc_malloc,verified,src/game/crt_cb.c. malloc (__nh_malloc 0x4982d4 with _newmode). Emulator fuzz
+0x498350,msvc_strncpy,verified,"src/game/crt_cb.c. strncpy: at most n characters, the rest of the n zero-filled. Emulator fuzz"
+0x498450,msvc_strcpy,verified,src/game/crt_cb.c. strcpy (enters strcat's copy loop). Emulator fuzz
+0x498460,msvc_strcat,verified,src/game/crt_cb.c. strcat. Emulator fuzz
+0x498540,msvc_toupper,verified,"src/game/crt_cb.c. toupper (the ""C"" locale; a set locale goes through _toupper_lk). Emulator fuzz"
+0x49867b,msvc_tolower,verified,"src/game/crt_cb.c. tolower, as toupper. Emulator fuzz"
+0x4987b5,msvc_rand,verified,"src/game/crt_cb.c. rand: the MSVC LCG on the per-thread seed (ptd + 0x14, set to 1 by _initptd; the game never calls srand). Emulator fuzz"
+0x498834,msvc_makepath,verified,"src/game/crt_cb.c. _makepath: drive ':', dir (with a '\\' added unless it ends in a slash), file name, '.' and extension. Emulator fuzz"
+0x4988c5,msvc_splitpath,verified,"src/game/crt_cb.c. _splitpath: drive, directory (up to the last slash), file name and extension (from the last '.'), each at most 255 characters. Emulator fuzz"
+0x498a0c,msvc_getcwd,verified,"src/game/crt_cb.c. _getcwd (_getdcwd 0x498a33 for the current drive, under the runtime's lock 0xc): into buf, or a new block of at least size bytes. Emulator fuzz"
+0x498b3f,msvc_chdir,verified,"src/game/crt_cb.c. _chdir: also sets the drive's ""=C:"" environment variable. Emulator fuzz"
+0x498bc5,msvc_access,verified,"src/game/crt_cb.c. _access: -1 if the file is missing, or read-only and mode asks for write (EACCES). Emulator fuzz"
+0x498c0b,msvc_vsprintf,verified,src/game/crt_cb.c. vsprintf (the arguments as a pointer to the stack words). Emulator fuzz
+0x498c89,msvc_exit,verified,"src/game/crt_cb.c. exit (doexit 0x498cab with quick = 0, retcaller = 0): the atexit table backwards, the pre-terminators and terminators, ExitProcess. Emulator fuzz"
+0x498d7c,msvc_beginthread,verified,"src/game/crt_cb.c. _beginthread: a per-thread data block (calloc 0x74, _initptd) holding the start address and argument, a suspended thread at the runtime's _threadstart 0x498df3, then resumed. -1 on failure. Emulator fuzz"
+0x499016,msvc_clock,verified,"src/game/crt_cb.c. clock: 1/10000ths of the 100 ns file time since start-up (_inittime stored the start at 0x4db2e8), i.e. milliseconds. Emulator fuzz"
+0x4993f0,msvc_strncmp,verified,src/game/crt_cb.c. strncmp: -1 / 0 / 1 (unsigned characters). Emulator fuzz
+0x49946c,msvc_calloc,verified,"src/game/crt_cb.c. calloc: zeroed (HEAP_ZERO_MEMORY), new handler retries. Emulator fuzz"
+0x49972a,msvc_vsnprintf,verified,src/game/crt_cb.c. _vsnprintf: at most count characters; -1 if they did not all fit (then no terminator either). Emulator fuzz

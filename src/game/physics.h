@@ -173,6 +173,80 @@ void GAMEAPI ai_aim_at_node(uint8_t *car, int32_t *v, uint32_t line_index, uint3
 void GAMEAPI ai_steer_to(uint8_t *car, const int32_t *target, int32_t check, int32_t reverse);
 void GAMEAPI ai_drive(uint8_t *car);
 void GAMEAPI ai_pace(uint8_t *car);
+int32_t GAMEAPI cd_volume_get(void); /* 0x497630 */
+int32_t GAMEAPI cd_volume_available(void); /* 0x4977b0 */
+int32_t GAMEAPI msvc_sprintf(char *buf, const char *format, ...); /* 0x4979f0 */
+void msvc_chkstk(void); /* 0x497a50: asm, size in eax, esp moved down */
+void msvc_ftol(void); /* 0x497a80: asm, st(0) in, edx:eax out */
+void msvc_cos(void); /* 0x497ac4: asm, double on the stack, result in st(0) */
+void msvc_sin(void); /* 0x497b74: asm, as cos */
+void msvc_atan(void); /* 0x497c24: asm, as cos */
+void msvc_pow(void); /* 0x497cc9: asm, two doubles on the stack, result in st(0) */
+int32_t GAMEAPI msvc_atoi(const char *s); /* 0x498046 */
+int32_t GAMEAPI msvc_isctype(int32_t c, uint32_t mask); /* 0x498051 */
+char *GAMEAPI msvc_strstr(const char *s, const char *find); /* 0x4980d0 */
+uint64_t __attribute__((stdcall)) msvc_allmul(uint64_t a, uint64_t b); /* 0x498180 */
+void msvc_sqrt(void); /* 0x4981d4: asm, as cos */
+void GAMEAPI msvc_free(void *p); /* 0x49827a */
+void *GAMEAPI msvc_malloc(uint32_t size); /* 0x4982c2 */
+char *GAMEAPI msvc_strncpy(char *dst, const char *src, uint32_t n); /* 0x498350 */
+char *GAMEAPI msvc_strcpy(char *dst, const char *src); /* 0x498450 */
+char *GAMEAPI msvc_strcat(char *dst, const char *src); /* 0x498460 */
+int32_t GAMEAPI msvc_toupper(int32_t c); /* 0x498540 */
+int32_t GAMEAPI msvc_tolower(int32_t c); /* 0x49867b */
+int32_t GAMEAPI msvc_rand(void); /* 0x4987b5 */
+void GAMEAPI msvc_makepath(char *path, const char *drive, const char *dir, const char *fname, const char *ext); /* 0x498834 */
+void GAMEAPI msvc_splitpath(const char *path, char *drive, char *dir, char *fname, char *ext); /* 0x4988c5 */
+char *GAMEAPI msvc_getcwd(char *buf, int32_t size); /* 0x498a0c */
+int32_t GAMEAPI msvc_chdir(const char *path); /* 0x498b3f */
+int32_t GAMEAPI msvc_access(const char *path, uint32_t mode); /* 0x498bc5 */
+int32_t GAMEAPI msvc_vsprintf(char *buf, const char *format, const uint8_t *args); /* 0x498c0b */
+void GAMEAPI msvc_exit(int32_t code); /* 0x498c89 */
+uint32_t GAMEAPI msvc_beginthread(uint32_t start, uint32_t stack_size, uint32_t arg); /* 0x498d7c */
+int32_t GAMEAPI msvc_clock(void); /* 0x499016 */
+int32_t GAMEAPI msvc_strncmp(const char *a, const char *b, uint32_t n); /* 0x4993f0 */
+void *GAMEAPI msvc_calloc(uint32_t count, uint32_t size); /* 0x49946c */
+int32_t GAMEAPI msvc_vsnprintf(char *buf, int32_t count, const char *format, const uint8_t *args); /* 0x49972a */
+void GAMEAPI debug_log_close(void); /* 0x496410 */
+void GAMEAPI debug_log_set_path(const char *path); /* 0x4962c0 */
+void GAMEAPI debug_log_printf(const char *fmt, ...); /* 0x496340 */
+void GAMEAPI debug_log_print(const char *fmt, ...); /* 0x4963c0 */
+void GAMEAPI archive_select(int32_t closed); /* 0x496510 */
+void GAMEAPI archive_open(const char *path, int32_t count); /* 0x496430 */
+uint8_t *GAMEAPI archive_get_record(int32_t index); /* 0x496570 */
+uint8_t *GAMEAPI archive_entry_load(int32_t index, uint8_t *buf); /* 0x496590 */
+void GAMEAPI archive_free(void *block); /* 0x496660 */
+int32_t GAMEAPI archive_state(void); /* 0x496680 */
+int32_t GAMEAPI cdaudio_device_open(void); /* 0x4966b0 */
+int32_t GAMEAPI cdaudio_device_close(void); /* 0x496730 */
+void GAMEAPI cdaudio_open(void); /* 0x496690 */
+int32_t GAMEAPI cdaudio_random(int32_t n); /* 0x496be0 */
+int32_t GAMEAPI cdaudio_choose_track(int32_t next); /* 0x496a90 */
+void GAMEAPI cdaudio_play_track(int32_t next); /* 0x496920 */
+void GAMEAPI cdaudio_stop(void); /* 0x4967a0 */
+void GAMEAPI cdaudio_close(void); /* 0x496700 */
+void GAMEAPI cdaudio_play(int32_t track); /* 0x496770 */
+void GAMEAPI cdaudio_pause(void); /* 0x4967f0 */
+void GAMEAPI cdaudio_resume(void); /* 0x496890 */
+void GAMEAPI cdaudio_poll(void); /* 0x4968b0 */
+void GAMEAPI cdaudio_set_shuffle(int32_t mode); /* 0x496c50 */
+void GAMEAPI cdaudio_set_skip_first(int32_t skip); /* 0x496c80 */
+int32_t GAMEAPI aux_query(uint32_t dev, uint8_t *caps, uint32_t *volume); /* 0x496e50 */
+void GAMEAPI aux_free(void); /* 0x496ed0 */
+void GAMEAPI aux_scan(void); /* 0x496d70 */
+void GAMEAPI aux_set_volume(int32_t left, int32_t right); /* 0x496d00 */
+int32_t GAMEAPI mixer_add_control(uint32_t dev, uint32_t h, uint32_t dest, uint32_t src, uint32_t index, uint32_t channels, uint32_t items, uint8_t *ctl); /* 0x497410 */
+int32_t GAMEAPI mixer_check_control(uint32_t dev, uint32_t h, uint32_t dest, uint32_t src, uint8_t *ctl, uint32_t index, uint32_t channels); /* 0x497320 */
+int32_t GAMEAPI mixer_scan_source(uint32_t dev, uint32_t h, uint32_t dest, uint32_t src); /* 0x4971f0 */
+int32_t GAMEAPI mixer_scan_destination(uint32_t dev, uint32_t h, uint32_t dest); /* 0x497160 */
+int32_t GAMEAPI mixer_scan_device(uint32_t dev); /* 0x4970c0 */
+int32_t GAMEAPI mixer_scan(int32_t mode); /* 0x497040 */
+void GAMEAPI mixer_set_volume(int32_t restore, int32_t left, int32_t right); /* 0x496f30 */
+void GAMEAPI cdaudio_set_volume(int32_t left, int32_t right); /* 0x496c90 */
+void crt_dsound_create(void); /* 0x4a1c36: naked jump through the DirectSoundCreate import slot (stdcall, 3 args) */
+char *GAMEAPI crt_strlwr(char *s); /* 0x4a1c3c */
+char *GAMEAPI crt_strupr(char *s); /* 0x4a1d70 */
+double GAMEAPI crt_hypot(double x, double y); /* 0x4a1ea4 */
 int32_t __attribute__((stdcall)) d3d_enum_device(const uint8_t *guid, const uint8_t *desc, const uint8_t *name, const uint8_t *hw, const uint8_t *sw, uint32_t user); /* 0x41d280 */
 int32_t GAMEAPI ddraw_depth_flag(int32_t bpp); /* 0x41d640 */
 int32_t GAMEAPI network_session_poll(int32_t mode); /* 0x435d43 */
