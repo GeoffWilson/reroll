@@ -59,11 +59,10 @@ Measure: `tools/remaining.py` after each batch, plus a run-time check
   logs the first hit, played through menus, races, replays and options:
   must log nothing.
 - Then stop mapping the exe's code section. Its initialised data (tables,
-  strings, menu layouts: 0x4a2000-0x4b3000 or so) is still needed; where it
-  comes from is the user's call (open): read from the user's Rollcage.exe
-  as a data file (never run), extracted once from it into a data file by a
-  tool, or written as C where it is our own description (constants, layouts)
-  rather than copied data.
+  strings, menu layouts) is still needed: decided 2026-10-11, a tool
+  extracts it once from the user's Rollcage.exe into a data file next to
+  the game files; the game loads that file at the same addresses and never
+  opens the exe. The repository holds only the extraction tool.
 - `REROLL_EXE_COVERAGE=build/remaining.txt` (native/exe_coverage.c) breaks
   on the first run of each listed function and logs it to native.log and
   exe_coverage.txt. Menus and the attract demo ran 571 of 1031 (build/
