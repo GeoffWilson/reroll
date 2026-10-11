@@ -14,6 +14,9 @@
 #include "game/fixed.h"
 #include "game/physics.h"
 #include "game/events.h"
+#ifdef REROLL_NATIVE
+#include "../native/rumble.h"
+#endif
 
 static const struct hook hooks[] = {
     {"gt20_decompress", 0x497860, gt20_decompress, {0x8b, 0x4c, 0x24, 0x04, 0x53, 0x55, 0x56, 0x8b}},
@@ -62,7 +65,18 @@ static void GAMEAPI car_speed_and_clock_entry(uint8_t *slot)
 
 static void GAMEAPI car_boost_entry(uint8_t *slot)
 {
+    uint8_t *car = *(uint8_t **)slot;
+    int32_t before = *(int32_t *)(car + 0x698);
     verify_call2(&boost_point, (verify_fn2)0x47aa00, (verify_fn2)(void *)car_boost, (int32_t)slot, 0);
+#ifdef REROLL_NATIVE
+    /* on a boost pad: a rumble for a human car with force feedback on (slot
+     * +0x268), on its joystick (+0x26c; the device at 0x4d75b8 + n * 0x43c) */
+    if (*(int32_t *)(car + 0x698) > before && slot[0x268]) {
+        int16_t joy = *(int16_t *)(slot + 0x26c);
+        if (joy >= 0 && joy < *(int32_t *)0x4d9554)
+            nt_rumble_pulse(*(void **)(0x4d75b8 + joy * 0x43c), 0x5000, 0x9000, 90);
+    }
+#endif
 }
 
 static void GAMEAPI car_wheels_place_entry(uint8_t *car)

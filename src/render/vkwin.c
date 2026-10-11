@@ -84,9 +84,8 @@ static int present_headless(struct vkwin *v)
         every = e ? atoi(e) : 0;
     }
     v->frames++;
-    if (!every || v->frames % (uint32_t)every) {
-        return vkr_end(v->r, v->pixels = realloc(v->pixels, (size_t)v->w * v->h * 4)) != 0;
-    }
+    if (!every || v->frames % (uint32_t)every)
+        return vkr_end(v->r, 0) != 0;
     v->pixels = realloc(v->pixels, (size_t)v->w * v->h * 4);
     if (!vkr_end(v->r, v->pixels))
         return 0;

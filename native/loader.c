@@ -304,6 +304,7 @@ int main(int argc, char **argv)
     nt_lowmem_arena(0); /* ours until the game starts */
     map_exe(nt_config.exe_host);
     nt_registry_load();
+    nt_profile_start();
 
     /* the game starts in its own directory, as from the launcher */
     snprintf(directory, sizeof directory, "%s", nt_config.exe_windows);
@@ -318,8 +319,10 @@ int main(int argc, char **argv)
     {
         uint32_t size = 0x1000000;
         uint8_t *stack = nt_lowmem_alloc(size);
+        extern uint32_t nt_profile_stack_top;
         if (!stack)
             nt_fatal("no memory for the game's stack");
+        nt_profile_stack_top = (uint32_t)(stack + size);
         __asm__ volatile("movl %0, %%esp\n"
                          "call start_game\n"
                          "ud2\n"

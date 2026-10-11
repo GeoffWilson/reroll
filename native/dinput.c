@@ -5,9 +5,10 @@
  *   X / Y left stick, Z = left trigger minus right trigger (one axis,
  *   accelerate is negative Z), Rx / Ry right stick, buttons A B X Y LB RB
  *   Back Start LS RS, the d-pad as POV hat 0.
- * Force feedback is not offered yet (the game creates its effects only for
- * devices that report it). */
+ * Pads with rumble report force feedback, and the game's DirectInput effects
+ * are played on the two rumble motors (see "force feedback" below). */
 #include "keys.h"
+#include "rumble.h"
 #include "nt.h"
 
 #include <SDL3/SDL.h>
@@ -43,12 +44,23 @@ static void make_guid(uint8_t out[16], uint32_t first, uint16_t second, uint16_t
 
 #define MAX_PADS 4
 
+#define MAX_EFFECTS 8
+
+struct effect;
+
 struct device {
     void **vtable;
     LONG refs;
     int pad;               /* -1 keyboard, else the gamepad index */
     SDL_Gamepad *gamepad;
     int32_t min[8], max[8]; /* axis ranges, by DIJOYSTATE2 offset / 4 */
+    struct effect *effects[MAX_EFFECTS];
+    DWORD ff_gain;          /* DIPROP_FFGAIN, 0..10000 */
+    uint16_t low, high;     /* the motors as last sent */
+    uint64_t sent_at;
+    int logged_no_rumble;
+    uint16_t pulse_low, pulse_high; /* nt_rumble_pulse, until pulse_until */
+    uint64_t pulse_until;
 };
 
 struct dinput {
@@ -100,6 +112,21 @@ static LONG WINAPI dev_release(struct device *d)
     return --d->refs > 0 ? d->refs : 0;
 }
 
+static void open_pad(struct device *d)
+{
+    if (d->pad >= 0 && !d->gamepad && d->pad < pad_count)
+        d->gamepad = SDL_OpenGamepad(pad_ids[d->pad]);
+}
+
+static int pad_rumbles(struct device *d)
+{
+    if (getenv("REROLL_NO_RUMBLE"))
+        return 0;
+    open_pad(d);
+    return d->gamepad && SDL_GetBooleanProperty(SDL_GetGamepadProperties(d->gamepad),
+                                                SDL_PROP_GAMEPAD_CAP_RUMBLE_BOOLEAN, false);
+}
+
 /* DIDEVCAPS: size, flags, dev type, axes, buttons, povs, ... */
 static HRESULT WINAPI dev_get_capabilities(struct device *d, DWORD *caps)
 {
@@ -115,6 +142,10 @@ static HRESULT WINAPI dev_get_capabilities(struct device *d, DWORD *caps)
         caps[3] = 5;
         caps[4] = 10;
         caps[5] = 1;
+        if (pad_rumbles(d))
+            caps[1] |= 0x100; /* DIDC_FORCEFEEDBACK: the game then creates its effects */
+        else if (d->gamepad && !d->logged_no_rumble++)
+            nt_log("dinput: pad %d has no rumble", d->pad);
     }
     return DI_OK;
 }
@@ -170,6 +201,7 @@ static HRESULT WINAPI dev_enum_objects(struct device *d, BOOL(WINAPI *callback)(
 #define DIPROP_RANGE 4
 #define DIPROP_DEADZONE 5
 #define DIPROP_SATURATION 6
+#define DIPROP_FFGAIN 7
 
 static int axis_index(const DWORD *header, int *all)
 {
@@ -193,6 +225,10 @@ static HRESULT WINAPI dev_get_property(struct device *d, const void *prop, DWORD
         header[4] = (uintptr_t)prop == DIPROP_DEADZONE ? 0 : 10000;
         return DI_OK;
     }
+    if ((uintptr_t)prop == DIPROP_FFGAIN) {
+        header[4] = d->ff_gain;
+        return DI_OK;
+    }
     return (HRESULT)DIERR_UNSUPPORTED;
 }
 
@@ -207,13 +243,294 @@ static HRESULT WINAPI dev_set_property(struct device *d, const void *prop, const
             }
         return DI_OK;
     }
+    if ((uintptr_t)prop == DIPROP_FFGAIN)
+        d->ff_gain = header[4] > 10000 ? 10000 : header[4];
     return DI_OK; /* dead zone, saturation, buffer size: SDL already filters */
 }
 
 static HRESULT WINAPI dev_acquire(struct device *d)
 {
-    if (d->pad >= 0 && !d->gamepad && d->pad < pad_count)
-        d->gamepad = SDL_OpenGamepad(pad_ids[d->pad]);
+    open_pad(d);
+    return DI_OK;
+}
+
+/* ---- force feedback ----
+ *
+ * The game (0x4892b0) makes six effects per pad that reports
+ * DIDC_FORCEFEEDBACK, for a wheel or a force-feedback stick, all of
+ * infinite duration unless set otherwise:
+ *   constant force  the strongest hit this frame, pushing left or right
+ *                   (0x489980: magnitude = hit x 250, up to 10000);
+ *   sine            the engine, period 100 ms at idle down to ~16 ms at
+ *                   full revs, magnitude 1500..2150 (0x489cd0);
+ *   square          a 100 ms pulse of 2000 (0x489e10);
+ *   spring, friction, inertia: the wheel's centring and weight (0x489ab0,
+ *                   0x489bc0), which a rumble pad has nothing to play with.
+ * On a pad's two motors: the hits and pulses on the low-frequency (heavy)
+ * motor. The engine is left out: a buzz all race long. The game leaves the
+ * constant force at its last value (it skips changes under 3600), so a hit
+ * is played as a thump that fades over FADE_MS from each change. Boost pads
+ * add theirs through nt_rumble_pulse (src/main.c). */
+
+#define DIEP_DURATION 0x1
+#define DIEP_GAIN 0x4
+#define DIEP_TYPESPECIFICPARAMS 0x100
+#define DIEP_START 0x20000000
+#define DI_INFINITE 0xffffffffu
+#define FADE_MS 250
+#define RUMBLE_MS 200 /* each request's length; renewed while the effects play */
+
+enum effect_kind { FX_CONSTANT, FX_PERIODIC, FX_OTHER };
+
+struct effect {
+    void **vtable;
+    LONG refs;
+    struct device *device;
+    uint8_t guid[16];
+    enum effect_kind kind;
+    DWORD duration, gain;   /* microseconds (DI_INFINITE), 0..10000 */
+    int32_t magnitude;      /* constant: -10000..10000; periodic: 0..10000 */
+    DWORD period;           /* periodic, microseconds */
+    int playing;
+    uint64_t started, changed; /* SDL ticks, ms */
+};
+
+static void **effect_vtable;
+
+static int effect_playing(const struct effect *e, uint64_t now)
+{
+    return e->playing && (e->duration == DI_INFINITE || now - e->started < e->duration / 1000);
+}
+
+/* Mix the playing effects into the motors and send them when they change,
+ * renewing a running rumble before it runs out. */
+static void rumble_update(struct device *d)
+{
+    uint64_t now = SDL_GetTicks();
+    double low = 0, high = 0;
+    int i;
+    if (!d->gamepad)
+        return;
+    for (i = 0; i < MAX_EFFECTS; i++) {
+        struct effect *e = d->effects[i];
+        double m;
+        if (!e || !effect_playing(e, now))
+            continue;
+        m = abs(e->magnitude) / 10000.0 * e->gain / 10000.0;
+        if (e->kind == FX_CONSTANT) {
+            uint64_t since = now - e->changed;
+            m *= since >= FADE_MS ? 0.0 : 1.0 - (double)since / FADE_MS;
+            if (m > low)
+                low = m;
+        } else if (e->kind == FX_PERIODIC && (!e->period || e->period >= 60000)) {
+            /* slow pulses; the engine's sine (faster) is left out */
+            if (m > low)
+                low = m;
+        }
+    }
+    if (now < d->pulse_until) {
+        low = SDL_max(low, d->pulse_low / 65535.0);
+        high = SDL_max(high, d->pulse_high / 65535.0);
+    }
+    {
+        double gain = d->ff_gain / 10000.0;
+        uint16_t l = (uint16_t)(SDL_min(low * gain, 1.0) * 65535.0);
+        uint16_t h = (uint16_t)(SDL_min(high * gain, 1.0) * 65535.0);
+        int running = d->low || d->high;
+        if (l == d->low && h == d->high && (!running || now - d->sent_at < RUMBLE_MS / 2))
+            return;
+        SDL_RumbleGamepad(d->gamepad, l, h, l || h ? RUMBLE_MS : 0);
+        d->low = l;
+        d->high = h;
+        d->sent_at = now;
+    }
+}
+
+void nt_rumble_pulse(void *device, uint16_t low, uint16_t high, uint32_t ms)
+{
+    struct device *d = device;
+    if (!d || d->vtable != device_vtable || d->pad < 0 || !pad_rumbles(d))
+        return;
+    d->pulse_low = low;
+    d->pulse_high = high;
+    d->pulse_until = SDL_GetTicks() + ms;
+    rumble_update(d);
+}
+
+static void rumble_stop_all(struct device *d)
+{
+    int i;
+    for (i = 0; i < MAX_EFFECTS; i++)
+        if (d->effects[i])
+            d->effects[i]->playing = 0;
+    d->pulse_until = 0;
+    rumble_update(d);
+}
+
+/* DIEFFECT: size, flags +4, duration +8, sample period +0xc, gain +0x10,
+ * trigger +0x14/+0x18, axes +0x1c/+0x20, direction +0x24, envelope +0x28,
+ * type-specific size +0x2c and pointer +0x30 */
+static void effect_set(struct effect *e, const uint8_t *params, DWORD flags)
+{
+    uint32_t size, at;
+    const uint8_t *specific;
+    if (!params)
+        return;
+    if (flags & DIEP_DURATION)
+        e->duration = *(const DWORD *)(params + 8);
+    if (flags & DIEP_GAIN)
+        e->gain = SDL_min(*(const DWORD *)(params + 0x10), 10000u);
+    if (!(flags & DIEP_TYPESPECIFICPARAMS))
+        return;
+    size = *(const DWORD *)(params + 0x2c);
+    at = *(const DWORD *)(params + 0x30);
+    specific = (const uint8_t *)(uintptr_t)at;
+    if (!specific)
+        return;
+    if (e->kind == FX_CONSTANT && size >= 4) {
+        int32_t m = *(const int32_t *)specific;
+        if (m != e->magnitude)
+            e->changed = SDL_GetTicks();
+        e->magnitude = m;
+    } else if (e->kind == FX_PERIODIC && size >= 16) {
+        e->magnitude = (int32_t)SDL_min(*(const DWORD *)specific, 10000u);
+        e->period = *(const DWORD *)(specific + 12);
+    }
+}
+
+static HRESULT WINAPI fx_query(struct effect *e, const void *iid, void **out)
+{
+    (void)iid;
+    *out = e;
+    e->refs++;
+    return DI_OK;
+}
+
+static LONG WINAPI fx_add_ref(struct effect *e)
+{
+    return ++e->refs;
+}
+
+static LONG WINAPI fx_release(struct effect *e)
+{
+    int i;
+    if (--e->refs > 0)
+        return e->refs;
+    for (i = 0; i < MAX_EFFECTS; i++)
+        if (e->device->effects[i] == e)
+            e->device->effects[i] = 0;
+    e->playing = 0;
+    rumble_update(e->device);
+    nt_lowmem_free(e);
+    return 0;
+}
+
+static HRESULT WINAPI fx_get_guid(struct effect *e, uint8_t *guid)
+{
+    memcpy(guid, e->guid, 16);
+    return DI_OK;
+}
+
+static HRESULT WINAPI fx_set_parameters(struct effect *e, const uint8_t *params, DWORD flags)
+{
+    effect_set(e, params, flags);
+    if (flags & DIEP_START) {
+        e->playing = 1;
+        e->started = SDL_GetTicks();
+    }
+    rumble_update(e->device);
+    return DI_OK;
+}
+
+static HRESULT WINAPI fx_start(struct effect *e, DWORD iterations, DWORD flags)
+{
+    (void)iterations;
+    (void)flags;
+    e->playing = 1;
+    e->started = SDL_GetTicks();
+    if (e->kind == FX_CONSTANT)
+        e->changed = e->started;
+    rumble_update(e->device);
+    return DI_OK;
+}
+
+static HRESULT WINAPI fx_stop(struct effect *e)
+{
+    e->playing = 0;
+    rumble_update(e->device);
+    return DI_OK;
+}
+
+static HRESULT WINAPI fx_get_status(struct effect *e, DWORD *status)
+{
+    *status = effect_playing(e, SDL_GetTicks()) ? 1 : 0; /* DIEGES_PLAYING */
+    return DI_OK;
+}
+
+static HRESULT WINAPI fx_ok0(struct effect *e)
+{
+    (void)e;
+    return DI_OK;
+}
+
+/* CreateEffect(guid, DIEFFECT or null, out, outer): GUID_ConstantForce is
+ * 13541c20-8e33-..., the periodic ones (square, sine, triangle, sawtooth
+ * up / down) 13541c22..26, the conditions and custom force the rest. */
+static HRESULT WINAPI dev_create_effect(struct device *d, const uint8_t *guid, const uint8_t *params,
+                                        struct effect **out, void *outer)
+{
+    uint32_t first = *(const uint32_t *)guid;
+    struct effect *e;
+    int i;
+    (void)outer;
+    *out = 0;
+    if (d->pad < 0 || !pad_rumbles(d))
+        return (HRESULT)DIERR_UNSUPPORTED;
+    for (i = 0; i < MAX_EFFECTS && d->effects[i]; i++)
+        ;
+    if (i == MAX_EFFECTS)
+        return (HRESULT)DIERR_UNSUPPORTED;
+    e = nt_lowmem_calloc(1, sizeof *e);
+    e->vtable = effect_vtable;
+    e->refs = 1;
+    e->device = d;
+    memcpy(e->guid, guid, 16);
+    e->kind = first == 0x13541c20u ? FX_CONSTANT
+              : first >= 0x13541c22u && first <= 0x13541c26u ? FX_PERIODIC : FX_OTHER;
+    e->duration = DI_INFINITE;
+    e->gain = 10000;
+    effect_set(e, params, 0xffffffffu & ~DIEP_START);
+    d->effects[i] = e;
+    nt_log("dinput: pad %d effect %08x (%s)", d->pad, first,
+           e->kind == FX_CONSTANT ? "constant" : e->kind == FX_PERIODIC ? "periodic" : "not played");
+    *out = e;
+    return DI_OK;
+}
+
+/* GetForceFeedbackState: DIGFFS_EMPTY (1) or not, DIGFFS_POWERON (0x80) */
+static HRESULT WINAPI dev_get_ff_state(struct device *d, DWORD *state)
+{
+    int i, any = 0;
+    for (i = 0; i < MAX_EFFECTS; i++)
+        any |= d->effects[i] != 0;
+    *state = 0x80 | (any ? 0 : 1);
+    return DI_OK;
+}
+
+/* SendForceFeedbackCommand: RESET 1, STOPALL 2, PAUSE 4, ... */
+static HRESULT WINAPI dev_send_ff_command(struct device *d, DWORD command)
+{
+    if (command & 3)
+        rumble_stop_all(d);
+    return DI_OK;
+}
+
+static HRESULT WINAPI dev_unacquire(struct device *d)
+{
+    if (d->gamepad && (d->low || d->high)) {
+        SDL_RumbleGamepad(d->gamepad, 0, 0, 0);
+        d->low = d->high = 0;
+    }
     return DI_OK;
 }
 
@@ -243,6 +560,7 @@ static HRESULT WINAPI dev_get_device_state(struct device *d, DWORD size, uint8_t
     }
     if (!d->gamepad)
         dev_acquire(d);
+    rumble_update(d); /* fades and ends rumble between the game's changes */
     if (d->gamepad && size >= 0x110) {
         int32_t *axes = (int32_t *)data;
         SDL_Gamepad *g = d->gamepad;
@@ -304,12 +622,6 @@ static HRESULT WINAPI dev_ok2(struct device *d, DWORD a, DWORD b)
     return DI_OK;
 }
 
-static HRESULT WINAPI dev_ok0(struct device *d)
-{
-    (void)d;
-    return DI_OK;
-}
-
 /* DIDEVICEINSTANCEA: size, guidInstance +4, guidProduct +0x14, dwDevType
  * +0x24, instance name +0x28, product name +0x12c, guidFFDriver +0x230 */
 static void fill_instance(uint8_t *info, int pad)
@@ -366,6 +678,7 @@ static HRESULT WINAPI di_create_device(struct dinput *o, const uint8_t *guid, st
     d = nt_lowmem_calloc(1, sizeof *d);
     d->vtable = device_vtable;
     d->refs = 1;
+    d->ff_gain = 10000;
     for (i = 0; i < 8; i++) {
         d->min[i] = 0;
         d->max[i] = 65535;
@@ -375,7 +688,7 @@ static HRESULT WINAPI di_create_device(struct dinput *o, const uint8_t *guid, st
     } else if (first - PAD_GUID < MAX_PADS && (int)(first - PAD_GUID) < pad_count) {
         d->pad = (int)(first - PAD_GUID);
     } else {
-        free(d);
+        nt_lowmem_free(d);
         *out = 0;
         return (HRESULT)DIERR_DEVICENOTREG;
     }
@@ -438,13 +751,27 @@ HRESULT WINAPI DirectInputCreateA(void *instance, DWORD version, struct dinput *
         device_vtable[5] = (void *)dev_get_property;
         device_vtable[6] = (void *)dev_set_property;
         device_vtable[7] = (void *)dev_acquire;
-        device_vtable[8] = (void *)dev_ok0;   /* Unacquire */
+        device_vtable[8] = (void *)dev_unacquire;
         device_vtable[9] = (void *)dev_get_device_state;
         device_vtable[11] = (void *)dev_ok1;  /* SetDataFormat */
         device_vtable[12] = (void *)dev_ok1;  /* SetEventNotification */
         device_vtable[13] = (void *)dev_ok2;  /* SetCooperativeLevel */
         device_vtable[15] = (void *)dev_get_device_info;
+        device_vtable[18] = (void *)dev_create_effect;
+        device_vtable[21] = (void *)dev_get_ff_state;
+        device_vtable[22] = (void *)dev_send_ff_command;
         device_vtable[25] = (void *)dev_poll;
+        effect_vtable = stubs("IDirectInputEffect", 13);
+        effect_vtable[0] = (void *)fx_query;
+        effect_vtable[1] = (void *)fx_add_ref;
+        effect_vtable[2] = (void *)fx_release;
+        effect_vtable[4] = (void *)fx_get_guid;
+        effect_vtable[6] = (void *)fx_set_parameters;
+        effect_vtable[7] = (void *)fx_start;
+        effect_vtable[8] = (void *)fx_stop;
+        effect_vtable[9] = (void *)fx_get_status;
+        effect_vtable[10] = (void *)fx_ok0; /* Download */
+        effect_vtable[11] = (void *)fx_ok0; /* Unload */
         the_dinput.vtable = dinput_vtable;
         nt_lowmem_arena(arena);
     }

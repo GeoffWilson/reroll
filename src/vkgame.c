@@ -27,6 +27,7 @@
 #include "widescreen.h"
 #ifdef REROLL_NATIVE
 #include "../native/display.h"
+void nt_profile_flush(void);
 #endif
 
 #include "hook.h"
@@ -582,6 +583,9 @@ int vkgame_flip(void)
     stat_present += now() - t0;
     frame_open = 0;
     presents++;
+#ifdef REROLL_NATIVE
+    nt_profile_flush();
+#endif
     if (++stat_frames == 1000) {
         uint64_t t = now();
         if (!stat_freq)

@@ -10,6 +10,7 @@
  * (0x489e10, 0x489cd0, 0x489980), network chat (0x48d270) and the network
  * checks 0x48cf20 / 0x45ef80. */
 #include "../runtime.h"
+#include <stdlib.h>
 #include "fixed.h"
 #include "physics.h"
 
@@ -582,6 +583,18 @@ int32_t GAMEAPI sim_step(int32_t network, int32_t step, int32_t count)
     uint8_t *slot, *local_car;
 
     (void)network;
+#ifdef REROLL_NATIVE
+    {
+        /* REROLL_DEBUG_WARP=n: car 1 fires a time warp every n steps (profiling) */
+        static int every = -1, steps;
+        if (every < 0) {
+            const char *e = getenv("REROLL_DEBUG_WARP");
+            every = e ? atoi(e) : 0;
+        }
+        if (every > 0 && U8(g_race, 0x54d) > 1 && ++steps % every == 0)
+            ((int32_t(GAMEAPI *)(const uint8_t *, int32_t))0x479890)(g_car_slots + CAR_SLOT_SIZE, 0);
+    }
+#endif
     for (i = 0; i < U8(g_race, 0x54d); i++)
         ((ptr_fn)0x48e7b0)(SLOT_CAR(g_car_slots + i * CAR_SLOT_SIZE));
     for (i = 0; i < U8(g_race, 0x54d); i++) {

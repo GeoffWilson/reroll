@@ -80,6 +80,23 @@ struct texture {
 
 #define MAX_PIPELINES 16
 
+#define FRAMES 2
+
+struct frame {
+    VkCommandBuffer cmd;
+    VkFence done;          /* signalled when its last submit has finished */
+    VkSemaphore acquired;  /* the swapchain image */
+    VkBuffer vertex_buffer, staging;
+    VkDeviceMemory vertex_memory, staging_memory;
+    void *vertex_mapped, *staging_mapped;
+    VkDeviceSize vertex_size, staging_size, staging_used;
+    struct {
+        int slot, w, h;
+        VkDeviceSize offset;
+    } pending[VKR_SLOTS * 2];
+    int pending_count;
+};
+
 struct vkr {
     PFN_vkGetInstanceProcAddr get_proc;
     PFN_vkCreateInstance vkCreateInstance;
@@ -97,7 +114,6 @@ struct vkr {
     uint32_t swap_count;
     int swap_w, swap_h;
     VkSemaphore acquired, rendered[8]; /* rendered: one per swapchain image, released when it is re-acquired */
-    VkFence done;
     VkInstance instance;
     VkPhysicalDevice gpu;
     VkPhysicalDeviceMemoryProperties memory_props;
@@ -105,7 +121,6 @@ struct vkr {
     uint32_t queue_family;
     VkQueue queue;
     VkCommandPool pool;
-    VkCommandBuffer cmd;
     VkSampler sampler;
     VkPhysicalDeviceFeatures features;
     float max_anisotropy;
@@ -135,19 +150,16 @@ struct vkr {
     int target_w, target_h;
     struct vertex *verts;
     uint32_t vert_count, vert_max;
-    /* persistent buffers: vertices, and texture uploads waiting for the next submit */
-    VkBuffer vertex_buffer, staging;
-    VkDeviceMemory vertex_memory, staging_memory;
-    void *vertex_mapped, *staging_mapped;
-    VkDeviceSize vertex_size, staging_size, staging_used;
-    struct {
-        int slot, w, h;
-        VkDeviceSize offset;
-    } pending[VKR_SLOTS * 2];
-    int pending_count;
+    /* FRAMES frames in flight, each with its own commands, fence and
+     * buffers (vertices, and texture uploads waiting for its submit); f is
+     * the one being built, its previous use already finished */
+    struct frame *f, frames[FRAMES];
+    int frame_index;
     struct command *commands;
     uint32_t command_count, command_max;
 };
+
+static int vertex_room(struct vkr *r, uint32_t want);
 
 static uint32_t memory_type(struct vkr *r, uint32_t bits, VkMemoryPropertyFlags want)
 {
@@ -171,8 +183,16 @@ static int make_buffer(struct vkr *r, VkDeviceSize size, VkBufferUsageFlags usag
         return 0;
     r->vkGetBufferMemoryRequirements(r->device, *buffer, &req);
     alloc.allocationSize = req.size;
+    /* cached if there is such memory: vertices are written straight into it,
+     * and uncached (write-combined) memory is slow for anything but a
+     * single streaming copy */
     alloc.memoryTypeIndex = memory_type(r, req.memoryTypeBits,
-                                        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+                                        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
+                                            VK_MEMORY_PROPERTY_HOST_CACHED_BIT);
+    if (!(r->memory_props.memoryTypes[alloc.memoryTypeIndex].propertyFlags & VK_MEMORY_PROPERTY_HOST_CACHED_BIT) ||
+        !(req.memoryTypeBits & (1u << alloc.memoryTypeIndex)))
+        alloc.memoryTypeIndex = memory_type(r, req.memoryTypeBits,
+                                            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
     if (r->vkAllocateMemory(r->device, &alloc, 0, memory) != VK_SUCCESS)
         return 0;
     r->vkBindBufferMemory(r->device, *buffer, *memory, 0);
@@ -240,7 +260,7 @@ static void barrier_aspect(struct vkr *r, VkImage image, VkImageAspectFlags aspe
     b.subresourceRange.aspectMask = aspect;
     b.subresourceRange.levelCount = VK_REMAINING_MIP_LEVELS;
     b.subresourceRange.layerCount = 1;
-    r->vkCmdPipelineBarrier(r->cmd, src_stage, dst_stage, 0, 0, 0, 0, 0, 1, &b);
+    r->vkCmdPipelineBarrier(r->f->cmd, src_stage, dst_stage, 0, 0, 0, 0, 0, 1, &b);
 }
 
 static void barrier(struct vkr *r, VkImage image, VkImageLayout from, VkImageLayout to, VkAccessFlags src_access,
@@ -249,20 +269,29 @@ static void barrier(struct vkr *r, VkImage image, VkImageLayout from, VkImageLay
     barrier_aspect(r, image, VK_IMAGE_ASPECT_COLOR_BIT, from, to, src_access, dst_access, src_stage, dst_stage);
 }
 
+/* After a frame's submit: on to the next frame's resources, once the GPU
+ * has finished with them (the frame before last). */
+static void next_frame(struct vkr *r)
+{
+    r->frame_index = (r->frame_index + 1) % FRAMES;
+    r->f = &r->frames[r->frame_index];
+    r->vkWaitForFences(r->device, 1, &r->f->done, VK_TRUE, UINT64_MAX);
+}
+
 static void begin_commands(struct vkr *r)
 {
     VkCommandBufferBeginInfo begin = {VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    r->vkResetCommandBuffer(r->cmd, 0);
-    r->vkBeginCommandBuffer(r->cmd, &begin);
+    r->vkResetCommandBuffer(r->f->cmd, 0);
+    r->vkBeginCommandBuffer(r->f->cmd, &begin);
 }
 
 static void submit_and_wait(struct vkr *r)
 {
     VkSubmitInfo submit = {VK_STRUCTURE_TYPE_SUBMIT_INFO};
-    r->vkEndCommandBuffer(r->cmd);
+    r->vkEndCommandBuffer(r->f->cmd);
     submit.commandBufferCount = 1;
-    submit.pCommandBuffers = &r->cmd;
+    submit.pCommandBuffers = &r->f->cmd;
     r->vkQueueSubmit(r->queue, 1, &submit, VK_NULL_HANDLE);
     r->vkQueueWaitIdle(r->queue);
 }
@@ -312,7 +341,7 @@ static int upload(struct vkr *r, struct texture *t, int w, int h, const uint8_t 
     copy.imageExtent.width = (uint32_t)w;
     copy.imageExtent.height = (uint32_t)h;
     copy.imageExtent.depth = 1;
-    r->vkCmdCopyBufferToImage(r->cmd, staging, t->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+    r->vkCmdCopyBufferToImage(r->f->cmd, staging, t->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
     barrier(r, t->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
             VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
@@ -333,16 +362,16 @@ static void free_texture(struct vkr *r, struct texture *t)
     memset(t, 0, sizeof *t);
 }
 
-/* Records the waiting texture copies into r->cmd (begun). */
+/* Records the waiting texture copies into r->f->cmd (begun). */
 static void record_uploads(struct vkr *r)
 {
     int i;
-    for (i = 0; i < r->pending_count; i++) {
-        struct texture *t = &r->textures[r->pending[i].slot];
+    for (i = 0; i < r->f->pending_count; i++) {
+        struct texture *t = &r->textures[r->f->pending[i].slot];
         VkBufferImageCopy copy = {0};
-        VkDeviceSize offset = r->pending[i].offset;
+        VkDeviceSize offset = r->f->pending[i].offset;
         int level, lw, lh;
-        if (!t->image || t->w != r->pending[i].w || t->h != r->pending[i].h)
+        if (!t->image || t->w != r->f->pending[i].w || t->h != r->f->pending[i].h)
             continue; /* replaced by a different size since */
         barrier(r, t->image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                 VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
@@ -355,20 +384,20 @@ static void record_uploads(struct vkr *r)
             copy.imageExtent.width = (uint32_t)lw;
             copy.imageExtent.height = (uint32_t)lh;
             copy.imageExtent.depth = 1;
-            r->vkCmdCopyBufferToImage(r->cmd, r->staging, t->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+            r->vkCmdCopyBufferToImage(r->f->cmd, r->f->staging, t->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
             offset += (VkDeviceSize)lw * (VkDeviceSize)lh * 4;
         }
         barrier(r, t->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                 VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
                 VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
     }
-    r->pending_count = 0;
-    r->staging_used = 0; /* every submit is waited for before the staging buffer is written again */
+    r->f->pending_count = 0;
+    r->f->staging_used = 0; /* written again only once this frame's submit has finished */
 }
 
 static void flush_uploads(struct vkr *r)
 {
-    if (!r->pending_count)
+    if (!r->f->pending_count)
         return;
     begin_commands(r);
     record_uploads(r);
@@ -376,7 +405,7 @@ static void flush_uploads(struct vkr *r)
 }
 
 /* A host-visible buffer of at least `need` bytes in *buffer (grown by
- * replacing it; the GPU is idle whenever this runs). */
+ * replacing it; the frame owning it has finished on the GPU). */
 static int ensure_buffer(struct vkr *r, VkDeviceSize need, VkBufferUsageFlags usage, VkBuffer *buffer,
                          VkDeviceMemory *memory, void **mapped, VkDeviceSize *size)
 {
@@ -447,13 +476,14 @@ int vkr_set_texture(struct vkr *r, int slot, int w, int h, const uint8_t *rgba)
     for (level = 0, lw = w, lh = h; level < levels; level++, lw /= 2, lh /= 2)
         size += (VkDeviceSize)lw * (VkDeviceSize)lh * 4;
     t = &r->textures[slot];
-    if (r->pending_count == (int)(sizeof r->pending / sizeof *r->pending) ||
-        r->staging_used + size > r->staging_size)
+    if (r->f->pending_count == (int)(sizeof r->f->pending / sizeof *r->f->pending) ||
+        r->f->staging_used + size > r->f->staging_size)
         flush_uploads(r);
-    if (!ensure_buffer(r, size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, &r->staging, &r->staging_memory, &r->staging_mapped,
-                       &r->staging_size))
+    if (!ensure_buffer(r, size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, &r->f->staging, &r->f->staging_memory, &r->f->staging_mapped,
+                       &r->f->staging_size))
         return 0;
     if (!t->image || t->w != w || t->h != h) {
+        r->vkDeviceWaitIdle(r->device); /* the image and descriptor may be in use by a frame in flight */
         free_texture(r, t);
         if (!make_image_levels(r, w, h, levels, VK_FORMAT_R8G8B8A8_UNORM,
                                VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, &t->image, &t->memory,
@@ -468,19 +498,35 @@ int vkr_set_texture(struct vkr *r, int slot, int w, int h, const uint8_t *rgba)
         write_descriptor(r, slot);
     }
     {
-        uint8_t *out = (uint8_t *)r->staging_mapped + r->staging_used;
-        memcpy(out, rgba, (size_t)w * (size_t)h * 4);
-        for (level = 1, lw = w, lh = h; level < levels; level++, lw /= 2, lh /= 2) {
-            mip_down(out, lw, lh, out + (size_t)lw * (size_t)lh * 4);
-            out += (size_t)lw * (size_t)lh * 4;
+        /* the levels are made in ordinary memory: the staging buffer is
+         * write-combined, and reading it back (as mip_down would) is
+         * hundreds of times slower */
+        static uint8_t *levels_buffer;
+        static size_t levels_size;
+        uint8_t *in = (uint8_t *)rgba, *out;
+        if (levels > 1) {
+            if (levels_size < size) {
+                free(levels_buffer);
+                levels_buffer = malloc((size_t)size);
+                levels_size = levels_buffer ? (size_t)size : 0;
+            }
+            if (!levels_buffer)
+                return 0;
+            memcpy(levels_buffer, rgba, (size_t)w * (size_t)h * 4);
+            for (level = 1, lw = w, lh = h, out = levels_buffer; level < levels; level++, lw /= 2, lh /= 2) {
+                mip_down(out, lw, lh, out + (size_t)lw * (size_t)lh * 4);
+                out += (size_t)lw * (size_t)lh * 4;
+            }
+            in = levels_buffer;
         }
+        memcpy((uint8_t *)r->f->staging_mapped + r->f->staging_used, in, (size_t)size);
     }
-    r->pending[r->pending_count].slot = slot;
-    r->pending[r->pending_count].w = w;
-    r->pending[r->pending_count].h = h;
-    r->pending[r->pending_count].offset = r->staging_used;
-    r->pending_count++;
-    r->staging_used += (size + 15) & ~(VkDeviceSize)15;
+    r->f->pending[r->f->pending_count].slot = slot;
+    r->f->pending[r->f->pending_count].w = w;
+    r->f->pending[r->f->pending_count].h = h;
+    r->f->pending[r->f->pending_count].offset = r->f->staging_used;
+    r->f->pending_count++;
+    r->f->staging_used += (size + 15) & ~(VkDeviceSize)15;
     return 1;
 }
 
@@ -740,10 +786,8 @@ struct vkr *vkr_create(PFN_vkGetInstanceProcAddr get_proc, int validation, const
         SWAPCHAIN_FUNCTIONS(LOAD_DEVICE)
     }
 #undef LOAD_DEVICE
-    r->vkCreateSemaphore(r->device, &semaphore_info, 0, &r->acquired);
     for (i = 0; i < 8; i++)
         r->vkCreateSemaphore(r->device, &semaphore_info, 0, &r->rendered[i]);
-    r->vkCreateFence(r->device, &fence_info, 0, &r->done);
     r->vkGetDeviceQueue(r->device, r->queue_family, 0, &r->queue);
     pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
     pool_info.queueFamilyIndex = r->queue_family;
@@ -751,7 +795,13 @@ struct vkr *vkr_create(PFN_vkGetInstanceProcAddr get_proc, int validation, const
     cmd_info.commandPool = r->pool;
     cmd_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     cmd_info.commandBufferCount = 1;
-    r->vkAllocateCommandBuffers(r->device, &cmd_info, &r->cmd);
+    fence_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+    for (i = 0; i < FRAMES; i++) {
+        r->vkCreateSemaphore(r->device, &semaphore_info, 0, &r->frames[i].acquired);
+        r->vkCreateFence(r->device, &fence_info, 0, &r->frames[i].done);
+        r->vkAllocateCommandBuffers(r->device, &cmd_info, &r->frames[i].cmd);
+    }
+    r->f = &r->frames[0];
 
     (void)sampler_info;
     make_sampler(r);
@@ -798,23 +848,26 @@ void vkr_destroy(struct vkr *r)
         r->vkDeviceWaitIdle(r->device);
         if (r->swapchain)
             r->vkDestroySwapchainKHR(r->device, r->swapchain, 0);
-        if (r->acquired)
-            r->vkDestroySemaphore(r->device, r->acquired, 0);
         for (i = 0; i < 8; i++)
             if (r->rendered[i])
                 r->vkDestroySemaphore(r->device, r->rendered[i], 0);
-        if (r->done)
-            r->vkDestroyFence(r->device, r->done, 0);
+        for (i = 0; i < FRAMES; i++) {
+            struct frame *f = &r->frames[i];
+            if (f->acquired)
+                r->vkDestroySemaphore(r->device, f->acquired, 0);
+            if (f->done)
+                r->vkDestroyFence(r->device, f->done, 0);
+            if (f->vertex_buffer) {
+                r->vkDestroyBuffer(r->device, f->vertex_buffer, 0);
+                r->vkFreeMemory(r->device, f->vertex_memory, 0);
+            }
+            if (f->staging) {
+                r->vkDestroyBuffer(r->device, f->staging, 0);
+                r->vkFreeMemory(r->device, f->staging_memory, 0);
+            }
+        }
         for (i = 0; i < VKR_SLOTS; i++)
             free_texture(r, &r->textures[i]);
-        if (r->vertex_buffer) {
-            r->vkDestroyBuffer(r->device, r->vertex_buffer, 0);
-            r->vkFreeMemory(r->device, r->vertex_memory, 0);
-        }
-        if (r->staging) {
-            r->vkDestroyBuffer(r->device, r->staging, 0);
-            r->vkFreeMemory(r->device, r->staging_memory, 0);
-        }
         free_texture(r, &r->white);
         if (r->target_view)
             r->vkDestroyImageView(r->device, r->target_view, 0);
@@ -843,7 +896,6 @@ void vkr_destroy(struct vkr *r)
         r->vkDestroySurfaceKHR(r->instance, r->surface, 0);
     if (r->instance)
         r->vkDestroyInstance(r->instance, 0);
-    free(r->verts);
     free(r->commands);
     free(r);
 }
@@ -851,6 +903,7 @@ void vkr_destroy(struct vkr *r)
 int vkr_begin(struct vkr *r, int w, int h, const float clear[4])
 {
     if (r->target && (r->target_w != w || r->target_h != h)) {
+        r->vkDeviceWaitIdle(r->device);
         r->vkDestroyImageView(r->device, r->target_view, 0);
         r->vkDestroyImage(r->device, r->target, 0);
         r->vkFreeMemory(r->device, r->target_memory, 0);
@@ -874,18 +927,48 @@ int vkr_begin(struct vkr *r, int w, int h, const float clear[4])
     memcpy(r->clear, clear, sizeof r->clear);
     r->vert_count = 0;
     r->command_count = 0;
+    if (!vertex_room(r, 1))
+        return 0;
+    r->verts = r->f->vertex_mapped;
+    r->vert_max = (uint32_t)(r->f->vertex_size / sizeof(struct vertex));
+    return 1;
+}
+
+/* The frame's vertices are written straight into its vertex buffer
+ * (r->verts is the buffer's mapping), grown here when full. */
+static int vertex_room(struct vkr *r, uint32_t want)
+{
+    struct frame *f = r->f;
+    VkBuffer old = f->vertex_buffer;
+    VkDeviceMemory old_memory = f->vertex_memory;
+    void *old_mapped = f->vertex_mapped;
+    VkDeviceSize old_size = f->vertex_size, size = old_size ? old_size : 0x10000 * sizeof(struct vertex);
+    if ((VkDeviceSize)want * sizeof(struct vertex) <= old_size)
+        return 1;
+    while (size < (VkDeviceSize)want * sizeof(struct vertex))
+        size *= 2;
+    if (!make_buffer(r, size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, &f->vertex_buffer, &f->vertex_memory)) {
+        f->vertex_buffer = old;
+        f->vertex_memory = old_memory;
+        return 0;
+    }
+    r->vkMapMemory(r->device, f->vertex_memory, 0, size, 0, &f->vertex_mapped);
+    f->vertex_size = size;
+    if (old) { /* this frame's previous submit has finished with it */
+        memcpy(f->vertex_mapped, old_mapped, (size_t)r->vert_count * sizeof(struct vertex));
+        r->vkUnmapMemory(r->device, old_memory);
+        r->vkDestroyBuffer(r->device, old, 0);
+        r->vkFreeMemory(r->device, old_memory, 0);
+    }
+    r->verts = f->vertex_mapped;
+    r->vert_max = (uint32_t)(size / sizeof(struct vertex));
     return 1;
 }
 
 static struct vertex *add_vertices(struct vkr *r, uint32_t n)
 {
-    if (r->vert_count + n > r->vert_max) {
-        uint32_t max = r->vert_max ? r->vert_max * 2 : 0x10000;
-        while (max < r->vert_count + n)
-            max *= 2;
-        r->verts = realloc(r->verts, max * sizeof *r->verts);
-        r->vert_max = max;
-    }
+    if (r->vert_count + n > r->vert_max && !vertex_room(r, r->vert_count + n))
+        return &r->verts[r->vert_max - n]; /* out of memory: overwrites the last ones */
     r->vert_count += n;
     return &r->verts[r->vert_count - n];
 }
@@ -1177,11 +1260,10 @@ int vkr_set_surface(struct vkr *r, VkSurfaceKHR surface, int w, int h)
     return 1;
 }
 
-/* Records the frame's drawing into r->cmd (begun), leaving the target in
+/* Records the frame's drawing into r->f->cmd (begun), leaving the target in
  * TRANSFER_SRC layout; returns the vertex buffer to free after the submit. */
 static int record_frame(struct vkr *r)
 {
-    VkDeviceSize vertex_size = (VkDeviceSize)(r->vert_count ? r->vert_count : 1) * sizeof(struct vertex);
     VkRenderingAttachmentInfo colour = {VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
     VkRenderingAttachmentInfo depth = {VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
     VkRenderingInfo rendering = {VK_STRUCTURE_TYPE_RENDERING_INFO};
@@ -1189,18 +1271,18 @@ static int record_frame(struct vkr *r)
     VkDeviceSize zero = 0;
     uint32_t i;
 
-    if (!ensure_buffer(r, vertex_size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, &r->vertex_buffer, &r->vertex_memory,
-                       &r->vertex_mapped, &r->vertex_size))
+    if (!r->f->vertex_buffer)
         return 0;
-    if (r->vert_count)
-        memcpy(r->vertex_mapped, r->verts, r->vert_count * sizeof(struct vertex));
     record_uploads(r);
+    /* the target and depth are shared by the frames in flight: wait for the
+     * previous frame's blit (or copy) out of the target and its depth tests */
     barrier(r, r->target, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, 0,
-            VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+            VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
             VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
     barrier_aspect(r, r->depth, VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
-                   VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, 0, VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-                   VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT);
+                   VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                   VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+                   VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT);
     depth.imageView = r->depth_view;
     depth.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
     depth.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
@@ -1217,10 +1299,10 @@ static int record_frame(struct vkr *r)
     rendering.colorAttachmentCount = 1;
     rendering.pColorAttachments = &colour;
     rendering.pDepthAttachment = &depth;
-    r->vkCmdBeginRendering(r->cmd, &rendering);
-    r->vkCmdSetViewport(r->cmd, 0, 1, &viewport);
-    r->vkCmdBindDescriptorSets(r->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r->layout, 0, 1, &r->set, 0, 0);
-    r->vkCmdBindVertexBuffers(r->cmd, 0, 1, &r->vertex_buffer, &zero);
+    r->vkCmdBeginRendering(r->f->cmd, &rendering);
+    r->vkCmdSetViewport(r->f->cmd, 0, 1, &viewport);
+    r->vkCmdBindDescriptorSets(r->f->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r->layout, 0, 1, &r->set, 0, 0);
+    r->vkCmdBindVertexBuffers(r->f->cmd, 0, 1, &r->f->vertex_buffer, &zero);
     for (i = 0; i < r->command_count; i++) {
         const struct command *c = &r->commands[i];
         int32_t push[3] = {c->slot, c->textured, c->colour_key};
@@ -1233,15 +1315,15 @@ static int record_frame(struct vkr *r)
             VkClearAttachment clear = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, {{{0}}}};
             VkClearRect rect = {scissor, 0, 1};
             clear.clearValue.depthStencil.depth = 1.0f;
-            r->vkCmdClearAttachments(r->cmd, 1, &clear, 1, &rect);
+            r->vkCmdClearAttachments(r->f->cmd, 1, &clear, 1, &rect);
             continue;
         }
-        r->vkCmdBindPipeline(r->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines[c->pipeline].pipeline);
-        r->vkCmdPushConstants(r->cmd, r->layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof push, push);
-        r->vkCmdSetScissor(r->cmd, 0, 1, &scissor);
-        r->vkCmdDraw(r->cmd, c->count, 1, c->first, 0);
+        r->vkCmdBindPipeline(r->f->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r->pipelines[c->pipeline].pipeline);
+        r->vkCmdPushConstants(r->f->cmd, r->layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof push, push);
+        r->vkCmdSetScissor(r->f->cmd, 0, 1, &scissor);
+        r->vkCmdDraw(r->f->cmd, c->count, 1, c->first, 0);
     }
-    r->vkCmdEndRendering(r->cmd);
+    r->vkCmdEndRendering(r->f->cmd);
     barrier(r, r->target, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
             VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT,
             VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
@@ -1256,6 +1338,14 @@ int vkr_end(struct vkr *r, uint8_t *rgba)
     VkBufferImageCopy copy = {0};
     void *mapped;
 
+    if (!rgba) { /* draw only */
+        begin_commands(r);
+        if (!record_frame(r))
+            return 0;
+        submit_and_wait(r);
+        next_frame(r);
+        return 1;
+    }
     if (!make_buffer(r, image_size, VK_BUFFER_USAGE_TRANSFER_DST_BIT, &readback, &readback_memory))
         return 0;
     begin_commands(r);
@@ -1266,13 +1356,14 @@ int vkr_end(struct vkr *r, uint8_t *rgba)
     copy.imageExtent.width = (uint32_t)r->width;
     copy.imageExtent.height = (uint32_t)r->height;
     copy.imageExtent.depth = 1;
-    r->vkCmdCopyImageToBuffer(r->cmd, r->target, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, readback, 1, &copy);
+    r->vkCmdCopyImageToBuffer(r->f->cmd, r->target, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, readback, 1, &copy);
     submit_and_wait(r);
     r->vkMapMemory(r->device, readback_memory, 0, image_size, 0, &mapped);
     memcpy(rgba, mapped, (size_t)image_size);
     r->vkUnmapMemory(r->device, readback_memory);
     r->vkDestroyBuffer(r->device, readback, 0);
     r->vkFreeMemory(r->device, readback_memory, 0);
+    next_frame(r);
     return 1;
 }
 
@@ -1287,7 +1378,7 @@ int vkr_present(struct vkr *r)
 
     if (!r->swapchain)
         return 0;
-    result = r->vkAcquireNextImageKHR(r->device, r->swapchain, UINT64_MAX, r->acquired, VK_NULL_HANDLE, &index);
+    result = r->vkAcquireNextImageKHR(r->device, r->swapchain, UINT64_MAX, r->f->acquired, VK_NULL_HANDLE, &index);
     if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
         return 0;
     begin_commands(r);
@@ -1304,26 +1395,26 @@ int vkr_present(struct vkr *r)
     blit.dstOffsets[1].x = r->swap_w;
     blit.dstOffsets[1].y = r->swap_h;
     blit.dstOffsets[1].z = 1;
-    r->vkCmdBlitImage(r->cmd, r->target, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, r->swap_images[index],
+    r->vkCmdBlitImage(r->f->cmd, r->target, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, r->swap_images[index],
                       VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_NEAREST);
     barrier(r, r->swap_images[index], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
             VK_ACCESS_TRANSFER_WRITE_BIT, 0, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
-    r->vkEndCommandBuffer(r->cmd);
+    r->vkEndCommandBuffer(r->f->cmd);
     submit.waitSemaphoreCount = 1;
-    submit.pWaitSemaphores = &r->acquired;
+    submit.pWaitSemaphores = &r->f->acquired;
     submit.pWaitDstStageMask = &wait_stage;
     submit.commandBufferCount = 1;
-    submit.pCommandBuffers = &r->cmd;
+    submit.pCommandBuffers = &r->f->cmd;
     submit.signalSemaphoreCount = 1;
     submit.pSignalSemaphores = &r->rendered[index];
-    r->vkResetFences(r->device, 1, &r->done);
-    r->vkQueueSubmit(r->queue, 1, &submit, r->done);
+    r->vkResetFences(r->device, 1, &r->f->done);
+    r->vkQueueSubmit(r->queue, 1, &submit, r->f->done);
     present.waitSemaphoreCount = 1;
     present.pWaitSemaphores = &r->rendered[index];
     present.swapchainCount = 1;
     present.pSwapchains = &r->swapchain;
     present.pImageIndices = &index;
     result = r->vkQueuePresentKHR(r->queue, &present);
-    r->vkWaitForFences(r->device, 1, &r->done, VK_TRUE, UINT64_MAX);
+    next_frame(r);
     return result == VK_SUCCESS;
 }

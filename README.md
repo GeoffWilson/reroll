@@ -30,9 +30,10 @@ code. On top of that:
 - **Options > Display** (fullscreen or windowed, resolution) and **anisotropic
   filtering** in Options > Graphics.
 - Modern gamepads through SDL3 (laid out as an XInput pad, triggers for the
-  throttle).
+  throttle), with the game's force feedback played as rumble
+  (`REROLL_NO_RUMBLE=1` turns it off).
 
-Not done yet: movies (skipped), force feedback, network play.
+Not done yet: movies (skipped), network play.
 
 ## Requirements
 

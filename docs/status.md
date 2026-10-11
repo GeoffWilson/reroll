@@ -53,6 +53,28 @@ physics on its original 32 ms step.
    colour, so colour-key texels don't darken edges; capped as the pages are
    atlases). Off samples the base level only, as before; on, the sampler is
    trilinear with that many samples (vkr_set_anisotropy, between frames).
+11. Force feedback as rumble (native/dinput.c): pads SDL says can rumble
+   report DIDC_FORCEFEEDBACK, so the game (0x4892b0) creates its six
+   DirectInput effects. Hits (constant force) and the 100 ms square pulse
+   go to the heavy motor; the engine (sine) is left out (a buzz all race),
+   and spring / friction / inertia are wheel effects with nothing to play.
+   The game leaves the constant force at its last value, so each change is
+   a thump fading over 250 ms. Boost pads add a pulse (src/main.c
+   car_boost_entry -> nt_rumble_pulse). REROLL_NO_RUMBLE=1 turns it off.
+12. Performance (2026-10-11): a race at 3440x1440 runs at ~1.75 ms a frame
+   (median; 99% 2.5 ms) uncapped, time warp included. Fixed: mip levels
+   were built by reading back write-combined staging memory (~27 ms per
+   texture upload, every step during a time warp); the renderer waited
+   for the GPU every frame (now 2 frames in flight, src/render/vkr.c);
+   vertices are written straight into host-cached buffer memory instead
+   of copied each frame; the original's 30 fps menu wait sleeps instead
+   of spinning; headless runs read back only frames they save.
+   Profiling: REROLL_PROFILE=1 (native/profile.c, perf_event_open, no
+   signals) writes profile.bin / profile.maps; tools/profile.py <Direct3D
+   folder> [--from F --to F --slow MS] prints the breakdown, original
+   functions named from docs/functions.csv (nearest start, so unlisted
+   ones take a neighbour's name). REROLL_DEBUG_WARP=n fires a time warp
+   from car 1 every n steps (headless tests).
 
 **Native build (docs/native/plan.md, steps 1-7):**
 1. Loader (native/loader.c): maps Rollcage.exe at 0x400000, fills its
@@ -91,12 +113,7 @@ can't drive in a headless race.
 
 1. **Movies** (native plan step 8): the intro/FMV player through the fake
    DirectDraw back buffer.
-2. **Features the user asked for:**
-   - gamepad force feedback (the game already creates DirectInput force
-     effects for devices that report it: implement IDirectInputEffect on
-     SDL rumble);
-
-3. Later: Doppler in the mixer; port the remaining original code (scene
+2. Later: Doppler in the mixer; port the remaining original code (scene
    drawing, front-end 3D, C runtime, platform) and then a 64-bit build;
    network play (skipped for now).
 

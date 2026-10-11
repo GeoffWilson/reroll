@@ -246,8 +246,10 @@ int32_t GAMEAPI present_frame(void)
     present_prepare_a();
     present_prepare_b();
     start = game_time();
+    /* the original spins here; sleep while more than 2 ms remain */
     while (!nowait && game_time() < g_last_present + interval)
-        ;
+        if ((int32_t)(g_last_present + interval - game_time()) > 2)
+            Sleep(1);
     g_last_present = game_time();
     present_after_wait();
     if (g_present_pending) {

@@ -78,6 +78,10 @@ struct nt_config {
 };
 extern struct nt_config nt_config;
 
+/* native/profile.c: REROLL_PROFILE=1 */
+void nt_profile_start(void);
+void nt_profile_flush(void);
+
 /* paths (native/paths.c): Windows path -> host path, resolving each part
  * case-insensitively. Returns 0 if the drive is unknown. `must_exist`: the
  * last part too (else it may be new). */
