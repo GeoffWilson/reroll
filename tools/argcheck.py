@@ -22,8 +22,7 @@ import re
 import subprocess
 import sys
 
-CFLAGS = ["--target=i686-pc-windows-msvc", "-fsyntax-only", "-ffreestanding", "-fno-builtin", "-Isrc", "-Isrc/render/shim",
-          "-Ibuild/vkinc", "-Ibuild/render",
+CFLAGS = ["--target=i686-linux-gnu", "-fsyntax-only", "-DREROLL_NATIVE", "-fms-extensions", "-Isrc", "-Ibuild/render",
           "-Xclang", "-ast-dump=json"]
 
 

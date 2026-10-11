@@ -69,7 +69,7 @@ void nt_exe_coverage_start(void)
     FILE *f;
     int i;
 
-    if (!list || !(f = fopen(list, "r")))
+    if (!list || nt_no_exe || !(f = fopen(list, "r")))
         return;
     while (fgets(line, sizeof line, f) && trap_count < MAX_TRAPS) {
         char *end;

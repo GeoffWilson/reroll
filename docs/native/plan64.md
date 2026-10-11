@@ -63,6 +63,11 @@ Measure: `tools/remaining.py` after each batch, plus a run-time check
   extracts it once from the user's Rollcage.exe into a data file next to
   the game files; the game loads that file at the same addresses and never
   opens the exe. The repository holds only the extraction tool.
+  Done (native/datafile.c): `rollcage --extract-data` writes
+  reroll_data.bin (the exe without its code); `REROLL_NO_EXE=1` maps it,
+  fills the code range with int3 except our hooks' jumps, and stops at the
+  first original code still needed, naming it in native.log. First stop
+  (2026-10-12): the C runtime start-up 0x498ec5.
 - `REROLL_EXE_COVERAGE=build/remaining.txt` (native/exe_coverage.c) breaks
   on the first run of each listed function and logs it to native.log and
   exe_coverage.txt. Menus and the attract demo ran 571 of 1031 (build/

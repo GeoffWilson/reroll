@@ -1,6 +1,12 @@
 #include "hook.h"
 #include "log.h"
 
+#ifdef REROLL_NATIVE
+extern int nt_no_exe; /* native/datafile.c: the code range holds only traps */
+#else
+static const int nt_no_exe = 0;
+#endif
+
 #define TEXT_START 0x401000u
 #define TEXT_SIZE 0xa2000u
 
@@ -28,8 +34,21 @@ static void write_jmp(const struct hook *hook)
     FlushInstructionCache(GetCurrentProcess(), target, 5);
 }
 
+/* Without the exe, the bytes a hook expects are written into the traps
+ * first (byte by byte: neighbouring hooks' expected bytes overlap). */
+static void no_exe_prepare(const struct hook *hook)
+{
+    uint32_t i;
+    if (!nt_no_exe)
+        return;
+    for (i = 0; i < sizeof(hook->expect); i++)
+        if (((uint8_t *)hook->address)[i] == 0xcc)
+            ((uint8_t *)hook->address)[i] = hook->expect[i];
+}
+
 int hook_install(const struct hook *hook)
 {
+    no_exe_prepare(hook);
     if (memcmp((const void *)hook->address, hook->expect, sizeof(hook->expect)) != 0) {
         log_printf("hook %s: unexpected bytes at %p, not patched", hook->name, hook->address);
         return 0;
@@ -55,6 +74,14 @@ void *hook_install_trampoline(const struct hook *hook, uint32_t copy_len)
     uint8_t *tramp;
     int32_t rel;
 
+    if (nt_no_exe) { /* the original is gone: calling it traps (native/datafile.c) */
+        tramp = VirtualAlloc(0, 16, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+        if (!tramp || !hook_install(hook))
+            return 0;
+        memset(tramp, 0xcc, 16);
+        log_printf("hook %s: no original (trap at %p)", hook->name, (uint32_t)tramp);
+        return tramp;
+    }
     if (memcmp(target, hook->expect, sizeof(hook->expect)) != 0) {
         log_printf("hook %s: unexpected bytes at %p, not patched", hook->name, hook->address);
         return 0;

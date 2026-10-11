@@ -173,6 +173,8 @@ static void map_exe(const char *path)
         if (raw_size > vsize && vsize)
             raw_size = vsize;
         memcpy(image + va, file + raw, raw_size);
+        if ((u32(s + 36) & 0x20) && !raw_size) /* the data file: no code, only traps */
+            memset(image + va, 0xcc, vsize);
         /* writable, and not the one with the import table (.rdata is read-only) */
         if ((u32(s + 36) & 0x80000000u) && saved_count < 8) {
             saved[saved_count].va = va;
@@ -234,12 +236,21 @@ static void configure(int argc, char **argv)
     config_default(nt_config.drive_d, sizeof nt_config.drive_d, "REROLL_DRIVE_D", fallback);
     config_default(nt_config.exe_windows, sizeof nt_config.exe_windows, "REROLL_EXE",
                    "C:\\Program Files (x86)\\Psygnosis\\Rollcage\\Direct3D\\Rollcage.exe");
-    if (!nt_host_path(nt_config.exe_windows, nt_config.exe_host, sizeof nt_config.exe_host, 1))
+    nt_no_exe = getenv("REROLL_NO_EXE") && atoi(getenv("REROLL_NO_EXE"));
+    {
+        /* the game's folder: the exe's, whether or not the exe is there */
+        char folder[512];
+        snprintf(folder, sizeof folder, "%s", nt_config.exe_windows);
+        p = strrchr(folder, '\\');
+        if (p)
+            *p = 0;
+        if (!nt_host_path(folder, nt_config.data_dir, sizeof nt_config.data_dir, 1))
+            nt_fatal("cannot find %s (C: is %s)", folder, nt_config.drive_c);
+    }
+    if (nt_no_exe)
+        snprintf(nt_config.exe_host, sizeof nt_config.exe_host, "%s/reroll_data.bin", nt_config.data_dir);
+    else if (!nt_host_path(nt_config.exe_windows, nt_config.exe_host, sizeof nt_config.exe_host, 1))
         nt_fatal("cannot find %s (C: is %s)", nt_config.exe_windows, nt_config.drive_c);
-    snprintf(nt_config.data_dir, sizeof nt_config.data_dir, "%s", nt_config.exe_host);
-    p = strrchr(nt_config.data_dir, '/');
-    if (p)
-        *p = 0;
 
     /* the command line as Windows would show it: "exe" args */
     snprintf(nt_config.command_line, sizeof nt_config.command_line, "\"%s\"", nt_config.exe_windows);
@@ -284,6 +295,13 @@ int main(int argc, char **argv)
     char log_path[600], directory[512];
     char *slash;
 
+    if (argc > 1 && !strcmp(argv[1], "--extract-data")) {
+        char out[600];
+        unsetenv("REROLL_NO_EXE");
+        configure(1, argv);
+        snprintf(out, sizeof out, "%s/reroll_data.bin", nt_config.data_dir);
+        return nt_data_extract(nt_config.exe_host, out) ? 0 : 1;
+    }
     configure(argc, argv);
     setenv("REROLL_VULKAN", "1", 0); /* there is no other renderer here */
     choose_decorations();
@@ -302,7 +320,11 @@ int main(int argc, char **argv)
         nt_log("loader: cannot map the low memory at 0x10000 (%s)", strerror(errno));
     nt_lowmem_init();
     nt_lowmem_arena(0); /* ours until the game starts */
+    if (nt_no_exe && access(nt_config.exe_host, R_OK) != 0)
+        nt_fatal("no %s: run rollcage --extract-data once (it reads Rollcage.exe)", nt_config.exe_host);
     map_exe(nt_config.exe_host);
+    if (nt_no_exe)
+        nt_data_trap_install();
     nt_registry_load();
     nt_profile_start();
 

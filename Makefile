@@ -164,7 +164,7 @@ NATIVE_FLAGS := --target=i686-linux-gnu -O2 -g -fwrapv -fno-strict-aliasing -mll
                 -fno-pic -mstackrealign -Wall -Wextra -Wno-missing-field-initializers
 NATIVE_GAME_SRCS := $(filter-out src/runtime.c,$(GAME_SRCS))
 NATIVE_MODULES := native/kernel32.c native/advapi32.c native/user32.c native/gdi32.c native/winmm.c native/ole32.c native/qmixer.c native/dsound.c native/dplayx.c native/ddraw.c native/dinput.c
-NATIVE_SRCS := native/loader.c native/teb.c native/paths.c native/modules.c native/keys.c native/lowmem.c native/profile.c native/exe_coverage.c $(NATIVE_MODULES)
+NATIVE_SRCS := native/loader.c native/teb.c native/paths.c native/modules.c native/keys.c native/lowmem.c native/profile.c native/exe_coverage.c native/datafile.c $(NATIVE_MODULES)
 NATIVE_GAME_OBJS := $(NATIVE_GAME_SRCS:src/%.c=build/native/src/%.o)
 NATIVE_OBJS := $(NATIVE_SRCS:native/%.c=build/native/%.o) build/native/exports.o
 

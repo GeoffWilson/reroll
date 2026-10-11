@@ -81,6 +81,10 @@ extern struct nt_config nt_config;
 /* native/profile.c: REROLL_PROFILE=1 */
 void nt_profile_start(void);
 void nt_profile_flush(void);
+/* native/datafile.c: the exe's data without its code (REROLL_NO_EXE=1) */
+extern int nt_no_exe;
+int nt_data_extract(const char *exe, const char *out_path);
+void nt_data_trap_install(void);
 /* native/exe_coverage.c: REROLL_EXE_COVERAGE=<list> */
 void nt_exe_coverage_start(void);
 
