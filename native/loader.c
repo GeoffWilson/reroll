@@ -405,6 +405,7 @@ __attribute__((used, noreturn)) static void start_game(void)
     BOOL WINAPI reroll_install(HANDLE instance, DWORD reason, void *reserved); /* src/main.c */
     nt_teb_init_thread();
     reroll_install((HANDLE)IMAGE_BASE, 1 /* attach */, 0);
+    nt_exe_coverage_start(); /* after the hooks: their entries are ours */
     nt_lowmem_arena(1); /* from here on, what's allocated is the game's */
     nt_game_started = 1;
     if (setjmp(restart_point))

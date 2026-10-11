@@ -16,7 +16,8 @@ with the same arguments in the same order, same return value.
 - Disassembly: `build/rollcage.asm` (llvm-objdump; it desyncs in a few places, so check raw bytes with `make disasm`)
 - Function list with sizes: `build/functions.txt`; argument sizes: `build/params.txt`
 - What's done: `docs/functions.csv`; data layouts found so far: `docs/formats.md`
-- Rendering is parked (a Vulkan renderer will replace it): never port drawing code.
+- The Vulkan renderer decodes the packets the game's drawing code builds;
+  drawing code is ported like any other (same packets, same memory).
 
 ## Your inputs
 
@@ -26,14 +27,24 @@ with the same arguments in the same order, same return value.
   `((void(GAMEAPI *)(uint8_t *))0x4612a0)(body)`, or a `#define` of that.
 - A short note from the lead with the area and anything special.
 
-## Scope: leave original, call by address
+## Scope
 
-File I/O, memory allocation, DirectDraw/Direct3D, x87 floating point, the C
-runtime (0x496000 and up), sound engine internals, network transport, and
-pure drawing (sprite/packet building, text layout, fades). If a function
-mixes logic with these, port the logic and call the rest by address. Never
-hook 0x471c90 or 0x471da0 (the verifier needs them). List everything you
-skip in your notes with the reason.
+Everything that still runs is now in scope (docs/native/plan64.md, phase
+1): the C runtime, file I/O, allocation, x87 float code, DirectDraw use and
+drawing. Your group's note says what it covers. Functions outside your
+list are called by address so the existing hooks route them. Keep the
+calls the original makes to Windows functions (through the import table,
+`*(void **)0x4a2xxx`, or the same named function), so the emulator test can
+log and compare them; a later step replaces them. Never hook 0x471c90 or
+0x471da0 (the verifier needs them). List anything you skip in your notes
+with the reason.
+
+Allocation must stay in the game's low memory (below 2 GB): use the same
+Windows heap / virtual memory calls the original makes. A family of
+functions that share state (an allocator and its free, a FILE table and
+its stream functions, rand and srand) must be replaced together, including
+any internal entry the remaining original code reaches directly; say in
+your notes which internal entries you covered.
 
 ## Per function
 
@@ -92,12 +103,12 @@ Budget, to keep batches quick:
 - Don't edit shared files (`Makefile`, `src/main.c`, `physics.h`,
   `verify.c`, `tests/emu_fixed.py`, other groups' files); say in your report
   if one needs changing. Don't install or launch the game.
-- Check the DLL build of your file: `make build/obj/game/<prefix>_<g>.obj`,
+- Check the build of your file: `make build/native/src/game/<prefix>_<g>.o`,
   warning-free.
 
 ## In-game verification
 
-With `REROLL_VERIFY=1` the DLL runs the original, snapshots memory (the data
+With `REROLL_VERIFY=1` the game runs the original, snapshots memory (the data
 section 0x4a7000-0x6d3000 and the game heap), runs ours from the same state,
 and logs differences to `reroll.log`. A `verify_call2` wrapper only suits
 functions whose whole call tree touches just that memory: no file I/O,
