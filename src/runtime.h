@@ -1,37 +1,21 @@
-/* Minimal freestanding runtime: no C library, only the Win32 calls we use. */
+/* The reimplementation's runtime: the C types, the game's calling
+ * conventions, and the Windows calls the code makes. */
 #ifndef REROLL_RUNTIME_H
 #define REROLL_RUNTIME_H
 
-#ifdef _WIN32
-typedef unsigned char uint8_t;
-typedef signed char int8_t;
-typedef unsigned short uint16_t;
-typedef short int16_t;
-typedef unsigned int uint32_t;
-typedef int int32_t;
-typedef unsigned long long uint64_t;
-typedef long long int64_t;
-typedef unsigned int size_t;
-typedef unsigned int uintptr_t;
-#else
-/* Native builds (tests) use the host C library. */
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
-#endif
 
 /* The native Linux build (REROLL_NATIVE, docs/native/plan.md) keeps the
  * Windows declarations below: they resolve to its own implementations
- * (native/). */
-#if defined(_WIN32) || defined(REROLL_NATIVE)
+ * (native/). The emulator tests (make emu-test) build without them. */
+#if defined(REROLL_NATIVE)
 #define REROLL_WIN32_API 1
 #endif
 
 /* Calling convention of the original game functions (MSVC cdecl). */
-#if defined(_WIN32) && defined(__i386__)
-#define GAMEAPI __cdecl
-#define WINAPI __stdcall
-#elif defined(REROLL_NATIVE)
+#if defined(REROLL_NATIVE)
 #define GAMEAPI __attribute__((cdecl))
 #define WINAPI __attribute__((stdcall))
 #else
@@ -39,12 +23,8 @@ typedef unsigned int uintptr_t;
 #define WINAPI
 #endif
 
-/* A C symbol's name in inline assembly (COFF prefixes an underscore). */
-#ifdef _WIN32
-#define ASM_SYM(name) "_" name
-#else
+/* A C symbol's name in inline assembly. */
 #define ASM_SYM(name) name
-#endif
 
 #ifdef REROLL_WIN32_API
 typedef void *HANDLE;
@@ -95,12 +75,6 @@ __declspec(dllimport) size_t WINAPI VirtualQuery(const void *addr, struct memory
 #define MEM_RELEASE 0x8000
 #define MEM_RESERVE 0x2000
 __declspec(dllimport) HANDLE WINAPI GetActiveWindow(void);
-#endif
-
-#ifdef _WIN32
-void *memcpy(void *dst, const void *src, size_t n);
-void *memset(void *dst, int c, size_t n);
-int memcmp(const void *a, const void *b, size_t n);
 #endif
 
 #endif

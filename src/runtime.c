@@ -1,4 +1,5 @@
-/* The compiler may emit calls to these even with -fno-builtin; there is no CRT.
+/* For the emulator tests' freestanding build (make emu-test): the compiler may
+ * emit calls to these even with -fno-builtin, and there is no C library.
  * memcpy and memcmp work a dword at a time: verify.c copies and compares
  * megabytes of game memory every physics step. */
 #include "runtime.h"

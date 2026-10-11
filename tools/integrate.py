@@ -7,7 +7,7 @@ For each group g it takes build/groups/<g>_hooks.txt (hook table lines, then
 '--- verify ---' and the verify wrappers) and <g>_protos.txt, and adds:
 the wrappers before main.c's physics hook table, the hook lines to the
 replacement table, the prototypes to physics.h, and src/game/PREFIX_<g>.c to
-the Makefile's SRCS and EMU_SRCS. tests/emu_PREFIX_<g>.py is picked up by
+the Makefile's GAME_SRCS and EMU_SRCS. tests/emu_PREFIX_<g>.py is picked up by
 make emu-test on its own. Refuses duplicate hook addresses.
 """
 import re

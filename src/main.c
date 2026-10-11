@@ -1,5 +1,6 @@
-/* reroll: loaded into Rollcage.exe as a proxy QMIXER.DLL (see def/qmixer.def).
- * On attach it redirects reimplemented game functions to our code. */
+/* reroll: installed into the mapped Rollcage.exe by the native loader
+ * (native/loader.c) before the game starts: it redirects the reimplemented
+ * game functions to our code. */
 #include "runtime.h"
 #include "hook.h"
 #include "log.h"
@@ -2555,7 +2556,7 @@ void reroll_restart(void)
     vkgame_restart();
 }
 
-BOOL WINAPI DllMain(HANDLE instance, DWORD reason, void *reserved)
+BOOL WINAPI reroll_install(HANDLE instance, DWORD reason, void *reserved)
 {
     unsigned i, ok = 0, installed = 0;
 
@@ -2584,7 +2585,7 @@ BOOL WINAPI DllMain(HANDLE instance, DWORD reason, void *reserved)
         }
     }
     /* race_draw before race_frame/present_frame can need it: they are only
-     * reached once the game is running, after DllMain. */
+     * reached once the game is running, after this. */
     race_draw_original = hook_install_trampoline(&race_draw_hook, RACE_DRAW_COPY_LEN);
     if (race_draw_original)
         ok++;

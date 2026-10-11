@@ -1,9 +1,9 @@
 /* The Vulkan renderer in the game's own window (docs/renderer/plan.md,
- * step 6), with REROLL_VULKAN=1.
+ * step 6). native/loader.c sets REROLL_VULKAN=1.
  *
  * - DirectDraw runs in the game's own windowed mode (the /W switch: no
- *   display mode change), and its window becomes a borderless one covering
- *   the screen (or REROLL_RES=WxH). Direct3D still exists (the game makes
+ *   display mode change); its window is the SDL window (native/user32.c,
+ *   sized by Options > Display). Direct3D still exists (the game makes
  *   its texture surfaces, viewports and scenes with it) but never reaches
  *   the screen: nothing is drawn into it and its flip is skipped.
  * - Every ordering table walk (DrawOTag, through the wrappers 0x428470 /
@@ -480,12 +480,10 @@ static int start(void)
 {
     char value[8];
     HWND window = G_WINDOW;
-    int child = -1, validation = 0, vsync = -1;
+    int validation = 0, vsync = -1;
 
     if (!window)
         return 0;
-    if (GetEnvironmentVariableA("REROLL_VK_CHILD", value, sizeof value))
-        child = value[0] == '1';
     if (GetEnvironmentVariableA("REROLL_VK_VALIDATE", value, sizeof value) && value[0] == '1')
         validation = 1;
     if (GetEnvironmentVariableA("REROLL_VSYNC", value, sizeof value))
@@ -494,7 +492,7 @@ static int start(void)
     ShowCursor(0); /* as the game does in fullscreen */
     prims = malloc(MAX_PRIMS * sizeof *prims);
     verts = malloc(MAX_VERTS * sizeof *verts);
-    if (!prims || !verts || !vkwin_open(&win, window, child, validation, vsync)) {
+    if (!prims || !verts || !vkwin_open(&win, window, validation, vsync)) {
         log_printf("vulkan: could not start, the original renderer carries on");
         state = -1;
         return 0;
@@ -582,7 +580,6 @@ int vkgame_flip(void)
     t0 = now();
     vkwin_present(&win);
     stat_present += now() - t0;
-    vkwin_show(&win, 1);
     frame_open = 0;
     presents++;
     if (++stat_frames == 1000) {
@@ -599,21 +596,6 @@ int vkgame_flip(void)
         stat_uploads = 0;
     }
     return 1;
-}
-
-/* movie_run 0x493210(path, window, config): movies draw to the window with
- * DirectDraw, so the Vulkan child steps aside. */
-typedef int32_t(GAMEAPI *movie_fn)(uint32_t, uint32_t, uint32_t);
-static movie_fn movie_original;
-
-static int32_t GAMEAPI movie_run(uint32_t path, uint32_t window, uint32_t config)
-{
-    int32_t result;
-    if (state == 2)
-        vkwin_show(&win, 0);
-    result = movie_original(path, window, config);
-    frame_open = 0;
-    return result;
 }
 
 /* The loading pictures (and other images, 0x4203a0) are drawn as tiles of
@@ -635,9 +617,9 @@ static void patch_image_tile_call(void)
     *(int32_t *)(call + 1) = (int32_t)((uint32_t)image_tile - 0x420587);
 }
 
-/* 0x4771c0(class, x, y, w, h, fullscreen): the game's window. DirectDraw is
- * windowed here, but the window is the fullscreen kind (a topmost popup
- * covering the screen), as Gamescope expects of the game. */
+/* 0x4771c0(class, x, y, w, h, fullscreen): the game's window, created the
+ * fullscreen way (a popup) while DirectDraw runs windowed; native/user32.c
+ * puts it on the SDL window either way. */
 typedef uint32_t(GAMEAPI *window_fn)(uint32_t, int32_t, int32_t, int32_t, int32_t, int32_t);
 static window_fn window_original;
 
@@ -654,7 +636,6 @@ static const struct hook upload_hook = {"vk_texture_upload", 0x41e710, texture_u
 static const struct hook queue_hook = {"vk_texture_queue", 0x429070, texture_queue_flush,
                                        {0xe9, 0x1b, 0x70, 0xff, 0xff, 0x90, 0x90, 0x90}};
 static const struct hook probe_hook = {"vk_probe", 0x41f720, vk_probe, {0x55, 0x8b, 0xec, 0x51, 0x53, 0x56, 0x57, 0x6a}};
-static const struct hook movie_hook = {"vk_movie", 0x493210, movie_run, {0x8b, 0x44, 0x24, 0x0c, 0x8b, 0x4c, 0x24, 0x08}};
 
 /* Reads "WxH". */
 static int parse_size(const char *s, int *w, int *h)
@@ -705,7 +686,6 @@ float vkgame_install(void)
     G32(0x4acc60) = 0;
     upload_original = (upload_fn)hook_install_trampoline(&upload_hook, 9);
     hook_install(&queue_hook);
-    movie_original = (movie_fn)hook_install_trampoline(&movie_hook, 12);
     vk_probe_original = hook_install_trampoline(&probe_hook, 7);
     patch_image_tile_call();
     window_original = (window_fn)hook_install_trampoline(&window_hook, 7);

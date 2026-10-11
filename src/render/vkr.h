@@ -6,9 +6,9 @@
  * does with each primitive, at any output size: painter's order, the
  * game's two blend pairs, colour-key transparency, MODULATE texturing and
  * the original texel addressing. Functions come through
- * vkGetInstanceProcAddr, so the same code runs natively (libvulkan) and in
- * the DLL (Wine's vulkan-1.dll). Step 3 renders to an offscreen image; the
- * live window comes later. */
+ * vkGetInstanceProcAddr (SDL's loader in the game, libvulkan in the tools).
+ * It renders to a window's swapchain, or offscreen (the tools, headless
+ * tests). */
 #include <stdint.h>
 
 #define VK_NO_PROTOTYPES

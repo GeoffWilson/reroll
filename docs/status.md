@@ -5,11 +5,11 @@
 Rollcage (1999) runs as a **native 32-bit Linux program** (`build/rollcage`)
 with a **Vulkan renderer** at native resolution (3440x1440 ultrawide), the
 original physics and feel, and about 1350 of the game's functions
-reimplemented in C. The Wine + injected DLL route still builds and works
-(`make install`, `REROLL_VULKAN=1 ~/Games/rollcage/run-rollcage.sh`).
+reimplemented in C. (The earlier Wine route, an injected proxy QMIXER.DLL,
+was removed on 2026-10-11; the native program is the only build.)
 
 Run natively: `~/Documents/rollcage/reroll/build/rollcage` (straight to the main menu; no launcher dialog, no intro movies yet)
-(build: `make native`; needs lib32-sdl3, lib32-vulkan-icd-loader).
+(build: `make`; needs lib32-sdl3, lib32-vulkan-icd-loader, lib32-libdecor).
 
 ## Done
 

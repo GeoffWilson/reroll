@@ -6,10 +6,10 @@ project's history is not needed.
 
 ## The project in brief
 
-reroll replaces Rollcage.exe's code function by function. `build/QMIXER.DLL`
-(a proxy for the game's sound DLL) patches a `jmp` over the start of each
-original function it replaces (the hook table in `src/main.c`), so the game
-runs our C instead. The C must be bit-exact: same memory writes, same calls
+reroll replaces Rollcage.exe's code function by function. `build/rollcage`
+(the native loader, `native/`) maps the original executable and patches a
+`jmp` over the start of each original function it replaces (the hook table in
+`src/main.c`), so the game runs our C instead. The C must be bit-exact: same memory writes, same calls
 with the same arguments in the same order, same return value.
 
 - Original: `$(EXE)` = `~/Games/rollcage/prefix/drive_c/Program Files (x86)/Psygnosis/Rollcage/Direct3D/Rollcage.exe`
@@ -126,6 +126,6 @@ states, the wrapper can skip verification then (see `race_progress_entry` in
 2. `make` (warning-free), `make argcheck` (argument audit, 5 s),
    `make -j8 -k emu-test` (reruns only tests whose inputs changed;
    `make emu-test-all` for everything).
-3. `make install`, one game session with `REROLL_VERIFY=1` for the user, read
-   `reroll.log`.
+3. One game session (`build/rollcage`) with `REROLL_VERIFY=1` for the user,
+   read `reroll.log`.
 4. Append the groups to `docs/functions.csv` and `docs/formats.md`.

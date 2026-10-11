@@ -1,6 +1,7 @@
 /* Logs the first few exceptions (code, address, registers, stack) to
- * reroll.log, then lets them take their normal course: Wine's crash
- * dialog is off in this prefix, so this is how a crash leaves a trace. */
+ * reroll.log, then lets them take their normal course. (The native layer's
+ * AddVectoredExceptionHandler installs its own fault logger instead, which
+ * writes to native.log.) */
 #include "crash.h"
 
 #include "log.h"

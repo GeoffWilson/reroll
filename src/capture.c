@@ -24,7 +24,7 @@
  *
  * Live mode (REROLL_LIVE=1, docs/renderer/plan.md step 4): every drawn
  * frame is recorded the same way into shared memory, /dev/shm/reroll_live
- * (mapped through Wine's Z: drive), for the native viewer tools/rview.c to
+ * (the native layer's Z: drive is /), for the viewer tools/rview.c to
  * render while the game runs. Layout (struct live_header):
  *   0x0000   header
  *   0x1000   64 texture slots of LIVE_TEX_STRIDE: u32 version, the 12-word
