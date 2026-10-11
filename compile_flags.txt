@@ -1,0 +1,4 @@
+--target=i686-pc-windows-msvc
+-ffreestanding
+-fno-builtin
+-Isrc

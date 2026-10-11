@@ -1,0 +1,4 @@
+build/
+ghidra/
+captures/
+__pycache__/
