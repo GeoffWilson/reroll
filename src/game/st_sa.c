@@ -1281,7 +1281,15 @@ int32_t GAMEAPI startup_init(char *line)
     CALL2(0x496430, path, 0x158);
     command_line_parse(line);
     strings_load_once();
+#ifdef REROLL_NATIVE
+    /* Deliberate change: no CD check. The original (0x474840) wants the
+     * Rollcage CD in a CD-ROM drive and otherwise runs with League, Arcade
+     * and Time Attack disabled (1); the installed data (IDXData) is all
+     * the game reads, and the music comes from the CD image. */
+    G32(0x4acc54) = 2;
+#else
     G32(0x4acc54) = CALL1(0x474840, g_frontend_mode);
+#endif
     if (!G32(0x4acc54))
         return 0;
     if (g_frontend_mode) {

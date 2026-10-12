@@ -92,6 +92,10 @@ Besides the additions above:
   the original never read such pads.
 - **Analogue throttle** (`controls.c`): with the game's analogue option on, the
   throttle comes from the triggers instead of the left stick's Y axis.
+- **No CD check** (`st_sa.c`): the original wants the Rollcage CD in a
+  CD-ROM drive and otherwise disables League, Arcade and Time Attack; the
+  game only reads the installed data, and the music comes from the CD
+  image.
 - **Frame rate** (`frame.c`, `interp.c`): physics keeps the original 32 ms steps
   on its own clock; per-draw state (HUD flash countdowns, the trackside trigger
   queue) still advances once per step.

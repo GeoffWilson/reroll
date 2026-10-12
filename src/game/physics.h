@@ -173,6 +173,70 @@ void GAMEAPI ai_aim_at_node(uint8_t *car, int32_t *v, uint32_t line_index, uint3
 void GAMEAPI ai_steer_to(uint8_t *car, const int32_t *target, int32_t check, int32_t reverse);
 void GAMEAPI ai_drive(uint8_t *car);
 void GAMEAPI ai_pace(uint8_t *car);
+void GAMEAPI trail_point_add(const int32_t *pos, const int16_t *ahead, const int32_t *up); /* 0x433d90 */
+void GAMEAPI trails_draw(void); /* 0x433f00 */
+void GAMEAPI beams_draw(void); /* 0x4345c0 */
+int32_t __attribute__((stdcall)) window_proc(uint32_t hwnd, uint32_t msg, uint32_t wparam, uint32_t lparam); /* 0x435ed1 */
+void GAMEAPI window_destroy_quit(void); /* 0x436034 */
+void GAMEAPI window_command(uint32_t hwnd, uint32_t id); /* 0x436542 */
+void GAMEAPI input_focus_poll(void); /* 0x4368f0 */
+uint32_t GAMEAPI game_time_get(void); /* 0x43692a */
+void GAMEAPI loading_picture_draw(int32_t which); /* 0x436c2c */
+void GAMEAPI mode_dialog_languages_fill(uint32_t dlg); /* 0x436ed6 */
+void GAMEAPI mode_dialog_texts_set(uint32_t dlg); /* 0x436f3b */
+int32_t __attribute__((stdcall)) mode_dialog_proc(uint32_t dlg, uint32_t msg, uint32_t wparam, uint32_t lparam); /* 0x437171 */
+int32_t __attribute__((stdcall)) error_dialog_proc(uint32_t dlg, uint32_t msg, uint32_t wparam, uint32_t lparam); /* 0x4375c7 */
+void GAMEAPI hud_update(uint32_t *slot); /* 0x4386f0 */
+void GAMEAPI hud_update_extra(uint32_t *slot); /* 0x438760 */
+uint8_t *GAMEAPI hud_sprite_set(int32_t n, int32_t a, int32_t frame); /* 0x4387d0 */
+void GAMEAPI decimal9_format(char *out, uint32_t v); /* 0x42fc40 */
+int32_t GAMEAPI decimal_parse(const uint8_t *s, int32_t *value); /* 0x42fcd0 */
+int32_t GAMEAPI text_slot_free(void); /* 0x42fd10 */
+uint32_t GAMEAPI text_tab_next(uint32_t x); /* 0x42fd60 */
+int32_t GAMEAPI glyph_place(uint32_t font_id, uint32_t code, const uint8_t *colours, int32_t y, int16_t *x, int16_t *height, uint32_t flags); /* 0x42fd90 */
+uint32_t GAMEAPI language_get(void); /* 0x430120 */
+void GAMEAPI fe_sprite_gouraud_set(uint8_t *p, int32_t image, const uint8_t *colours, int32_t x, int32_t y, int32_t w, int32_t h, uint32_t z); /* 0x430ea0 */
+void GAMEAPI fe_sprite_set(uint8_t *p, int32_t image, const uint8_t *colour, int32_t x, int32_t y, int32_t w, int32_t h, uint32_t z); /* 0x4310f0 */
+void GAMEAPI fe_sprite_set_512(uint8_t *p, int32_t image, const uint8_t *colour, int32_t x, int32_t y, int32_t w, int32_t h, uint32_t z); /* 0x431300 */
+void GAMEAPI fe_quad_flat_set(uint8_t *p, const uint8_t *colour, int32_t x, int32_t y, int32_t w, int32_t h, uint32_t z); /* 0x4314d0 */
+void GAMEAPI fe_frame_sprites_init(uint8_t *p); /* 0x4316d0 */
+void GAMEAPI fe_box_frame_place(uint32_t list, uint8_t *p, const uint8_t *colour, int32_t x, int32_t y, int32_t w, int32_t h); /* 0x431780 */
+void GAMEAPI colour_fade_apply(uint8_t *out, const uint8_t *in); /* 0x432820 */
+int32_t GAMEAPI fade_scale(int32_t v); /* 0x4328a0 */
+void GAMEAPI colour_pulse_scale(uint8_t *out, const uint8_t *in, int32_t count, uint32_t flags); /* 0x4328c0 */
+int32_t GAMEAPI front_mode_race_setup(int32_t mode, uint32_t kind, uint32_t choice); /* 0x432cd0 */
+void GAMEAPI shake_flash_tint(uint32_t car); /* 0x42be20 */
+void GAMEAPI fade_tint_add(int32_t n); /* 0x42bf20 */
+uint32_t GAMEAPI screen_tint_add(uint32_t colour); /* 0x42bfc0 */
+void GAMEAPI screen_flash_set(int32_t prio, int32_t c0, int32_t c1, int32_t c2, int32_t c3, int32_t c4); /* 0x42c040 */
+void GAMEAPI screen_tint_draw(uint32_t arg); /* 0x42c0a0 */
+void GAMEAPI blast_flare_draw(void); /* 0x42c420 */
+void GAMEAPI shock_waves_draw(void); /* 0x42c950 */
+uint32_t GAMEAPI font_by_id(uint32_t id); /* 0x42e050 */
+int32_t GAMEAPI text_buffers_alloc(void); /* 0x42e2a0 */
+int32_t GAMEAPI text_entry_copy(uint8_t *dst, int32_t max, const char *name); /* 0x42e3d0 */
+uint32_t GAMEAPI text_section_find(const char *name); /* 0x42e4b0 */
+uint32_t GAMEAPI text_bytes_find(const uint8_t *pat, const uint8_t *text, uint32_t len, uint32_t n); /* 0x42e620 */
+uint32_t GAMEAPI text_bytes_differ(const uint8_t *a, const uint8_t *b, uint32_t n); /* 0x42e690 */
+int32_t GAMEAPI text_line_get(uint8_t *dst, int32_t max, const char *name, int32_t line); /* 0x42e6d0 */
+int32_t GAMEAPI string_printf(uint32_t font, uint32_t colours, uint32_t flags, uint32_t spacing, const char *fmt, ...); /* 0x42e810 */
+int32_t GAMEAPI string_width_printf(uint32_t font, uint32_t colours, uint32_t flags, uint32_t spacing, const char *fmt, ...); /* 0x42e8f0 */
+uint32_t GAMEAPI string_active(int32_t i); /* 0x42ea00 */
+void GAMEAPI string_on(int32_t i, int32_t x, int32_t y, int32_t z, uint32_t flags); /* 0x42ea40 */
+void GAMEAPI string_off(int32_t i); /* 0x42eab0 */
+int32_t GAMEAPI string_line_range(int32_t i, int32_t line, uint32_t *start, uint32_t *end, int32_t *mark); /* 0x42eae0 */
+int32_t GAMEAPI string_limits(int32_t i, int32_t line, int32_t *minx, int32_t *miny, int32_t *maxx, int32_t *maxy); /* 0x42ebc0 */
+int32_t GAMEAPI string_limits_all(int32_t i, int32_t *minx, int32_t *miny, int32_t *maxx, int32_t *maxy); /* 0x42ed10 */
+int32_t GAMEAPI string_set_position(int32_t i, int32_t x, int32_t y, int32_t xmode, int32_t ymode); /* 0x42ed40 */
+int32_t GAMEAPI string_set_position_j(int32_t i, int32_t x, int32_t mode); /* 0x42eed0 */
+uint32_t GAMEAPI string_get_width(int32_t i); /* 0x42f030 */
+uint32_t GAMEAPI string_get_height(int32_t i); /* 0x42f070 */
+uint32_t GAMEAPI string_has_marks(int32_t i); /* 0x42f0b0 */
+int32_t GAMEAPI string_colour_range(int32_t i, int32_t line, int32_t which, int32_t sel, const uint8_t *colour); /* 0x42f0f0 */
+int32_t GAMEAPI string_colour_set(int32_t i, int32_t sel, const uint8_t *colour); /* 0x42f2b0 */
+void GAMEAPI string_clip_x(int32_t i, int32_t n, int32_t mode); /* 0x42f2d0 */
+int32_t GAMEAPI strings_draw(uint32_t ot, uint32_t unused, uint32_t which); /* 0x42f3c0 */
+int32_t GAMEAPI string_build(uint32_t font_id, const uint8_t *s, uint32_t colours, uint32_t flags, uint32_t spacing, uint32_t va); /* 0x42f6a0 */
 void GAMEAPI cars_view_flags_update(void); /* 0x4231f0 */
 void GAMEAPI ot_frame_flush(void); /* 0x423c40 */
 void GAMEAPI view_matrix_store(const uint32_t *m); /* 0x423d10 */

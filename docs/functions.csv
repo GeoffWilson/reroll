@@ -45,7 +45,7 @@ address,name,status,notes
 0x436a52,present_frame,verified,"src/game/frame.c. Original busy-waits 32 ms (16 ms if race byte +0x58d, none if settings +0x92) then flips. Replaced: no wait after our paced draws, skips presenting when nothing new was drawn"
 0x443b50,race_draw,verified,"src/game/frame.c + interp.c via trampoline. Draws each view; temporarily moves the camera (speed zoom) and restores it. Held back during physics steps; called once per display frame with cars, wheels, cameras and TV cameras blended"
 0x479be0,draw_view,understood,"(slot): viewport rect from slot+8, camera object = (*(slot+0x28))[0] -> position +0x34, view matrix +0xc4 (copied to 0x6ce5a0 by 0x423d10), then draws the world"
-0x4386f0,hud_update,understood,"(slot): HUD digits (speed, position, laps, timers); flash countdowns at car +0x65c/+0x65d drop once per call"
+0x4386f0,hud_update,verified,"src/game/orig_pf.c. C0 (a below b, or unordered). Emulator fuzz"
 0x40b000,camera_speed_zoom,verified,"src/game/post_i.c. (slot, camera pos): pulls the camera toward the target car by speed; relinks the camera object. Emulator fuzz; in game"
 0x408270,tv_camera_begin,verified,"src/game/orig_na.c. the TV camera takes over a view: saves the field of view (0x6cce6c, truncated, to 0x4b6244) and the view's camera object (+0x34, 0xd8 bytes, to 0x4b616c), copies TV state 0x6cf6e0 + view * 0x150 over it, camera flags from the TV record (+0x30, +0x1c) and bit 4, its field of view (+0x24), the sound listener if flag 4. Emulator fuzz"
 0x40ad60,tv_camera_end,verified,src/game/orig_na.c. gives the view (0x6cd408) its camera object and field of view back; camera flags 0x10 and 0x40 off. Emulator fuzz
@@ -56,7 +56,7 @@ address,name,status,notes
 0x442c20,trigger_fire,verified,src/game/gl_gc.c. an object's up to 5 trigger actions (+0x16a). Fuzz ok.. Emulator fuzz
 0x441450,particles_update,verified,"src/game/gl_gc.c. dynamic lights per step: light +0x12 countdown, the countdown list 0x5d71e0 (top 3 bits),. Emulator fuzz"
 0x41c2c0,rumble_update,verified,"src/game/gl_gc.c. per human car, force feedback by wheel surface roughness and speed (0x489ab0 / 0x489bc0).. Emulator fuzz"
-0x43692a,game_time,understood,returns timeGetTime()
+0x43692a,game_time_get,verified,"src/game/orig_pf.c. C0 (a below b, or unordered). Emulator fuzz"
 0x461410,physics_world_step,verified,"src/game/physics.c. One physics step of length dt (0x10000 = 32 ms): forces, track contacts, then contacts resolved in time-of-impact order from a heap of events, then every body moved to the end of the step. Verified in game with REROLL_VERIFY (0 of 1000+ steps differ)"
 0x4291a0,fix_mul8,verified,src/game/fixed.c. (int64)a*b >> 8. Emulator test (make emu-test) and in game
 0x42df70,fix_div16,verified,src/game/fixed.c. (a << 16) / b with idiv (traps on overflow like the original)
@@ -1654,3 +1654,65 @@ address,name,status,notes
 0x4292b0,light_colour_at,verified,src/game/orig_pc.c. the original's instructions ---- Emulator fuzz
 0x429340,textures_unusable_thunk,verified,src/game/orig_pc.c. the original's instructions ---- Emulator fuzz
 0x42b9a0,smoke_clouds_draw,verified,src/game/orig_pc.c. the original's instructions ---- Emulator fuzz
+0x42be20,shake_flash_tint,verified,src/game/orig_pd.c. the original's instructions ---- Emulator fuzz
+0x42bf20,fade_tint_add,verified,src/game/orig_pd.c. the original's instructions ---- Emulator fuzz
+0x42bfc0,screen_tint_add,verified,src/game/orig_pd.c. the original's instructions ---- Emulator fuzz
+0x42c040,screen_flash_set,verified,src/game/orig_pd.c. the original's instructions ---- Emulator fuzz
+0x42c0a0,screen_tint_draw,verified,src/game/orig_pd.c. the original's instructions ---- Emulator fuzz
+0x42c420,blast_flare_draw,verified,src/game/orig_pd.c. the original's instructions ---- Emulator fuzz
+0x42c950,shock_waves_draw,verified,src/game/orig_pd.c. the original's instructions ---- Emulator fuzz
+0x42e050,font_by_id,verified,src/game/orig_pd.c. the original's instructions ---- Emulator fuzz
+0x42e2a0,text_buffers_alloc,verified,src/game/orig_pd.c. the original's instructions ---- Emulator fuzz
+0x42e3d0,text_entry_copy,verified,src/game/orig_pd.c. the original's instructions ---- Emulator fuzz
+0x42e4b0,text_section_find,verified,src/game/orig_pd.c. the original's instructions ---- Emulator fuzz
+0x42e620,text_bytes_find,verified,src/game/orig_pd.c. the original's instructions ---- Emulator fuzz
+0x42e690,text_bytes_differ,verified,src/game/orig_pd.c. the original's instructions ---- Emulator fuzz
+0x42e6d0,text_line_get,verified,src/game/orig_pd.c. the original's instructions ---- Emulator fuzz
+0x42e810,string_printf,verified,src/game/orig_pd.c. the original's instructions ---- Emulator fuzz
+0x42e8f0,string_width_printf,verified,src/game/orig_pd.c. the original's instructions ---- Emulator fuzz
+0x42ea00,string_active,verified,src/game/orig_pd.c. the original's instructions ---- Emulator fuzz
+0x42ea40,string_on,verified,src/game/orig_pd.c. the original's instructions ---- Emulator fuzz
+0x42eab0,string_off,verified,src/game/orig_pd.c. the original's instructions ---- Emulator fuzz
+0x42eae0,string_line_range,verified,src/game/orig_pd.c. the original's instructions ---- Emulator fuzz
+0x42ebc0,string_limits,verified,src/game/orig_pd.c. the original's instructions ---- Emulator fuzz
+0x42ed10,string_limits_all,verified,src/game/orig_pd.c. the original's instructions ---- Emulator fuzz
+0x42ed40,string_set_position,verified,src/game/orig_pd.c. the original's instructions ---- Emulator fuzz
+0x42eed0,string_set_position_j,verified,src/game/orig_pd.c. the original's instructions ---- Emulator fuzz
+0x42f030,string_get_width,verified,src/game/orig_pd.c. the original's instructions ---- Emulator fuzz
+0x42f070,string_get_height,verified,src/game/orig_pd.c. the original's instructions ---- Emulator fuzz
+0x42f0b0,string_has_marks,verified,src/game/orig_pd.c. the original's instructions ---- Emulator fuzz
+0x42f0f0,string_colour_range,verified,src/game/orig_pd.c. the original's instructions ---- Emulator fuzz
+0x42f2b0,string_colour_set,verified,src/game/orig_pd.c. the original's instructions ---- Emulator fuzz
+0x42f2d0,string_clip_x,verified,src/game/orig_pd.c. the original's instructions ---- Emulator fuzz
+0x42f3c0,strings_draw,verified,src/game/orig_pd.c. the original's instructions ---- Emulator fuzz
+0x42f6a0,string_build,verified,src/game/orig_pd.c. the original's instructions ---- Emulator fuzz
+0x42fc40,decimal9_format,verified,"src/game/orig_pe.c. v as 9 decimal digits (100000000 down to 1) and a NUL. The first ""digit"" is v / 100000000 + '0' whatever its size (sic). Emulator fuzz"
+0x42fcd0,decimal_parse,verified,src/game/orig_pe.c. decimal digits at the start of s into *value; returns how many. Emulator fuzz
+0x42fd10,text_slot_free,verified,"src/game/orig_pe.c. the first of the 128 text-string records (0x14c bytes at *0x4be310) without flag 0x40 in byte +1, searching round from *0x4be2f8 (0 when out of range); -1 when all are in use. Emulator fuzz"
+0x42fd60,text_tab_next,verified,"src/game/orig_pe.c. the first of the 8 tab stops (words at 0x4ac850) beyond x, else the last. The high half of eax is the table pointer's (0x004a). Emulator fuzz"
+0x42fd90,glyph_place,verified,"src/game/orig_pe.c. one character of a font as a pair of textured quads (packet code 0x8c, 0x84 bytes): the font (0x42e050), its glyph record, the vertex words at *0x4be304 and the packets at *0x4be308 / *0x4be30c (slot word 0x4be2fc, counted up) or, with flags & 0x10, the single packet *0x4be2e8 and the words at 0x4be2c8. *x moves on by the glyph's width and the font's spacing; *height is the font's height. 0, or -1 for no font, a code above 255, a character the font lacks (logged unless 0xd6) or no free slot. Emulator fuzz"
+0x430120,language_get,verified,src/game/orig_pe.c. the language (word 0x4be2f4). Emulator fuzz
+0x430ea0,fe_sprite_gouraud_set,verified,"src/game/orig_pe.c. a front-end image as a gouraud textured quad (code 0x8c, vertex stride 0x20): texture words from the record, size from it when w / h are -1, four colours (stride 4) when given, corners from the 640 x 480 layout. Emulator fuzz"
+0x4310f0,fe_sprite_set,verified,"src/game/orig_pe.c. a front-end image as a flat textured quad (code 0x98, vertex stride 0x1c), one colour when given, 640 x 480 layout. Emulator fuzz"
+0x431300,fe_sprite_set_512,verified,src/game/orig_pe.c. as 0x4310f0 with the corners scaled from 512 x 256. Emulator fuzz
+0x4314d0,fe_quad_flat_set,verified,"src/game/orig_pe.c. an untextured flat quad (code 0xa8, vertex stride 0x18), one colour when given, 640 x 480 layout. Emulator fuzz"
+0x4316d0,fe_frame_sprites_init,verified,"src/game/orig_pe.c. the text box frame's 9 sprites (0x78 bytes each, images from the bytes at 0x4aca7c, z 2000): texture corners pulled in by one texel, each linked after the one before (0x4290a0); the first sprite's texture words +0x22 / +0x3e = 0x20 / 0x3f and flag 2 in byte 7. Emulator fuzz"
+0x431780,fe_box_frame_place,verified,"src/game/orig_pe.c. places the text box frame round (x, y, w, h): corner images 7..10 centred on the corners, edges 3 / 4 between them (one pixel overlap), the background quad (z 3000, colour 5 5 0x30), the edge colour when given, and links the 9 sprites into the list (0x429080). Emulator fuzz"
+0x432820,colour_fade_apply,verified,src/game/orig_pe.c. out rgb = in rgb * (256 - fade) / 256. Emulator fuzz
+0x4328a0,fade_scale,verified,src/game/orig_pe.c. v * fade / 256. Emulator fuzz
+0x4328c0,colour_pulse_scale,verified,"src/game/orig_pe.c. the pulsing highlight: 1 or 4 colours (count 4, else 1; stride 4) scaled by a triangle wave 64..127 / 127 of the frame count 0x4be320 (speed 2, 1 with flag 4, 4 with flag 2); source 0x4be350 when none. Emulator fuzz"
+0x432cd0,front_mode_race_setup,verified,"src/game/orig_pe.c. a front-end mode's race: the random seeds (0x4a7148 / 0x4b11d8); mode 1 only marks options +0x17; otherwise options +0x17 = -1, +0x21 = 0, +0x8c..+0x91 = 1, then unless mode 8 the race option clamp, the choice bytes +0x14..+0x16, the track (0x433670; options +0xb 1..20 picks one) and its world / place / start time into the race. Mode 7 (the attract demo) also sets the kind, weapons and option, the AI level from options +0x87, six cars (0x433ab0) and polls the network session (0x435d43, 0 returned when it fails). 1 (and 0x4be450 = 1), -1 when no track. Emulator fuzz"
+0x433d90,trail_point_add,verified,"src/game/orig_pf.c. C0 (a below b, or unordered). Emulator fuzz"
+0x433f00,trails_draw,verified,"src/game/orig_pf.c. C0 (a below b, or unordered). Emulator fuzz"
+0x4345c0,beams_draw,verified,"src/game/orig_pf.c. C0 (a below b, or unordered). Emulator fuzz"
+0x435ed1,window_proc,verified,"src/game/orig_pf.c. C0 (a below b, or unordered). Emulator fuzz"
+0x436034,window_destroy_quit,verified,"src/game/orig_pf.c. C0 (a below b, or unordered). Emulator fuzz"
+0x436542,window_command,verified,"src/game/orig_pf.c. C0 (a below b, or unordered). Emulator fuzz"
+0x4368f0,input_focus_poll,verified,"src/game/orig_pf.c. C0 (a below b, or unordered). Emulator fuzz"
+0x436c2c,loading_picture_draw,verified,"src/game/orig_pf.c. C0 (a below b, or unordered). Emulator fuzz"
+0x436ed6,mode_dialog_languages_fill,verified,"src/game/orig_pf.c. C0 (a below b, or unordered). Emulator fuzz"
+0x436f3b,mode_dialog_texts_set,verified,"src/game/orig_pf.c. C0 (a below b, or unordered). Emulator fuzz"
+0x437171,mode_dialog_proc,verified,"src/game/orig_pf.c. C0 (a below b, or unordered). Emulator fuzz"
+0x4375c7,error_dialog_proc,verified,"src/game/orig_pf.c. C0 (a below b, or unordered). Emulator fuzz"
+0x438760,hud_update_extra,verified,"src/game/orig_pf.c. C0 (a below b, or unordered). Emulator fuzz"
+0x4387d0,hud_sprite_set,verified,"src/game/orig_pf.c. C0 (a below b, or unordered). Emulator fuzz"

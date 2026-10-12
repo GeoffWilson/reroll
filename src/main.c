@@ -1618,6 +1618,165 @@ static void GAMEAPI smoke_clouds_draw_entry(void)
     verify_call2(&smoke_clouds_draw_point, (verify_fn2)0x42b9a0, (verify_fn2)(void *)smoke_clouds_draw, 0, 0);
 }
 
+/* Group PD: functions whose whole call tree stays in game memory: the screen tints (the shake flash also
+ * through 0x485050 in network play, the tint quad through the empty 0x479ae0), the font lookup, the text
+ * file's section search and the string objects' flag reads / hide. Per-frame or per-glyph: every 31st /
+ * 127th call. The flare / shock wave drawing is not verified (the GTE transform keeps its stack record's
+ * address in 0x6ccd74, and vertices behind the camera keep stack leftovers); the rest takes more than two
+ * arguments, allocates or logs. */
+static struct verify_point shake_flash_tint_point = VERIFY_POINT_VOID("shake_flash_tint", 31, 1);
+
+static void GAMEAPI shake_flash_tint_entry(uint32_t car)
+{
+    verify_call2(&shake_flash_tint_point, (verify_fn2)0x42be20, (verify_fn2)(void *)shake_flash_tint, (int32_t)car, 0);
+}
+
+static struct verify_point fade_tint_add_point = VERIFY_POINT_VOID("fade_tint_add", 31, 1);
+
+static void GAMEAPI fade_tint_add_entry(int32_t n)
+{
+    verify_call2(&fade_tint_add_point, (verify_fn2)0x42bf20, (verify_fn2)(void *)fade_tint_add, (int32_t)n, 0);
+}
+
+static struct verify_point screen_tint_add_point = VERIFY_POINT("screen_tint_add", 31, 1);
+
+static uint32_t GAMEAPI screen_tint_add_entry(uint32_t colour)
+{
+    return (uint32_t)verify_call2(&screen_tint_add_point, (verify_fn2)0x42bfc0, (verify_fn2)(void *)screen_tint_add, (int32_t)colour, 0);
+}
+
+static struct verify_point screen_tint_draw_point = VERIFY_POINT_VOID("screen_tint_draw", 31, 1);
+
+static void GAMEAPI screen_tint_draw_entry(uint32_t arg)
+{
+    verify_call2(&screen_tint_draw_point, (verify_fn2)0x42c0a0, (verify_fn2)(void *)screen_tint_draw, (int32_t)arg, 0);
+}
+
+static struct verify_point font_by_id_point = VERIFY_POINT("font_by_id", 127, 1);
+
+static uint32_t GAMEAPI font_by_id_entry(uint32_t id)
+{
+    return (uint32_t)verify_call2(&font_by_id_point, (verify_fn2)0x42e050, (verify_fn2)(void *)font_by_id, (int32_t)id, 0);
+}
+
+static struct verify_point text_section_find_point = VERIFY_POINT("text_section_find", 31, 1);
+
+static uint32_t GAMEAPI text_section_find_entry(const char *name)
+{
+    return (uint32_t)verify_call2(&text_section_find_point, (verify_fn2)0x42e4b0, (verify_fn2)(void *)text_section_find, (int32_t)(uintptr_t)name, 0);
+}
+
+static struct verify_point string_active_point = VERIFY_POINT("string_active", 127, 1);
+
+static uint32_t GAMEAPI string_active_entry(int32_t i)
+{
+    return (uint32_t)verify_call2(&string_active_point, (verify_fn2)0x42ea00, (verify_fn2)(void *)string_active, (int32_t)i, 0);
+}
+
+static struct verify_point string_off_point = VERIFY_POINT_VOID("string_off", 31, 1);
+
+static void GAMEAPI string_off_entry(int32_t i)
+{
+    verify_call2(&string_off_point, (verify_fn2)0x42eab0, (verify_fn2)(void *)string_off, (int32_t)i, 0);
+}
+
+static struct verify_point string_get_width_point = VERIFY_POINT("string_get_width", 31, 1);
+
+static uint32_t GAMEAPI string_get_width_entry(int32_t i)
+{
+    return (uint32_t)verify_call2(&string_get_width_point, (verify_fn2)0x42f030, (verify_fn2)(void *)string_get_width, (int32_t)i, 0);
+}
+
+static struct verify_point string_get_height_point = VERIFY_POINT("string_get_height", 31, 1);
+
+static uint32_t GAMEAPI string_get_height_entry(int32_t i)
+{
+    return (uint32_t)verify_call2(&string_get_height_point, (verify_fn2)0x42f070, (verify_fn2)(void *)string_get_height, (int32_t)i, 0);
+}
+
+static struct verify_point string_has_marks_point = VERIFY_POINT("string_has_marks", 31, 1);
+
+static uint32_t GAMEAPI string_has_marks_entry(int32_t i)
+{
+    return (uint32_t)verify_call2(&string_has_marks_point, (verify_fn2)0x42f0b0, (verify_fn2)(void *)string_has_marks, (int32_t)i, 0);
+}
+
+/* Group PE: the one- and two-argument functions whose call tree stays in game memory (text digits and
+ * tab stops, the free text slot, the language, the frame sprites' set-up, the fades). Per-frame ones
+ * every 31st call, the frame set-up every call. The rest take more arguments: fuzz only. */
+static struct verify_point decimal9_format_point = VERIFY_POINT_VOID("decimal9_format", 31, 1);
+
+static void GAMEAPI decimal9_format_entry(char *out, uint32_t v)
+{
+    verify_call2(&decimal9_format_point, (verify_fn2)0x42fc40, (verify_fn2)(void *)decimal9_format,
+                 (int32_t)(uintptr_t)out, (int32_t)v);
+}
+
+static struct verify_point decimal_parse_point = VERIFY_POINT("decimal_parse", 31, 1);
+
+static int32_t GAMEAPI decimal_parse_entry(const uint8_t *s, int32_t *value)
+{
+    return verify_call2(&decimal_parse_point, (verify_fn2)0x42fcd0, (verify_fn2)(void *)decimal_parse,
+                        (int32_t)(uintptr_t)s, (int32_t)(uintptr_t)value);
+}
+
+static struct verify_point text_slot_free_point = VERIFY_POINT("text_slot_free", 31, 1);
+
+static int32_t GAMEAPI text_slot_free_entry(void)
+{
+    return verify_call2(&text_slot_free_point, (verify_fn2)0x42fd10, (verify_fn2)(void *)text_slot_free, 0, 0);
+}
+
+static struct verify_point text_tab_next_point = VERIFY_POINT("text_tab_next", 31, 1);
+
+static uint32_t GAMEAPI text_tab_next_entry(uint32_t x)
+{
+    return (uint32_t)verify_call2(&text_tab_next_point, (verify_fn2)0x42fd60, (verify_fn2)(void *)text_tab_next,
+                                  (int32_t)x, 0);
+}
+
+static struct verify_point language_get_point = VERIFY_POINT("language_get", 31, 1);
+
+static uint32_t GAMEAPI language_get_entry(void)
+{
+    return (uint32_t)verify_call2(&language_get_point, (verify_fn2)0x430120, (verify_fn2)(void *)language_get, 0, 0);
+}
+
+static struct verify_point fe_frame_sprites_init_point = VERIFY_POINT_VOID("fe_frame_sprites_init", 1, 1);
+
+static void GAMEAPI fe_frame_sprites_init_entry(uint8_t *p)
+{
+    verify_call2(&fe_frame_sprites_init_point, (verify_fn2)0x4316d0, (verify_fn2)(void *)fe_frame_sprites_init,
+                 (int32_t)(uintptr_t)p, 0);
+}
+
+static struct verify_point colour_fade_apply_point = VERIFY_POINT_VOID("colour_fade_apply", 31, 1);
+
+static void GAMEAPI colour_fade_apply_entry(uint8_t *out, const uint8_t *in)
+{
+    verify_call2(&colour_fade_apply_point, (verify_fn2)0x432820, (verify_fn2)(void *)colour_fade_apply,
+                 (int32_t)(uintptr_t)out, (int32_t)(uintptr_t)in);
+}
+
+static struct verify_point fade_scale_point = VERIFY_POINT("fade_scale", 31, 1);
+
+static int32_t GAMEAPI fade_scale_entry(int32_t v)
+{
+    return verify_call2(&fade_scale_point, (verify_fn2)0x4328a0, (verify_fn2)(void *)fade_scale, v, 0);
+}
+
+/* Group PF: the HUD update (its tree builds sprite packets in the data section: the HUD pieces 0x438df0..0x439f20,
+ * still original, and hud_sprite_set 0x4387d0, ours), every 31st call. The trails / beams (0x433f00 / 0x4345c0)
+ * are fuzz-only: the transform leaves 0x6ccd74 pointing at the caller's stack records (a different address in
+ * ours) and vertices behind the camera keep leftover stack screen x / y; the rest calls Windows, the clock,
+ * file loading, texture pages or the network HUD (0x45cfe0). */
+static struct verify_point hud_update_point = VERIFY_POINT_VOID("hud_update", 31, 1);
+
+static void GAMEAPI hud_update_entry(uint32_t *slot)
+{
+    verify_call2(&hud_update_point, (verify_fn2)0x4386f0, (verify_fn2)(void *)hud_update, (int32_t)(uintptr_t)slot, 0);
+}
+
 /* Reimplemented physics: switched off while verify.c runs the original. */
 static const struct hook physics_hooks[] = {
     {"physics_world_step", 0x461410, physics_world_step_entry, {0x83, 0xec, 0x0c, 0x53, 0x55, 0x56, 0x57, 0xe8}},
@@ -3115,6 +3274,70 @@ static const struct hook physics_hooks[] = {
     {"light_colour_at", 0x4292b0, light_colour_at, {0x55, 0x8b, 0xec, 0x8b, 0x45, 0x0c, 0x8b, 0x08}},
     {"textures_unusable_thunk", 0x429340, textures_unusable_thunk, {0xe9, 0x7b, 0x86, 0xff, 0xff, 0x90, 0x90, 0x90}},
     {"smoke_clouds_draw", 0x42b9a0, smoke_clouds_draw_entry, {0x55, 0x8b, 0xec, 0x81, 0xec, 0xac, 0x06, 0x00}},
+    {"shake_flash_tint", 0x42be20, shake_flash_tint_entry, {0x66, 0x83, 0x3d, 0x60, 0xcb, 0x6c, 0x00, 0x00}},
+    {"fade_tint_add", 0x42bf20, fade_tint_add_entry, {0x8b, 0x44, 0x24, 0x04, 0x3d, 0x00, 0x02, 0x00}},
+    {"screen_tint_add", 0x42bfc0, screen_tint_add_entry, {0x8b, 0x0d, 0x34, 0xe1, 0x4b, 0x00, 0x8b, 0x54}},
+    {"screen_flash_set", 0x42c040, screen_flash_set, {0x66, 0x8b, 0x44, 0x24, 0x04, 0x66, 0x3b, 0x05}},
+    {"screen_tint_draw", 0x42c0a0, screen_tint_draw_entry, {0xa0, 0x84, 0xcd, 0x6c, 0x00, 0x56, 0xa8, 0x04}},
+    {"blast_flare_draw", 0x42c420, blast_flare_draw, {0x55, 0x8b, 0xec, 0x81, 0xec, 0x38, 0x02, 0x00}},
+    {"shock_waves_draw", 0x42c950, shock_waves_draw, {0x81, 0xec, 0x94, 0x03, 0x00, 0x00, 0x53, 0x55}},
+    {"font_by_id", 0x42e050, font_by_id_entry, {0x8b, 0x15, 0x14, 0xe3, 0x4b, 0x00, 0x33, 0xc0}},
+    {"text_buffers_alloc", 0x42e2a0, text_buffers_alloc, {0xa1, 0x00, 0xe3, 0x4b, 0x00, 0x85, 0xc0, 0x75}},
+    {"text_entry_copy", 0x42e3d0, text_entry_copy, {0x8b, 0x44, 0x24, 0x0c, 0x53, 0x55, 0x56, 0x33}},
+    {"text_section_find", 0x42e4b0, text_section_find_entry, {0x8b, 0x15, 0xec, 0xe2, 0x4b, 0x00, 0x81, 0xec}},
+    {"text_bytes_find", 0x42e620, text_bytes_find, {0x83, 0xec, 0x40, 0x53, 0x55, 0x8b, 0x6c, 0x24}},
+    {"text_bytes_differ", 0x42e690, text_bytes_differ, {0x53, 0x56, 0x57, 0x8b, 0x7c, 0x24, 0x18, 0x33}},
+    {"text_line_get", 0x42e6d0, text_line_get, {0xb8, 0x00, 0x10, 0x00, 0x00, 0xe8, 0x76, 0x93}},
+    {"string_printf", 0x42e810, string_printf, {0x8b, 0x54, 0x24, 0x14, 0x81, 0xec, 0x00, 0x01}},
+    {"string_width_printf", 0x42e8f0, string_width_printf, {0x8b, 0x54, 0x24, 0x14, 0x81, 0xec, 0x00, 0x01}},
+    {"string_active", 0x42ea00, string_active_entry, {0x8b, 0x44, 0x24, 0x04, 0x83, 0xf8, 0xff, 0x74}},
+    {"string_on", 0x42ea40, string_on, {0x56, 0x8b, 0x74, 0x24, 0x08, 0x68, 0xf4, 0xc8}},
+    {"string_off", 0x42eab0, string_off_entry, {0x56, 0x8b, 0x74, 0x24, 0x08, 0x68, 0x00, 0xc9}},
+    {"string_line_range", 0x42eae0, string_line_range, {0x8b, 0x4c, 0x24, 0x08, 0x56, 0x83, 0xf9, 0xff}},
+    {"string_limits", 0x42ebc0, string_limits, {0x83, 0xec, 0x10, 0x53, 0x55, 0x56, 0x8b, 0x74}},
+    {"string_limits_all", 0x42ed10, string_limits_all, {0x8b, 0x44, 0x24, 0x14, 0x8b, 0x4c, 0x24, 0x10}},
+    {"string_set_position", 0x42ed40, string_set_position, {0x83, 0xec, 0x0c, 0x8d, 0x44, 0x24, 0x10, 0x8d}},
+    {"string_set_position_j", 0x42eed0, string_set_position_j, {0x83, 0xec, 0x14, 0x53, 0x8b, 0x5c, 0x24, 0x1c}},
+    {"string_get_width", 0x42f030, string_get_width_entry, {0x56, 0x8b, 0x74, 0x24, 0x08, 0x68, 0x30, 0xc9}},
+    {"string_get_height", 0x42f070, string_get_height_entry, {0x56, 0x8b, 0x74, 0x24, 0x08, 0x68, 0x40, 0xc9}},
+    {"string_has_marks", 0x42f0b0, string_has_marks_entry, {0x56, 0x8b, 0x74, 0x24, 0x08, 0x68, 0x30, 0xc9}},
+    {"string_colour_range", 0x42f0f0, string_colour_range, {0x51, 0x53, 0x55, 0x56, 0x8b, 0x74, 0x24, 0x20}},
+    {"string_colour_set", 0x42f2b0, string_colour_set, {0x8b, 0x44, 0x24, 0x0c, 0x8b, 0x4c, 0x24, 0x08}},
+    {"string_clip_x", 0x42f2d0, string_clip_x, {0x83, 0xec, 0x14, 0x53, 0x56, 0x57, 0x8b, 0x7c}},
+    {"strings_draw", 0x42f3c0, strings_draw, {0x83, 0xec, 0x10, 0x8b, 0x44, 0x24, 0x1c, 0x33}},
+    {"string_build", 0x42f6a0, string_build, {0x83, 0xec, 0x54, 0xa1, 0xfc, 0xe2, 0x4b, 0x00}},
+    {"decimal9_format", 0x42fc40, decimal9_format_entry, {0x83, 0xec, 0x24, 0x53, 0x55, 0x56, 0x8b, 0x74}},
+    {"decimal_parse", 0x42fcd0, decimal_parse_entry, {0x56, 0x8b, 0x74, 0x24, 0x08, 0x33, 0xc9, 0x33}},
+    {"text_slot_free", 0x42fd10, text_slot_free_entry, {0xa1, 0xf8, 0xe2, 0x4b, 0x00, 0x85, 0xc0, 0x7c}},
+    {"text_tab_next", 0x42fd60, text_tab_next_entry, {0x66, 0x8b, 0x54, 0x24, 0x04, 0x33, 0xc9, 0xb8}},
+    {"glyph_place", 0x42fd90, glyph_place, {0x83, 0xec, 0x14, 0x8b, 0x44, 0x24, 0x18, 0x53}},
+    {"language_get", 0x430120, language_get_entry, {0xa1, 0xf4, 0xe2, 0x4b, 0x00, 0x25, 0xff, 0xff}},
+    {"fe_sprite_gouraud_set", 0x430ea0, fe_sprite_gouraud_set, {0x8b, 0x0d, 0x44, 0xe3, 0x4b, 0x00, 0x33, 0xc0}},
+    {"fe_sprite_set", 0x4310f0, fe_sprite_set, {0x8b, 0x0d, 0x44, 0xe3, 0x4b, 0x00, 0x33, 0xc0}},
+    {"fe_sprite_set_512", 0x431300, fe_sprite_set_512, {0x8b, 0x0d, 0x44, 0xe3, 0x4b, 0x00, 0x33, 0xc0}},
+    {"fe_quad_flat_set", 0x4314d0, fe_quad_flat_set, {0x8b, 0x44, 0x24, 0x08, 0x8b, 0x4c, 0x24, 0x04}},
+    {"fe_frame_sprites_init", 0x4316d0, fe_frame_sprites_init_entry, {0x53, 0x55, 0x8b, 0x6c, 0x24, 0x0c, 0x56, 0x57}},
+    {"fe_box_frame_place", 0x431780, fe_box_frame_place, {0x83, 0xec, 0x28, 0x8b, 0x44, 0x24, 0x40, 0x8b}},
+    {"colour_fade_apply", 0x432820, colour_fade_apply_entry, {0x8b, 0x0d, 0x90, 0xc9, 0x4a, 0x00, 0xb8, 0x00}},
+    {"fade_scale", 0x4328a0, fade_scale_entry, {0xa1, 0x90, 0xc9, 0x4a, 0x00, 0x0f, 0xaf, 0x44}},
+    {"colour_pulse_scale", 0x4328c0, colour_pulse_scale, {0x8a, 0x4c, 0x24, 0x10, 0xb8, 0x02, 0x00, 0x00}},
+    {"front_mode_race_setup", 0x432cd0, front_mode_race_setup, {0x53, 0x8b, 0x5c, 0x24, 0x08, 0x83, 0xfb, 0x01}},
+    {"trail_point_add", 0x433d90, trail_point_add, {0x55, 0x8b, 0xec, 0x83, 0xec, 0x18, 0xa1, 0xfc}},
+    {"trails_draw", 0x433f00, trails_draw, {0xa1, 0x04, 0x80, 0x6c, 0x00, 0x8b, 0x0d, 0x50}},
+    {"beams_draw", 0x4345c0, beams_draw, {0x55, 0x8b, 0xec, 0x81, 0xec, 0xc4, 0x03, 0x00}},
+    {"window_proc", 0x435ed1, window_proc, {0x55, 0x8b, 0xec, 0x51, 0x8b, 0x45, 0x0c, 0x89}},
+    {"window_destroy_quit", 0x436034, window_destroy_quit, {0x55, 0x8b, 0xec, 0xe8, 0x24, 0xe2, 0x03, 0x00}},
+    {"window_command", 0x436542, window_command, {0x55, 0x8b, 0xec, 0x51, 0x8b, 0x45, 0x0c, 0x89}},
+    {"input_focus_poll", 0x4368f0, input_focus_poll, {0x55, 0x8b, 0xec, 0x83, 0x3d, 0x00, 0x80, 0x6c}},
+    {"game_time_get", 0x43692a, game_time_get, {0x55, 0x8b, 0xec, 0xff, 0x15, 0xb4, 0x32, 0x4a}},
+    {"loading_picture_draw", 0x436c2c, loading_picture_draw, {0x55, 0x8b, 0xec, 0x81, 0xec, 0x18, 0x01, 0x00}},
+    {"mode_dialog_languages_fill", 0x436ed6, mode_dialog_languages_fill, {0x55, 0x8b, 0xec, 0x83, 0xec, 0x18, 0xc7, 0x45}},
+    {"mode_dialog_texts_set", 0x436f3b, mode_dialog_texts_set, {0x55, 0x8b, 0xec, 0x81, 0xec, 0x00, 0x01, 0x00}},
+    {"mode_dialog_proc", 0x437171, mode_dialog_proc, {0x55, 0x8b, 0xec, 0x83, 0xec, 0x08, 0x8b, 0x45}},
+    {"error_dialog_proc", 0x4375c7, error_dialog_proc, {0x55, 0x8b, 0xec, 0x81, 0xec, 0x10, 0x03, 0x00}},
+    {"hud_update", 0x4386f0, hud_update_entry, {0x56, 0x8b, 0x74, 0x24, 0x08, 0x57, 0x8b, 0x06}},
+    {"hud_update_extra", 0x438760, hud_update_extra, {0xa1, 0x60, 0x19, 0x4b, 0x00, 0x56, 0x8b, 0x74}},
+    {"hud_sprite_set", 0x4387d0, hud_sprite_set, {0x83, 0xec, 0x18, 0x8b, 0x54, 0x24, 0x1c, 0x8b}},
     {"controls_analogue", 0x428fe0, controls_analogue, {0x53, 0x56, 0x57, 0x8b, 0x7c, 0x24, 0x10, 0x8d}},
     {"car_handbrake", 0x41b8a0, car_handbrake, {0x8b, 0x44, 0x24, 0x08, 0xf6, 0x40, 0x08, 0x10}},
     {"bodies_begin_step", 0x45c0c0, bodies_begin_step, {0xa1, 0x84, 0x9b, 0x6b, 0x00, 0x8b, 0x15, 0x80}},
