@@ -636,7 +636,7 @@ def g_init(st, rng, m):
 
 # name: (address, generator, stubbed callee addresses (None: all))
 TESTS = {
-    "clip_far": (0x417950, g_clip_far),
+    "clip_far_z": (0x417950, g_clip_far),
     "clip_polygon_2d": (0x418290, g_clip_2d),
     "clip_polygon_a": (0x417AF0, g_clip_drive),
     "clip_polygon_b": (0x417CE0, g_clip_drive),

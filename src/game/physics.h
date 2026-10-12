@@ -173,6 +173,134 @@ void GAMEAPI ai_aim_at_node(uint8_t *car, int32_t *v, uint32_t line_index, uint3
 void GAMEAPI ai_steer_to(uint8_t *car, const int32_t *target, int32_t check, int32_t reverse);
 void GAMEAPI ai_drive(uint8_t *car);
 void GAMEAPI ai_pace(uint8_t *car);
+void GAMEAPI cars_view_flags_update(void); /* 0x4231f0 */
+void GAMEAPI ot_frame_flush(void); /* 0x423c40 */
+void GAMEAPI view_matrix_store(const uint32_t *m); /* 0x423d10 */
+void GAMEAPI view_camera_build(uint8_t *view, const uint32_t *matrix, const uint8_t *pos); /* 0x423d70 */
+void GAMEAPI view_camera_load(const uint8_t *view); /* 0x423df0 */
+void GAMEAPI view_lod_set(uint32_t zoom); /* 0x423e10 */
+void GAMEAPI view_zoom_set(uint32_t zoom); /* 0x423f00 */
+int32_t GAMEAPI view_full_screen(void); /* 0x423f20 */
+void GAMEAPI gte_screen_offset_set(int32_t x, int32_t y); /* 0x426200 */
+void GAMEAPI gte_screen_offset_get(int32_t *x, int32_t *y); /* 0x426240 */
+void GAMEAPI projection_h_set(int32_t zoom); /* 0x426260 */
+void GAMEAPI gte_matrix_load(const uint8_t *m); /* 0x426330 */
+void GAMEAPI gte_matrix_save(uint8_t *out); /* 0x426480 */
+void GAMEAPI gte_translation_load(const uint8_t *v); /* 0x426530 */
+void GAMEAPI view_rect_saved_get(uint32_t *out); /* 0x426590 */
+void GAMEAPI view_saved_get(uint32_t *out); /* 0x4265b0 */
+void gte_rt_float(void); /* 0x426620: asm */
+void gte_rtps_float(void); /* 0x4266d0: asm */
+void gte_rtps_3dnow(void); /* 0x4268c0: asm, 3DNow!, (record) through 0x6ccd78 / 0x6ccd7c */
+void gte_rt_depth(void); /* 0x426cd0: asm, (record) returns z; leaves st(0) for gte_project_pending when z >= 0 */
+void gte_project_pending(void); /* 0x426dc0: asm, takes st(0) from gte_rt_depth */
+void GAMEAPI matrix_rotate_vec(const uint8_t *m, const int16_t *v, int32_t *out); /* 0x426e10 */
+void GAMEAPI matrix_mul_into(const uint8_t *a, uint8_t *b); /* 0x426e90 */
+void GAMEAPI matrix_translation_set(uint8_t *m, const int32_t *v); /* 0x426f60 */
+void GAMEAPI gte_light_colour(void); /* 0x427100 */
+void gte_light_colour_3dnow(void); /* 0x427250: asm, 3DNow!, through 0x6cce3c */
+void gte_light_colour_float(void); /* 0x427400: asm, through 0x6cce3c */
+int32_t GAMEAPI gte_nclip(void); /* 0x4278a0 */
+void vec_facing_float(void); /* 0x4278f0: asm, (a, b, c) returns its float in st(0) */
+int32_t GAMEAPI ot_clear_forward(uint32_t *ot, uint32_t n); /* 0x427a40 */
+int32_t GAMEAPI ot_clear_reverse(uint32_t *ot, uint32_t n); /* 0x427a70 */
+uint32_t GAMEAPI ot_add_prim(uint32_t entry, uint32_t *prim); /* 0x427ab0 */
+void GAMEAPI filter_set_thunk(void); /* 0x428240 */
+void GAMEAPI fog_on_thunk(void); /* 0x428250 */
+void GAMEAPI fog_off_thunk(void); /* 0x428260 */
+int32_t GAMEAPI zbuffer_restore(void); /* 0x428270 */
+int32_t GAMEAPI debug_line_print(char *s); /* 0x428310 */
+int32_t GAMEAPI clear_colour_store(uint32_t r, uint32_t g, uint32_t b); /* 0x428390 */
+int32_t GAMEAPI depth_range_set(int32_t near, int32_t far, uint32_t c); /* 0x4283d0 */
+void GAMEAPI view_border_draw(const int16_t *r, const int16_t *in, uint32_t fill); /* 0x4284b0 */
+void GAMEAPI view_viewport_apply(const uint8_t *view, int32_t border); /* 0x428770 */
+void vertex_project_codes(void); /* 0x4288c0: asm, (record); st(0) handed to 0x426b00 */
+void vertex_project_float(void); /* 0x428900: asm, (record) */
+void GAMEAPI light_matrix_load(const uint32_t *m); /* 0x428940 */
+void GAMEAPI render_flags_set(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e); /* 0x428a50 */
+void GAMEAPI projection_push(void); /* 0x428a80 */
+void GAMEAPI projection_pop(void); /* 0x428b00 */
+void GAMEAPI far_plane_set(uint32_t f); /* 0x428b90 */
+void far_plane_get(void); /* 0x428bd0: asm, returns the float in st(0) */
+void GAMEAPI matrix_transpose_s16(const uint8_t *src, int16_t *dst); /* 0x428be0 */
+int32_t GAMEAPI texture_surface_lock(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f); /* 0x428c30 */
+int32_t GAMEAPI texture_surface_unlock(uint32_t a, uint32_t b, uint32_t c); /* 0x428c60 */
+int32_t GAMEAPI texture_handle_new(void); /* 0x428c80 */
+int32_t GAMEAPI texture_surface_upload(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f); /* 0x428c90 */
+void GAMEAPI dword_store(uint32_t *p, uint32_t v); /* 0x4290a0 */
+void vec_normalise_x87(void); /* 0x4290b0: asm, (in, out) returns 0 */
+void GAMEAPI dx_error_ignore(void); /* 0x4291f0 */
+void GAMEAPI light_colour_at(const uint8_t *pos, const uint32_t *rgb, uint32_t *out); /* 0x4292b0 */
+int32_t GAMEAPI textures_unusable_thunk(void); /* 0x429340 */
+void GAMEAPI smoke_clouds_draw(void); /* 0x42b9a0 */
+void GAMEAPI d3d_packet_draw(uint32_t packet); /* 0x420be0 */
+void GAMEAPI d3d_vertex_repeat(void); /* 0x421800 */
+void GAMEAPI d3d_draw_otag(uint32_t ot); /* 0x421860 */
+int32_t GAMEAPI d3d_surfaces_restore(void); /* 0x4218e0 */
+void GAMEAPI car_ot_insert(uint32_t car, int32_t z, int32_t bias); /* 0x421e60 */
+void GAMEAPI cars_draw(void); /* 0x421ef0 */
+void GAMEAPI cars_packets_next(void); /* 0x422080 */
+void GAMEAPI car_packets_next(uint32_t car); /* 0x422100 */
+void GAMEAPI car_ride_offset_update(uint32_t car); /* 0x422140 */
+void GAMEAPI cars_effects_draw(void); /* 0x422210 */
+void GAMEAPI car_model_draw(uint32_t car, uint32_t light, int32_t bias); /* 0x422440 */
+void GAMEAPI car_wheels_draw(uint32_t car, uint32_t light); /* 0x4224a0 */
+void GAMEAPI car_points_transform(uint32_t car); /* 0x422540 */
+int32_t GAMEAPI wheel_facing_away(uint32_t wheel); /* 0x4225c0 */
+int32_t GAMEAPI car_depth_offset(uint32_t car, uint32_t offset); /* 0x422650 */
+void GAMEAPI model_draw_at(uint32_t model, uint32_t light, uint32_t ot, int32_t dist); /* 0x4226a0 */
+void GAMEAPI model_draw_lod(uint32_t model, uint32_t ot, int32_t dist); /* 0x4226d0 */
+void GAMEAPI cars_reflections_update(void); /* 0x422c80 */
+void GAMEAPI car_reflection_build(uint32_t src, uint32_t dst, int32_t height); /* 0x422d30 */
+void GAMEAPI matrix_mirror_y(uint32_t dst, uint32_t src); /* 0x422e30 */
+void GAMEAPI position_mirror_y(uint32_t dst, uint32_t src, int32_t height); /* 0x422e80 */
+int32_t GAMEAPI car_water_find(uint32_t car, uint32_t out); /* 0x422eb0 */
+void GAMEAPI car_shadow_draw(uint32_t car, uint32_t ot); /* 0x422f50 */
+int32_t GAMEAPI viewport_clear(uint32_t keep_target); /* 0x41e040 */
+int32_t GAMEAPI d3d_materials_release(void); /* 0x41e0d0 */
+void GAMEAPI material_init(uint32_t *m, uint32_t r, uint32_t g, uint32_t b); /* 0x41e110 */
+int32_t GAMEAPI d3d_scene_begin(void); /* 0x41e170 */
+void GAMEAPI d3d_scene_end(void); /* 0x41e190 */
+void GAMEAPI pixels_rgb_to_screen(const uint8_t *src, int32_t n, uint32_t alpha); /* 0x41e1d0 */
+void GAMEAPI pixels_rgb_convert(const uint8_t *src, int32_t n, uint16_t *dst, uint32_t alpha); /* 0x41e1f0 */
+void GAMEAPI pixels_1555_convert(const uint16_t *src, int32_t w, int32_t h, uint16_t *dst, int32_t pitch, uint32_t alpha); /* 0x41e440 */
+int32_t GAMEAPI texture_slot_free_find(void); /* 0x41ec20 */
+void GAMEAPI background_colour_set(int32_t r, int32_t g, int32_t b); /* 0x41ec40 */
+int32_t GAMEAPI materials_create(void); /* 0x41ed00 */
+int32_t GAMEAPI surfaces_clear(void); /* 0x41eeb0 */
+int32_t GAMEAPI texture_page_show(int32_t page); /* 0x41efe0 */
+int32_t GAMEAPI texture_format_choose(uint32_t rgb_only, uint32_t alpha_wanted); /* 0x41f060 */
+void GAMEAPI d3d_viewport_set(uint32_t x, uint32_t y, uint32_t w, uint32_t h); /* 0x41f210 */
+void GAMEAPI vertex_snap_set(uint32_t on); /* 0x41f3f0 */
+uint32_t GAMEAPI surface_pixel_read(uint32_t which, uint32_t x, uint32_t y, uint32_t mask); /* 0x41f400 */
+int32_t GAMEAPI screen_quad_draw(uint32_t state, uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1, uint32_t u0, uint32_t v0, uint32_t u1, uint32_t v1, uint32_t z, uint32_t colour, uint32_t in_scene, uint32_t blend); /* 0x41f550 */
+uint32_t GAMEAPI bytes_sum8(const uint8_t *p, int32_t n); /* 0x41f700 */
+int32_t GAMEAPI pvrc_texture_probe(void); /* 0x41fb60 */
+int32_t GAMEAPI ddraw_device_id_check(void); /* 0x41fcf0 */
+void GAMEAPI blend_modes_choose(void); /* 0x41fda0 */
+int32_t GAMEAPI texture_lock(int32_t page, uint32_t flags, uint32_t *bits, uint32_t *palette, uint32_t *bit_count, uint32_t *pitch); /* 0x41fef0 */
+int32_t GAMEAPI texture_unlock(int32_t page, uint32_t flags, const uint32_t *palette); /* 0x420000 */
+void GAMEAPI texture_palettes_apply(void); /* 0x420090 */
+int32_t GAMEAPI texture_reload(uint32_t slot); /* 0x420150 */
+int32_t GAMEAPI image_tiles_upload(uint32_t src, const uint8_t *palette, int32_t w, int32_t h, int32_t pitch); /* 0x4201f0 */
+void GAMEAPI image_tiles_draw(int32_t first, int32_t w, int32_t h, const int32_t *rect, int32_t blend, uint32_t colour); /* 0x4203a0 */
+int32_t GAMEAPI texture_slots_release_thunk(void); /* 0x4205e0 */
+int32_t GAMEAPI texture_page_next(void); /* 0x4205f0 */
+void GAMEAPI vertices_snap(void); /* 0x420600 */
+void GAMEAPI vertices_snap_thunk(void); /* 0x420650 */
+void GAMEAPI vertices_draw_list_noclip(void); /* 0x420660 */
+void GAMEAPI vertices_draw_list(void); /* 0x4206a0 */
+void GAMEAPI vertices_draw_fan(void); /* 0x4206e0 */
+void GAMEAPI vertices_draw_quads(void); /* 0x420720 */
+void GAMEAPI render_blend_set(uint32_t flags, uint32_t mode); /* 0x420770 */
+void GAMEAPI render_texture_set(uint32_t page); /* 0x4209c0 */
+void render_state_select(void); /* 0x420a30: asm entry, register argument ebx (state) */
+void GAMEAPI render_state_select_c(uint32_t state); /* 0x420a30 body */
+void vertex_emit_indexed(void); /* 0x420a90: asm entry, register arguments eax (colour), ebx (texture indices), edx (vertex) */
+void GAMEAPI vertex_emit_indexed_c(uint32_t colour, uint32_t uv, const uint8_t *v); /* 0x420a90 body */
+void vertex_emit(void); /* 0x420b10: asm entry, register argument edx (vertex) */
+void GAMEAPI vertex_emit_c(const uint8_t *v); /* 0x420b10 body */
+void GAMEAPI vertex_list_draw_fan(const int32_t *list); /* 0x420bb0 */
 int32_t GAMEAPI clip_far_z(uint32_t *in, uint32_t *out, int32_t *next); /* 0x417950 */
 int32_t GAMEAPI clip_polygon_a(uint32_t flags); /* 0x417af0 */
 int32_t GAMEAPI clip_polygon_b(uint32_t flags); /* 0x417ce0 */

@@ -693,15 +693,19 @@ int vkgame_flip(void)
 /* The loading pictures (and other images, 0x4203a0) are drawn as tiles of
  * screen-space packets straight into the back end: the call at 0x420582
  * comes here instead. */
-static void GAMEAPI image_tile(uint32_t packet)
+void GAMEAPI vkgame_image_tile(uint32_t packet)
 {
     if (!vkgame_prim(packet))
         ((void(GAMEAPI *)(uint32_t))0x420be0)(packet);
 }
 
+#define image_tile vkgame_image_tile
+
 static void patch_image_tile_call(void)
 {
     uint8_t *call = (uint8_t *)0x420582;
+    if (call[0] == 0xe9 || call[0] == 0xcc) /* 0x4203a0 is C now (src/game/orig_pa.c calls vkgame_image_tile) */
+        return;
     if (call[0] != 0xe8 || *(int32_t *)(call + 1) != 0x420be0 - 0x420587) {
         log_printf("vulkan: unexpected bytes at 0x420582, loading pictures stay on the old path");
         return;

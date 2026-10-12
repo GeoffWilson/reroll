@@ -49,7 +49,7 @@ address,name,status,notes
 0x40b000,camera_speed_zoom,verified,"src/game/post_i.c. (slot, camera pos): pulls the camera toward the target car by speed; relinks the camera object. Emulator fuzz; in game"
 0x408270,tv_camera_begin,verified,"src/game/orig_na.c. the TV camera takes over a view: saves the field of view (0x6cce6c, truncated, to 0x4b6244) and the view's camera object (+0x34, 0xd8 bytes, to 0x4b616c), copies TV state 0x6cf6e0 + view * 0x150 over it, camera flags from the TV record (+0x30, +0x1c) and bit 4, its field of view (+0x24), the sound listener if flag 4. Emulator fuzz"
 0x40ad60,tv_camera_end,verified,src/game/orig_na.c. gives the view (0x6cd408) its camera object and field of view back; camera flags 0x10 and 0x40 off. Emulator fuzz
-0x423d10,set_view_matrix,understood,copies 5 dwords (9 x int16 view matrix + pad) to 0x6ce5a0
+0x423d10,view_matrix_store,verified,src/game/orig_pc.c. asm Emulator fuzz
 0x4611d0,grid_unlink,verified,"src/game/post_f.c. unlinks a world object from its grid cell (object+0xc cell, +4/+6 link indices; pool 0x6b9b90, 0x80 per index). Emulator fuzz; in game"
 0x460fb0,grid_link,verified,src/game/post_f.c. finds the grid cell for object +0x34 (0x419420) and links the object into it. Emulator fuzz; in game
 0x442890,trigger_queue_process,verified,"src/game/gl_gc.c. drops duplicate queued triggers, fires each, empties the queue. Fuzz ok; in game. Emulator fuzz; in game via verify"
@@ -76,7 +76,7 @@ address,name,status,notes
 0x486d70,mat_mul_vec,verified,src/game/fixed.c. 3x3 int32 16.16 matrix times vector
 0x428090,gte_rotate,verified,src/game/fixed.c. PS1 GTE-style: int16 matrix 0x6ccbe0 x int16 vector 0x6ccc64 >> 12 -> int32 0x6cccc8
 0x427f50,gte_outer_product,verified,src/game/fixed.c. Matrix diagonal x vector 0x6ccc88 (int16 values in 32-bit slots)
-0x4290b0,vec_normalise_float,inferred,x87 float normalise to length _DAT_004a3378
+0x4290b0,vec_normalise_x87,verified,"src/game/orig_pc.c. asm, (in, out) returns 0 Emulator fuzz"
 0x45c0c0,bodies_begin_step,verified,"src/game/physics.c. Per body: clears contact state (+0x118 time, +0x128, +0x114 = -1, +0x120 = max), contact mode +0x168 (3 for types 3, 4, 0x1d, else 1); per car: damage flash +0x65f -16. Verified in game with REROLL_VERIFY (0 of 1000+ steps differ)."
 0x462160,bodies_apply_forces,verified,"src/game/physics.c. Per body 0x466520 (or 0x462e80 for flag 0x2000), then 0x4050f0. Verified in game with REROLL_VERIFY (0 of 1000+ steps differ)."
 0x419550,track_contacts_find,verified,"src/game/track.c. Per body: slot gets position/velocity >> 8, cell at the middle of the path, polygon lists tested (0x419820, original); then object contacts. Verified in game (REROLL_VERIFY, 0 of 3000+ steps differ)."
@@ -1531,3 +1531,126 @@ address,name,status,notes
 0x41dec0,d3d_zbuffer_off,verified,src/game/orig_nb.c. Emulator fuzz
 0x41dee0,d3d_state_defaults,verified,src/game/orig_nb.c. Emulator fuzz
 0x41df10,d3d_viewport_create,verified,src/game/orig_nb.c. Emulator fuzz
+0x41e040,viewport_clear,verified,"src/game/orig_pa.c. asm entry, register argument ebx (state) Emulator fuzz"
+0x41e0d0,d3d_materials_release,verified,"src/game/orig_pa.c. asm entry, register argument ebx (state) Emulator fuzz"
+0x41e110,material_init,verified,"src/game/orig_pa.c. asm entry, register argument ebx (state) Emulator fuzz"
+0x41e170,d3d_scene_begin,verified,"src/game/orig_pa.c. asm entry, register argument ebx (state) Emulator fuzz"
+0x41e190,d3d_scene_end,verified,"src/game/orig_pa.c. asm entry, register argument ebx (state) Emulator fuzz"
+0x41e1d0,pixels_rgb_to_screen,verified,"src/game/orig_pa.c. asm entry, register argument ebx (state) Emulator fuzz"
+0x41e1f0,pixels_rgb_convert,verified,"src/game/orig_pa.c. asm entry, register argument ebx (state) Emulator fuzz"
+0x41e440,pixels_1555_convert,verified,"src/game/orig_pa.c. asm entry, register argument ebx (state) Emulator fuzz"
+0x41ec20,texture_slot_free_find,verified,"src/game/orig_pa.c. asm entry, register argument ebx (state) Emulator fuzz"
+0x41ec40,background_colour_set,verified,"src/game/orig_pa.c. asm entry, register argument ebx (state) Emulator fuzz"
+0x41ed00,materials_create,verified,"src/game/orig_pa.c. asm entry, register argument ebx (state) Emulator fuzz"
+0x41eeb0,surfaces_clear,verified,"src/game/orig_pa.c. asm entry, register argument ebx (state) Emulator fuzz"
+0x41efe0,texture_page_show,verified,"src/game/orig_pa.c. asm entry, register argument ebx (state) Emulator fuzz"
+0x41f060,texture_format_choose,verified,"src/game/orig_pa.c. asm entry, register argument ebx (state) Emulator fuzz"
+0x41f210,d3d_viewport_set,verified,"src/game/orig_pa.c. asm entry, register argument ebx (state) Emulator fuzz"
+0x41f3f0,vertex_snap_set,verified,"src/game/orig_pa.c. asm entry, register argument ebx (state) Emulator fuzz"
+0x41f400,surface_pixel_read,verified,"src/game/orig_pa.c. asm entry, register argument ebx (state) Emulator fuzz"
+0x41f550,screen_quad_draw,verified,"src/game/orig_pa.c. asm entry, register argument ebx (state) Emulator fuzz"
+0x41f700,bytes_sum8,verified,"src/game/orig_pa.c. asm entry, register argument ebx (state) Emulator fuzz"
+0x41fb60,pvrc_texture_probe,verified,"src/game/orig_pa.c. asm entry, register argument ebx (state) Emulator fuzz"
+0x41fcf0,ddraw_device_id_check,verified,"src/game/orig_pa.c. asm entry, register argument ebx (state) Emulator fuzz"
+0x41fda0,blend_modes_choose,verified,"src/game/orig_pa.c. asm entry, register argument ebx (state) Emulator fuzz"
+0x41fef0,texture_lock,verified,"src/game/orig_pa.c. asm entry, register argument ebx (state) Emulator fuzz"
+0x420000,texture_unlock,verified,"src/game/orig_pa.c. asm entry, register argument ebx (state) Emulator fuzz"
+0x420090,texture_palettes_apply,verified,"src/game/orig_pa.c. asm entry, register argument ebx (state) Emulator fuzz"
+0x420150,texture_reload,verified,"src/game/orig_pa.c. asm entry, register argument ebx (state) Emulator fuzz"
+0x4201f0,image_tiles_upload,verified,"src/game/orig_pa.c. asm entry, register argument ebx (state) Emulator fuzz"
+0x4203a0,image_tiles_draw,verified,"src/game/orig_pa.c. asm entry, register argument ebx (state) Emulator fuzz"
+0x4205e0,texture_slots_release_thunk,verified,"src/game/orig_pa.c. asm entry, register argument ebx (state) Emulator fuzz"
+0x4205f0,texture_page_next,verified,"src/game/orig_pa.c. asm entry, register argument ebx (state) Emulator fuzz"
+0x420600,vertices_snap,verified,"src/game/orig_pa.c. asm entry, register argument ebx (state) Emulator fuzz"
+0x420650,vertices_snap_thunk,verified,"src/game/orig_pa.c. asm entry, register argument ebx (state) Emulator fuzz"
+0x420660,vertices_draw_list_noclip,verified,"src/game/orig_pa.c. asm entry, register argument ebx (state) Emulator fuzz"
+0x4206a0,vertices_draw_list,verified,"src/game/orig_pa.c. asm entry, register argument ebx (state) Emulator fuzz"
+0x4206e0,vertices_draw_fan,verified,"src/game/orig_pa.c. asm entry, register argument ebx (state) Emulator fuzz"
+0x420720,vertices_draw_quads,verified,"src/game/orig_pa.c. asm entry, register argument ebx (state) Emulator fuzz"
+0x420770,render_blend_set,verified,"src/game/orig_pa.c. asm entry, register argument ebx (state) Emulator fuzz"
+0x4209c0,render_texture_set,verified,"src/game/orig_pa.c. asm entry, register argument ebx (state) Emulator fuzz"
+0x420a30,render_state_select,verified,"src/game/orig_pa.c. asm entry, register argument ebx (state) Emulator fuzz"
+0x420a90,vertex_emit_indexed,verified,"src/game/orig_pa.c. asm entry, register arguments eax (colour), ebx (texture indices), edx (vertex) Emulator fuzz"
+0x420b10,vertex_emit,verified,"src/game/orig_pa.c. asm entry, register argument edx (vertex) Emulator fuzz"
+0x420bb0,vertex_list_draw_fan,verified,src/game/orig_pa.c. method at byte offset `off` of the object's vtable. Emulator fuzz
+0x420be0,d3d_packet_draw,verified,src/game/orig_pb.c. Emulator fuzz
+0x421800,d3d_vertex_repeat,verified,src/game/orig_pb.c. Emulator fuzz
+0x421860,d3d_draw_otag,verified,src/game/orig_pb.c. Emulator fuzz
+0x4218e0,d3d_surfaces_restore,verified,src/game/orig_pb.c. Emulator fuzz
+0x421e60,car_ot_insert,verified,src/game/orig_pb.c. Emulator fuzz
+0x421ef0,cars_draw,verified,src/game/orig_pb.c. Emulator fuzz
+0x422080,cars_packets_next,verified,src/game/orig_pb.c. Emulator fuzz
+0x422100,car_packets_next,verified,src/game/orig_pb.c. Emulator fuzz
+0x422140,car_ride_offset_update,verified,src/game/orig_pb.c. Emulator fuzz
+0x422210,cars_effects_draw,verified,src/game/orig_pb.c. Emulator fuzz
+0x422440,car_model_draw,verified,src/game/orig_pb.c. Emulator fuzz
+0x4224a0,car_wheels_draw,verified,src/game/orig_pb.c. Emulator fuzz
+0x422540,car_points_transform,verified,src/game/orig_pb.c. Emulator fuzz
+0x4225c0,wheel_facing_away,verified,src/game/orig_pb.c. Emulator fuzz
+0x422650,car_depth_offset,verified,src/game/orig_pb.c. Emulator fuzz
+0x4226a0,model_draw_at,verified,src/game/orig_pb.c. Emulator fuzz
+0x4226d0,model_draw_lod,verified,src/game/orig_pb.c. Emulator fuzz
+0x422c80,cars_reflections_update,verified,src/game/orig_pb.c. Emulator fuzz
+0x422d30,car_reflection_build,verified,src/game/orig_pb.c. Emulator fuzz
+0x422e30,matrix_mirror_y,verified,src/game/orig_pb.c. Emulator fuzz
+0x422e80,position_mirror_y,verified,src/game/orig_pb.c. Emulator fuzz
+0x422eb0,car_water_find,verified,src/game/orig_pb.c. Emulator fuzz
+0x422f50,car_shadow_draw,verified,src/game/orig_pb.c. Emulator fuzz
+0x4231f0,cars_view_flags_update,verified,src/game/orig_pc.c. asm Emulator fuzz
+0x423c40,ot_frame_flush,verified,src/game/orig_pc.c. asm Emulator fuzz
+0x423d70,view_camera_build,verified,src/game/orig_pc.c. asm Emulator fuzz
+0x423df0,view_camera_load,verified,src/game/orig_pc.c. asm Emulator fuzz
+0x423e10,view_lod_set,verified,src/game/orig_pc.c. asm Emulator fuzz
+0x423f00,view_zoom_set,verified,src/game/orig_pc.c. asm Emulator fuzz
+0x423f20,view_full_screen,verified,src/game/orig_pc.c. asm Emulator fuzz
+0x426200,gte_screen_offset_set,verified,src/game/orig_pc.c. asm Emulator fuzz
+0x426240,gte_screen_offset_get,verified,src/game/orig_pc.c. asm Emulator fuzz
+0x426260,projection_h_set,verified,src/game/orig_pc.c. asm Emulator fuzz
+0x426330,gte_matrix_load,verified,src/game/orig_pc.c. asm Emulator fuzz
+0x426480,gte_matrix_save,verified,src/game/orig_pc.c. asm Emulator fuzz
+0x426530,gte_translation_load,verified,src/game/orig_pc.c. asm Emulator fuzz
+0x426590,view_rect_saved_get,verified,src/game/orig_pc.c. asm Emulator fuzz
+0x4265b0,view_saved_get,verified,src/game/orig_pc.c. asm Emulator fuzz
+0x426620,gte_rt_float,verified,src/game/orig_pc.c. asm Emulator fuzz
+0x4266d0,gte_rtps_float,verified,src/game/orig_pc.c. asm Emulator fuzz
+0x4268c0,gte_rtps_3dnow,verified,"src/game/orig_pc.c. asm, 3DNow!, (record) through 0x6ccd78 / 0x6ccd7c Emulator fuzz"
+0x426cd0,gte_rt_depth,verified,"src/game/orig_pc.c. asm, (record) returns z; leaves st(0) for gte_project_pending when z >= 0 Emulator fuzz"
+0x426dc0,gte_project_pending,verified,"src/game/orig_pc.c. asm, takes st(0) from gte_rt_depth Emulator fuzz"
+0x426e10,matrix_rotate_vec,verified,"src/game/orig_pc.c. asm, 3DNow!, through 0x6cce3c Emulator fuzz"
+0x426e90,matrix_mul_into,verified,"src/game/orig_pc.c. asm, 3DNow!, through 0x6cce3c Emulator fuzz"
+0x426f60,matrix_translation_set,verified,"src/game/orig_pc.c. asm, 3DNow!, through 0x6cce3c Emulator fuzz"
+0x427100,gte_light_colour,verified,"src/game/orig_pc.c. asm, 3DNow!, through 0x6cce3c Emulator fuzz"
+0x427250,gte_light_colour_3dnow,verified,"src/game/orig_pc.c. asm, 3DNow!, through 0x6cce3c Emulator fuzz"
+0x427400,gte_light_colour_float,verified,"src/game/orig_pc.c. asm, through 0x6cce3c Emulator fuzz"
+0x4278a0,gte_nclip,verified,"src/game/orig_pc.c. asm, (a, b, c) returns its float in st(0) Emulator fuzz"
+0x4278f0,vec_facing_float,verified,"src/game/orig_pc.c. asm, (a, b, c) returns its float in st(0) Emulator fuzz"
+0x427a40,ot_clear_forward,verified,"src/game/orig_pc.c. asm, (record); st(0) handed to 0x426b00 Emulator fuzz"
+0x427a70,ot_clear_reverse,verified,"src/game/orig_pc.c. asm, (record); st(0) handed to 0x426b00 Emulator fuzz"
+0x427ab0,ot_add_prim,verified,"src/game/orig_pc.c. asm, (record); st(0) handed to 0x426b00 Emulator fuzz"
+0x428240,filter_set_thunk,verified,"src/game/orig_pc.c. asm, (record); st(0) handed to 0x426b00 Emulator fuzz"
+0x428250,fog_on_thunk,verified,"src/game/orig_pc.c. asm, (record); st(0) handed to 0x426b00 Emulator fuzz"
+0x428260,fog_off_thunk,verified,"src/game/orig_pc.c. asm, (record); st(0) handed to 0x426b00 Emulator fuzz"
+0x428270,zbuffer_restore,verified,"src/game/orig_pc.c. asm, (record); st(0) handed to 0x426b00 Emulator fuzz"
+0x428310,debug_line_print,verified,"src/game/orig_pc.c. asm, (record); st(0) handed to 0x426b00 Emulator fuzz"
+0x428390,clear_colour_store,verified,"src/game/orig_pc.c. asm, (record); st(0) handed to 0x426b00 Emulator fuzz"
+0x4283d0,depth_range_set,verified,"src/game/orig_pc.c. asm, (record); st(0) handed to 0x426b00 Emulator fuzz"
+0x4284b0,view_border_draw,verified,"src/game/orig_pc.c. asm, (record); st(0) handed to 0x426b00 Emulator fuzz"
+0x428770,view_viewport_apply,verified,"src/game/orig_pc.c. asm, (record); st(0) handed to 0x426b00 Emulator fuzz"
+0x4288c0,vertex_project_codes,verified,"src/game/orig_pc.c. asm, (record); st(0) handed to 0x426b00 Emulator fuzz"
+0x428900,vertex_project_float,verified,"src/game/orig_pc.c. asm, (record) Emulator fuzz"
+0x428940,light_matrix_load,verified,"src/game/orig_pc.c. asm, returns the float in st(0) Emulator fuzz"
+0x428a50,render_flags_set,verified,"src/game/orig_pc.c. asm, returns the float in st(0) Emulator fuzz"
+0x428a80,projection_push,verified,"src/game/orig_pc.c. asm, returns the float in st(0) Emulator fuzz"
+0x428b00,projection_pop,verified,"src/game/orig_pc.c. asm, returns the float in st(0) Emulator fuzz"
+0x428b90,far_plane_set,verified,"src/game/orig_pc.c. asm, returns the float in st(0) Emulator fuzz"
+0x428bd0,far_plane_get,verified,"src/game/orig_pc.c. asm, returns the float in st(0) Emulator fuzz"
+0x428be0,matrix_transpose_s16,verified,"src/game/orig_pc.c. asm, (in, out) returns 0 Emulator fuzz"
+0x428c30,texture_surface_lock,verified,"src/game/orig_pc.c. asm, (in, out) returns 0 Emulator fuzz"
+0x428c60,texture_surface_unlock,verified,"src/game/orig_pc.c. asm, (in, out) returns 0 Emulator fuzz"
+0x428c80,texture_handle_new,verified,"src/game/orig_pc.c. asm, (in, out) returns 0 Emulator fuzz"
+0x428c90,texture_surface_upload,verified,"src/game/orig_pc.c. asm, (in, out) returns 0 Emulator fuzz"
+0x4290a0,dword_store,verified,"src/game/orig_pc.c. asm, (in, out) returns 0 Emulator fuzz"
+0x4291f0,dx_error_ignore,verified,src/game/orig_pc.c. the original's instructions ---- Emulator fuzz
+0x4292b0,light_colour_at,verified,src/game/orig_pc.c. the original's instructions ---- Emulator fuzz
+0x429340,textures_unusable_thunk,verified,src/game/orig_pc.c. the original's instructions ---- Emulator fuzz
+0x42b9a0,smoke_clouds_draw,verified,src/game/orig_pc.c. the original's instructions ---- Emulator fuzz

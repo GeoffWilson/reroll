@@ -1351,6 +1351,273 @@ static void GAMEAPI cpu_features_read_entry(void)
     verify_call2(&cpu_features_read_point, (verify_fn2)0x41c8f0, (verify_fn2)(void *)cpu_features_read, 0, 0);
 }
 
+/* Group PA: the functions whose whole call tree stays in game memory (no DirectX, no allocation):
+ * the free texture slot search, the texture format choice, the vertex snap switch and the snap
+ * itself (per draw: every 31st call), the byte checksum and the next texture page. The rest make
+ * COM calls (render states, DrawPrimitive, surfaces, materials) or take register arguments
+ * (0x420a30 / 0x420a90 / 0x420b10): fuzz only. */
+static struct verify_point texture_slot_free_find_point = VERIFY_POINT("texture_slot_free_find", 1, 1);
+
+static int32_t GAMEAPI texture_slot_free_find_entry(void)
+{
+    return verify_call2(&texture_slot_free_find_point, (verify_fn2)0x41ec20, (verify_fn2)(void *)texture_slot_free_find,
+                        0, 0);
+}
+
+static struct verify_point texture_format_choose_point = VERIFY_POINT("texture_format_choose", 1, 1);
+
+static int32_t GAMEAPI texture_format_choose_entry(uint32_t rgb_only, uint32_t alpha_wanted)
+{
+    return verify_call2(&texture_format_choose_point, (verify_fn2)0x41f060, (verify_fn2)(void *)texture_format_choose,
+                        (int32_t)rgb_only, (int32_t)alpha_wanted);
+}
+
+static struct verify_point vertex_snap_set_point = VERIFY_POINT_VOID("vertex_snap_set", 1, 1);
+
+static void GAMEAPI vertex_snap_set_entry(uint32_t on)
+{
+    verify_call2(&vertex_snap_set_point, (verify_fn2)0x41f3f0, (verify_fn2)(void *)vertex_snap_set, (int32_t)on, 0);
+}
+
+static struct verify_point bytes_sum8_point = VERIFY_POINT("bytes_sum8", 1, 1);
+
+static uint32_t GAMEAPI bytes_sum8_entry(const uint8_t *p, int32_t n)
+{
+    return (uint32_t)verify_call2(&bytes_sum8_point, (verify_fn2)0x41f700, (verify_fn2)(void *)bytes_sum8,
+                                  (int32_t)(uintptr_t)p, n) & 0xff;
+}
+
+static struct verify_point texture_page_next_point = VERIFY_POINT("texture_page_next", 1, 1);
+
+static int32_t GAMEAPI texture_page_next_entry(void)
+{
+    return verify_call2(&texture_page_next_point, (verify_fn2)0x4205f0, (verify_fn2)(void *)texture_page_next, 0, 0);
+}
+
+static struct verify_point vertices_snap_point = VERIFY_POINT_VOID("vertices_snap", 31, 1);
+
+static void GAMEAPI vertices_snap_entry(void)
+{
+    verify_call2(&vertices_snap_point, (verify_fn2)0x420600, (verify_fn2)(void *)vertices_snap, 0, 0);
+}
+
+static struct verify_point vertices_snap_thunk_point = VERIFY_POINT_VOID("vertices_snap_thunk", 31, 1);
+
+static void GAMEAPI vertices_snap_thunk_entry(void)
+{
+    verify_call2(&vertices_snap_thunk_point, (verify_fn2)0x420650, (verify_fn2)(void *)vertices_snap_thunk, 0, 0);
+}
+
+/* Group PB: the car functions whose whole call tree stays in game memory and that the C reaches by
+ * address from cars_draw: the packet ring advance (with the tag list clear 0x427a40), the ride offset,
+ * and the water reflections (water box search, mirrored matrices and positions, the copied block).
+ * Each runs once per frame (per car for the ride offset): every 31st call is checked. The drawing
+ * functions are not verified: the GTE transform keeps its stack record's address in 0x6ccd74, which
+ * would always differ, and the rest calls Direct3D or takes more than two arguments. */
+static struct verify_point cars_packets_next_point = VERIFY_POINT_VOID("cars_packets_next", 31, 1);
+
+static void GAMEAPI cars_packets_next_entry(void)
+{
+    verify_call2(&cars_packets_next_point, (verify_fn2)0x422080, (verify_fn2)(void *)cars_packets_next, 0, 0);
+}
+
+static struct verify_point car_ride_offset_update_point = VERIFY_POINT_VOID("car_ride_offset_update", 31, 1);
+
+static void GAMEAPI car_ride_offset_update_entry(uint32_t car)
+{
+    verify_call2(&car_ride_offset_update_point, (verify_fn2)0x422140, (verify_fn2)(void *)car_ride_offset_update,
+                 (int32_t)car, 0);
+}
+
+static struct verify_point cars_reflections_update_point = VERIFY_POINT_VOID("cars_reflections_update", 31, 1);
+
+static void GAMEAPI cars_reflections_update_entry(void)
+{
+    verify_call2(&cars_reflections_update_point, (verify_fn2)0x422c80, (verify_fn2)(void *)cars_reflections_update,
+                 0, 0);
+}
+
+/* Group PC: functions whose whole call tree stays in game memory: the per-frame car view flags and
+ * smoke clouds (through the transform pointers, the sin / cos tables), the GTE state loads, the int16
+ * matrix helpers, the light colours, the float transforms (asm; their st(0) conventions don't matter
+ * to verify_call2 for the standard-convention ones listed), ordering-table clears / links, the zoom /
+ * detail / far-plane set-up and the projection save / restore (x87 + the projection 0x417ed0). The
+ * per-vertex ones every 127th call, per-frame ones every 31st, rare set-up every call. */
+static struct verify_point cars_view_flags_update_point = VERIFY_POINT_VOID("cars_view_flags_update", 31, 1);
+
+static void GAMEAPI cars_view_flags_update_entry(void)
+{
+    verify_call2(&cars_view_flags_update_point, (verify_fn2)0x4231f0, (verify_fn2)(void *)cars_view_flags_update, 0, 0);
+}
+
+static struct verify_point view_matrix_store_point = VERIFY_POINT_VOID("view_matrix_store", 31, 1);
+
+static void GAMEAPI view_matrix_store_entry(const uint32_t *m)
+{
+    verify_call2(&view_matrix_store_point, (verify_fn2)0x423d10, (verify_fn2)(void *)view_matrix_store, (int32_t)(uintptr_t)m, 0);
+}
+
+static struct verify_point view_camera_load_point = VERIFY_POINT_VOID("view_camera_load", 31, 1);
+
+static void GAMEAPI view_camera_load_entry(const uint8_t *view)
+{
+    verify_call2(&view_camera_load_point, (verify_fn2)0x423df0, (verify_fn2)(void *)view_camera_load, (int32_t)(uintptr_t)view, 0);
+}
+
+static struct verify_point view_lod_set_point = VERIFY_POINT_VOID("view_lod_set", 1, 1);
+
+static void GAMEAPI view_lod_set_entry(uint32_t zoom)
+{
+    verify_call2(&view_lod_set_point, (verify_fn2)0x423e10, (verify_fn2)(void *)view_lod_set, (int32_t)zoom, 0);
+}
+
+static struct verify_point view_zoom_set_point = VERIFY_POINT_VOID("view_zoom_set", 1, 1);
+
+static void GAMEAPI view_zoom_set_entry(uint32_t zoom)
+{
+    verify_call2(&view_zoom_set_point, (verify_fn2)0x423f00, (verify_fn2)(void *)view_zoom_set, (int32_t)zoom, 0);
+}
+
+static struct verify_point gte_screen_offset_set_point = VERIFY_POINT_VOID("gte_screen_offset_set", 1, 1);
+
+static void GAMEAPI gte_screen_offset_set_entry(int32_t x, int32_t y)
+{
+    verify_call2(&gte_screen_offset_set_point, (verify_fn2)0x426200, (verify_fn2)(void *)gte_screen_offset_set, (int32_t)x, (int32_t)y);
+}
+
+static struct verify_point gte_matrix_load_point = VERIFY_POINT_VOID("gte_matrix_load", 31, 1);
+
+static void GAMEAPI gte_matrix_load_entry(const uint8_t *m)
+{
+    verify_call2(&gte_matrix_load_point, (verify_fn2)0x426330, (verify_fn2)(void *)gte_matrix_load, (int32_t)(uintptr_t)m, 0);
+}
+
+static struct verify_point gte_translation_load_point = VERIFY_POINT_VOID("gte_translation_load", 31, 1);
+
+static void GAMEAPI gte_translation_load_entry(const uint8_t *v)
+{
+    verify_call2(&gte_translation_load_point, (verify_fn2)0x426530, (verify_fn2)(void *)gte_translation_load, (int32_t)(uintptr_t)v, 0);
+}
+
+static struct verify_point gte_rt_float_point = VERIFY_POINT_VOID("gte_rt_float", 127, 1);
+
+static void GAMEAPI gte_rt_float_entry(void)
+{
+    verify_call2(&gte_rt_float_point, (verify_fn2)0x426620, (verify_fn2)(void *)gte_rt_float, 0, 0);
+}
+
+static struct verify_point gte_rtps_float_point = VERIFY_POINT_VOID("gte_rtps_float", 127, 1);
+
+static void GAMEAPI gte_rtps_float_entry(void)
+{
+    verify_call2(&gte_rtps_float_point, (verify_fn2)0x4266d0, (verify_fn2)(void *)gte_rtps_float, 0, 0);
+}
+
+static struct verify_point matrix_mul_into_point = VERIFY_POINT_VOID("matrix_mul_into", 31, 1);
+
+static void GAMEAPI matrix_mul_into_entry(const uint8_t *a, uint8_t *b)
+{
+    verify_call2(&matrix_mul_into_point, (verify_fn2)0x426e90, (verify_fn2)(void *)matrix_mul_into, (int32_t)(uintptr_t)a, (int32_t)(uintptr_t)b);
+}
+
+static struct verify_point matrix_translation_set_point = VERIFY_POINT_VOID("matrix_translation_set", 31, 1);
+
+static void GAMEAPI matrix_translation_set_entry(uint8_t *m, const int32_t *v)
+{
+    verify_call2(&matrix_translation_set_point, (verify_fn2)0x426f60, (verify_fn2)(void *)matrix_translation_set, (int32_t)(uintptr_t)m, (int32_t)(uintptr_t)v);
+}
+
+static struct verify_point gte_light_colour_point = VERIFY_POINT_VOID("gte_light_colour", 127, 1);
+
+static void GAMEAPI gte_light_colour_entry(void)
+{
+    verify_call2(&gte_light_colour_point, (verify_fn2)0x427100, (verify_fn2)(void *)gte_light_colour, 0, 0);
+}
+
+static struct verify_point gte_light_colour_float_point = VERIFY_POINT_VOID("gte_light_colour_float", 127, 1);
+
+static void GAMEAPI gte_light_colour_float_entry(void)
+{
+    verify_call2(&gte_light_colour_float_point, (verify_fn2)0x427400, (verify_fn2)(void *)gte_light_colour_float, 0, 0);
+}
+
+static struct verify_point gte_nclip_point = VERIFY_POINT("gte_nclip", 127, 1);
+
+static int32_t GAMEAPI gte_nclip_entry(void)
+{
+    return (int32_t)verify_call2(&gte_nclip_point, (verify_fn2)0x4278a0, (verify_fn2)(void *)gte_nclip, 0, 0);
+}
+
+static struct verify_point ot_clear_reverse_point = VERIFY_POINT("ot_clear_reverse", 31, 1);
+
+static int32_t GAMEAPI ot_clear_reverse_entry(uint32_t *ot, uint32_t n)
+{
+    return (int32_t)verify_call2(&ot_clear_reverse_point, (verify_fn2)0x427a70, (verify_fn2)(void *)ot_clear_reverse, (int32_t)(uintptr_t)ot, (int32_t)n);
+}
+
+static struct verify_point ot_add_prim_point = VERIFY_POINT("ot_add_prim", 127, 1);
+
+static uint32_t GAMEAPI ot_add_prim_entry(uint32_t entry, uint32_t *prim)
+{
+    return (uint32_t)verify_call2(&ot_add_prim_point, (verify_fn2)0x427ab0, (verify_fn2)(void *)ot_add_prim, (int32_t)entry, (int32_t)(uintptr_t)prim);
+}
+
+static struct verify_point vertex_project_float_point = VERIFY_POINT_VOID("vertex_project_float", 127, 1);
+
+static void GAMEAPI vertex_project_float_entry(uint32_t a)
+{
+    verify_call2(&vertex_project_float_point, (verify_fn2)0x428900, (verify_fn2)(void *)vertex_project_float, (int32_t)a, 0);
+}
+
+static struct verify_point light_matrix_load_point = VERIFY_POINT_VOID("light_matrix_load", 31, 1);
+
+static void GAMEAPI light_matrix_load_entry(const uint32_t *m)
+{
+    verify_call2(&light_matrix_load_point, (verify_fn2)0x428940, (verify_fn2)(void *)light_matrix_load, (int32_t)(uintptr_t)m, 0);
+}
+
+static struct verify_point projection_push_point = VERIFY_POINT_VOID("projection_push", 1, 1);
+
+static void GAMEAPI projection_push_entry(void)
+{
+    verify_call2(&projection_push_point, (verify_fn2)0x428a80, (verify_fn2)(void *)projection_push, 0, 0);
+}
+
+static struct verify_point projection_pop_point = VERIFY_POINT_VOID("projection_pop", 1, 1);
+
+static void GAMEAPI projection_pop_entry(void)
+{
+    verify_call2(&projection_pop_point, (verify_fn2)0x428b00, (verify_fn2)(void *)projection_pop, 0, 0);
+}
+
+static struct verify_point far_plane_set_point = VERIFY_POINT_VOID("far_plane_set", 1, 1);
+
+static void GAMEAPI far_plane_set_entry(uint32_t f)
+{
+    verify_call2(&far_plane_set_point, (verify_fn2)0x428b90, (verify_fn2)(void *)far_plane_set, (int32_t)f, 0);
+}
+
+static struct verify_point matrix_transpose_s16_point = VERIFY_POINT_VOID("matrix_transpose_s16", 31, 1);
+
+static void GAMEAPI matrix_transpose_s16_entry(const uint8_t *src, int16_t *dst)
+{
+    verify_call2(&matrix_transpose_s16_point, (verify_fn2)0x428be0, (verify_fn2)(void *)matrix_transpose_s16, (int32_t)(uintptr_t)src, (int32_t)(uintptr_t)dst);
+}
+
+static struct verify_point vec_normalise_x87_point = VERIFY_POINT("vec_normalise_x87", 31, 1);
+
+static int32_t GAMEAPI vec_normalise_x87_entry(uint32_t a, uint32_t b)
+{
+    return (int32_t)verify_call2(&vec_normalise_x87_point, (verify_fn2)0x4290b0, (verify_fn2)(void *)vec_normalise_x87, (int32_t)a, (int32_t)b);
+}
+
+static struct verify_point smoke_clouds_draw_point = VERIFY_POINT_VOID("smoke_clouds_draw", 31, 1);
+
+static void GAMEAPI smoke_clouds_draw_entry(void)
+{
+    verify_call2(&smoke_clouds_draw_point, (verify_fn2)0x42b9a0, (verify_fn2)(void *)smoke_clouds_draw, 0, 0);
+}
+
 /* Reimplemented physics: switched off while verify.c runs the original. */
 static const struct hook physics_hooks[] = {
     {"physics_world_step", 0x461410, physics_world_step_entry, {0x83, 0xec, 0x0c, 0x53, 0x55, 0x56, 0x57, 0xe8}},
@@ -2723,6 +2990,131 @@ static const struct hook physics_hooks[] = {
     {"d3d_zbuffer_off", 0x41dec0, d3d_zbuffer_off, {0xa1, 0x84, 0x83, 0x4b, 0x00, 0x6a, 0x00, 0x6a}},
     {"d3d_state_defaults", 0x41dee0, d3d_state_defaults_entry, {0xb8, 0x03, 0x00, 0x00, 0x00, 0xc7, 0x05, 0xa4}},
     {"d3d_viewport_create", 0x41df10, d3d_viewport_create, {0xa1, 0x80, 0x83, 0x4b, 0x00, 0x83, 0xec, 0x34}},
+    {"viewport_clear", 0x41e040, viewport_clear, {0x8b, 0x4c, 0x24, 0x04, 0x83, 0xec, 0x10, 0x33}},
+    {"d3d_materials_release", 0x41e0d0, d3d_materials_release, {0xa1, 0xd0, 0xdd, 0x4b, 0x00, 0x85, 0xc0, 0x74}},
+    {"material_init", 0x41e110, material_init, {0x8b, 0x54, 0x24, 0x04, 0x57, 0xb9, 0x14, 0x00}},
+    {"d3d_scene_begin", 0x41e170, d3d_scene_begin, {0xa1, 0x84, 0x83, 0x4b, 0x00, 0x50, 0x8b, 0x08}},
+    {"d3d_scene_end", 0x41e190, d3d_scene_end, {0xa1, 0x84, 0x83, 0x4b, 0x00, 0x85, 0xc0, 0x74}},
+    {"pixels_rgb_to_screen", 0x41e1d0, pixels_rgb_to_screen, {0x8b, 0x44, 0x24, 0x0c, 0x8b, 0x0d, 0x7c, 0xcd}},
+    {"pixels_rgb_convert", 0x41e1f0, pixels_rgb_convert, {0x51, 0x8a, 0x0d, 0x70, 0xcd, 0x4b, 0x00, 0x8b}},
+    {"pixels_1555_convert", 0x41e440, pixels_1555_convert, {0x55, 0x8b, 0xec, 0x83, 0xec, 0x18, 0x8a, 0x0d}},
+    {"texture_slot_free_find", 0x41ec20, texture_slot_free_find_entry, {0x33, 0xc0, 0xb9, 0x00, 0xa7, 0x4b, 0x00, 0x83}},
+    {"background_colour_set", 0x41ec40, background_colour_set, {0xa1, 0xcc, 0xdd, 0x4b, 0x00, 0x83, 0xec, 0x50}},
+    {"materials_create", 0x41ed00, materials_create, {0x81, 0xec, 0xa4, 0x00, 0x00, 0x00, 0x56, 0x57}},
+    {"surfaces_clear", 0x41eeb0, surfaces_clear, {0xa1, 0x48, 0x5f, 0x4d, 0x00, 0x81, 0xec, 0xe0}},
+    {"texture_page_show", 0x41efe0, texture_page_show, {0xa1, 0x3c, 0xcc, 0x4a, 0x00, 0x8b, 0x0d, 0x38}},
+    {"texture_format_choose", 0x41f060, texture_format_choose_entry, {0x8b, 0x44, 0x24, 0x08, 0x55, 0x8b, 0x2d, 0xfc}},
+    {"d3d_viewport_set", 0x41f210, d3d_viewport_set, {0x83, 0xec, 0x34, 0x57, 0xb9, 0x0b, 0x00, 0x00}},
+    {"vertex_snap_set", 0x41f3f0, vertex_snap_set_entry, {0x8b, 0x44, 0x24, 0x04, 0xa3, 0xb8, 0x86, 0x4b}},
+    {"surface_pixel_read", 0x41f400, surface_pixel_read, {0x55, 0x8b, 0xec, 0x83, 0xec, 0x74, 0x8b, 0x45}},
+    {"screen_quad_draw", 0x41f550, screen_quad_draw, {0x55, 0x8b, 0xec, 0x81, 0xec, 0xc0, 0x00, 0x00}},
+    {"bytes_sum8", 0x41f700, bytes_sum8_entry, {0x8b, 0x54, 0x24, 0x08, 0x8b, 0x4c, 0x24, 0x04}},
+    {"pvrc_texture_probe", 0x41fb60, pvrc_texture_probe, {0xa1, 0x40, 0x5f, 0x4d, 0x00, 0x83, 0xec, 0x7c}},
+    {"ddraw_device_id_check", 0x41fcf0, ddraw_device_id_check, {0xa1, 0x40, 0x5f, 0x4d, 0x00, 0x81, 0xec, 0x2c}},
+    {"blend_modes_choose", 0x41fda0, blend_modes_choose, {0xa1, 0xbc, 0x86, 0x4b, 0x00, 0x53, 0x85, 0xc0}},
+    {"texture_lock", 0x41fef0, texture_lock, {0x8b, 0x44, 0x24, 0x04, 0x8b, 0x0d, 0x54, 0xce}},
+    {"texture_unlock", 0x420000, texture_unlock, {0x8b, 0x44, 0x24, 0x04, 0x8b, 0x0d, 0x54, 0xce}},
+    {"texture_palettes_apply", 0x420090, texture_palettes_apply, {0x51, 0xa1, 0x04, 0xde, 0x4b, 0x00, 0x53, 0x33}},
+    {"texture_reload", 0x420150, texture_reload, {0x51, 0x56, 0x57, 0x8b, 0x7c, 0x24, 0x10, 0x8d}},
+    {"image_tiles_upload", 0x4201f0, image_tiles_upload, {0x83, 0xec, 0x18, 0x53, 0x55, 0x56, 0x57, 0xe8}},
+    {"image_tiles_draw", 0x4203a0, image_tiles_draw, {0x55, 0x8b, 0xec, 0x81, 0xec, 0x8c, 0x00, 0x00}},
+    {"texture_slots_release_thunk", 0x4205e0, texture_slots_release_thunk, {0xe9, 0x2b, 0xd3, 0xff, 0xff, 0x90, 0x90, 0x90}},
+    {"texture_page_next", 0x4205f0, texture_page_next_entry, {0xa1, 0x54, 0xce, 0x6c, 0x00, 0x40, 0xc3, 0x90}},
+    {"vertices_snap", 0x420600, vertices_snap_entry, {0xa1, 0xb8, 0x86, 0x4b, 0x00, 0x85, 0xc0, 0x74}},
+    {"vertices_snap_thunk", 0x420650, vertices_snap_thunk_entry, {0xe9, 0xab, 0xff, 0xff, 0xff, 0x90, 0x90, 0x90}},
+    {"vertices_draw_list_noclip", 0x420660, vertices_draw_list_noclip, {0xe8, 0xeb, 0xff, 0xff, 0xff, 0x8b, 0x15, 0xd8}},
+    {"vertices_draw_list", 0x4206a0, vertices_draw_list, {0xe8, 0xab, 0xff, 0xff, 0xff, 0x8b, 0x15, 0xd8}},
+    {"vertices_draw_fan", 0x4206e0, vertices_draw_fan, {0xe8, 0x6b, 0xff, 0xff, 0xff, 0x8b, 0x15, 0xd8}},
+    {"vertices_draw_quads", 0x420720, vertices_draw_quads, {0x56, 0xe8, 0x2a, 0xff, 0xff, 0xff, 0xa1, 0xd8}},
+    {"render_blend_set", 0x420770, render_blend_set, {0xa1, 0x64, 0xce, 0x6c, 0x00, 0x53, 0x8b, 0x5c}},
+    {"render_texture_set", 0x4209c0, render_texture_set, {0x8b, 0x44, 0x24, 0x04, 0x83, 0xf8, 0x3f, 0xa3}},
+    {"render_state_select", 0x420a30, render_state_select, {0x53, 0x81, 0xe3, 0xff, 0x03, 0x00, 0x00, 0xb9}},
+    {"vertex_emit_indexed", 0x420a90, vertex_emit_indexed, {0x55, 0x8b, 0xec, 0x83, 0xec, 0x08, 0x53, 0x56}},
+    {"vertex_emit", 0x420b10, vertex_emit, {0x55, 0x8b, 0xec, 0x83, 0xec, 0x10, 0x53, 0x57}},
+    {"vertex_list_draw_fan", 0x420bb0, vertex_list_draw_fan, {0x55, 0x8b, 0xec, 0x8b, 0x45, 0x08, 0x53, 0x85}},
+    {"d3d_packet_draw", 0x420be0, d3d_packet_draw, {0x55, 0x8b, 0xec, 0x81, 0xec, 0xac, 0x00, 0x00}},
+    {"d3d_vertex_repeat", 0x421800, d3d_vertex_repeat, {0x53, 0x56, 0x57, 0x8b, 0x1d, 0xd8, 0xdd, 0x4b}},
+    {"d3d_draw_otag", 0x421860, d3d_draw_otag, {0x55, 0x8b, 0xec, 0x53, 0xe8, 0x77, 0x00, 0x00}},
+    {"d3d_surfaces_restore", 0x4218e0, d3d_surfaces_restore, {0x51, 0xa1, 0x4c, 0x5f, 0x4d, 0x00, 0x53, 0x56}},
+    {"car_ot_insert", 0x421e60, car_ot_insert, {0x8b, 0x4c, 0x24, 0x04, 0x33, 0xd2, 0x8b, 0x41}},
+    {"cars_draw", 0x421ef0, cars_draw, {0x83, 0xec, 0x10, 0x53, 0x56, 0x33, 0xdb, 0x57}},
+    {"cars_packets_next", 0x422080, cars_packets_next_entry, {0xa1, 0x60, 0x19, 0x4b, 0x00, 0x56, 0x33, 0xf6}},
+    {"car_packets_next", 0x422100, car_packets_next, {0x8b, 0x44, 0x24, 0x04, 0x8b, 0x88, 0xb0, 0x14}},
+    {"car_ride_offset_update", 0x422140, car_ride_offset_update_entry, {0x8b, 0x4c, 0x24, 0x04, 0x53, 0x56, 0x57, 0x33}},
+    {"cars_effects_draw", 0x422210, cars_effects_draw, {0xa1, 0x60, 0x19, 0x4b, 0x00, 0x55, 0x56, 0x33}},
+    {"car_model_draw", 0x422440, car_model_draw, {0x56, 0x8b, 0x74, 0x24, 0x08, 0x57, 0x8d, 0x86}},
+    {"car_wheels_draw", 0x4224a0, car_wheels_draw, {0x83, 0xec, 0x10, 0x8b, 0x44, 0x24, 0x14, 0x53}},
+    {"car_points_transform", 0x422540, car_points_transform, {0x53, 0x55, 0x8b, 0x6c, 0x24, 0x0c, 0x56, 0x33}},
+    {"wheel_facing_away", 0x4225c0, wheel_facing_away, {0x8b, 0x44, 0x24, 0x04, 0x83, 0xec, 0x0c, 0x53}},
+    {"car_depth_offset", 0x422650, car_depth_offset, {0x8b, 0x54, 0x24, 0x08, 0x53, 0x55, 0x56, 0x8b}},
+    {"model_draw_at", 0x4226a0, model_draw_at, {0x8b, 0x44, 0x24, 0x08, 0x56, 0x8b, 0x74, 0x24}},
+    {"model_draw_lod", 0x4226d0, model_draw_lod, {0xb8, 0x84, 0x14, 0x00, 0x00, 0xe8, 0x76, 0x53}},
+    {"cars_reflections_update", 0x422c80, cars_reflections_update_entry, {0x51, 0x56, 0x8b, 0x35, 0x60, 0x19, 0x4b, 0x00}},
+    {"car_reflection_build", 0x422d30, car_reflection_build, {0x51, 0x53, 0x55, 0x8b, 0x6c, 0x24, 0x10, 0x56}},
+    {"matrix_mirror_y", 0x422e30, matrix_mirror_y, {0x8b, 0x44, 0x24, 0x04, 0x56, 0x8b, 0x74, 0x24}},
+    {"position_mirror_y", 0x422e80, position_mirror_y, {0x8b, 0x4c, 0x24, 0x08, 0x8b, 0x44, 0x24, 0x04}},
+    {"car_water_find", 0x422eb0, car_water_find, {0x51, 0xa1, 0xb0, 0x1e, 0x6c, 0x00, 0x33, 0xd2}},
+    {"car_shadow_draw", 0x422f50, car_shadow_draw, {0x55, 0x8b, 0xec, 0x83, 0xec, 0x40, 0x53, 0x8b}},
+    {"cars_view_flags_update", 0x4231f0, cars_view_flags_update_entry, {0x55, 0x8b, 0xec, 0x83, 0xec, 0x30, 0x53, 0x33}},
+    {"ot_frame_flush", 0x423c40, ot_frame_flush, {0xe8, 0x0b, 0x46, 0x00, 0x00, 0xe8, 0xf6, 0x45}},
+    {"view_matrix_store", 0x423d10, view_matrix_store_entry, {0x8b, 0x44, 0x24, 0x04, 0xb9, 0xa0, 0xe5, 0x6c}},
+    {"view_camera_build", 0x423d70, view_camera_build, {0x83, 0xec, 0x18, 0x8b, 0x44, 0x24, 0x24, 0x56}},
+    {"view_camera_load", 0x423df0, view_camera_load_entry, {0x56, 0x8b, 0x74, 0x24, 0x08, 0x56, 0xe8, 0x35}},
+    {"view_lod_set", 0x423e10, view_lod_set_entry, {0x83, 0xec, 0x24, 0xb8, 0x01, 0x00, 0x00, 0x00}},
+    {"view_zoom_set", 0x423f00, view_zoom_set_entry, {0x56, 0x8b, 0x74, 0x24, 0x08, 0x0f, 0xbf, 0xc6}},
+    {"view_full_screen", 0x423f20, view_full_screen, {0xa1, 0x60, 0x19, 0x4b, 0x00, 0x83, 0xec, 0x14}},
+    {"gte_screen_offset_set", 0x426200, gte_screen_offset_set_entry, {0x55, 0x8b, 0xec, 0x8b, 0x45, 0x08, 0x8b, 0xc8}},
+    {"gte_screen_offset_get", 0x426240, gte_screen_offset_get, {0xa1, 0x40, 0xcc, 0x6c, 0x00, 0x8b, 0x4c, 0x24}},
+    {"projection_h_set", 0x426260, projection_h_set, {0x55, 0x8b, 0xec, 0x51, 0x56, 0x8b, 0x75, 0x08}},
+    {"gte_matrix_load", 0x426330, gte_matrix_load_entry, {0x55, 0x8b, 0xec, 0x8b, 0x45, 0x08, 0x66, 0x8b}},
+    {"gte_matrix_save", 0x426480, gte_matrix_save, {0x8b, 0x44, 0x24, 0x04, 0x66, 0x8b, 0x0d, 0xe0}},
+    {"gte_translation_load", 0x426530, gte_translation_load_entry, {0x55, 0x8b, 0xec, 0x8b, 0x45, 0x08, 0x8b, 0x48}},
+    {"view_rect_saved_get", 0x426590, view_rect_saved_get, {0x56, 0x57, 0x8b, 0x7c, 0x24, 0x0c, 0xb9, 0x05}},
+    {"view_saved_get", 0x4265b0, view_saved_get, {0x56, 0x57, 0x8b, 0x7c, 0x24, 0x0c, 0xb9, 0x17}},
+    {"gte_rt_float", 0x426620, gte_rt_float_entry, {0x55, 0x8b, 0xec, 0x51, 0xdf, 0x05, 0x64, 0xcc}},
+    {"gte_rtps_float", 0x4266d0, gte_rtps_float_entry, {0x55, 0x8b, 0xec, 0x83, 0xec, 0x0c, 0x53, 0x56}},
+    {"gte_rtps_3dnow", 0x4268c0, gte_rtps_3dnow, {0x55, 0x8b, 0xec, 0x83, 0xec, 0x10, 0x53, 0x0f}},
+    {"gte_rt_depth", 0x426cd0, gte_rt_depth, {0x55, 0x8b, 0xec, 0x83, 0xec, 0x08, 0x53, 0xbb}},
+    {"gte_project_pending", 0x426dc0, gte_project_pending, {0x55, 0x8b, 0xec, 0x51, 0x53, 0xbb, 0xc0, 0xcb}},
+    {"matrix_rotate_vec", 0x426e10, matrix_rotate_vec, {0x8b, 0x44, 0x24, 0x08, 0x53, 0x55, 0x56, 0x0f}},
+    {"matrix_mul_into", 0x426e90, matrix_mul_into_entry, {0x83, 0xec, 0x34, 0x8b, 0x4c, 0x24, 0x38, 0x8d}},
+    {"matrix_translation_set", 0x426f60, matrix_translation_set_entry, {0x8b, 0x4c, 0x24, 0x08, 0x8b, 0x44, 0x24, 0x04}},
+    {"gte_light_colour", 0x427100, gte_light_colour_entry, {0x0f, 0xbf, 0x05, 0x20, 0xcc, 0x6c, 0x00, 0x0f}},
+    {"gte_light_colour_3dnow", 0x427250, gte_light_colour_3dnow, {0x55, 0x8b, 0xec, 0x83, 0xec, 0x20, 0xc7, 0x45}},
+    {"gte_light_colour_float", 0x427400, gte_light_colour_float_entry, {0x55, 0x8b, 0xec, 0x83, 0xec, 0x1c, 0x33, 0xc0}},
+    {"gte_nclip", 0x4278a0, gte_nclip_entry, {0x53, 0x56, 0x57, 0x0f, 0xbf, 0x35, 0x94, 0xcc}},
+    {"vec_facing_float", 0x4278f0, vec_facing_float, {0x55, 0x8b, 0xec, 0x8b, 0x55, 0x10, 0x8b, 0x45}},
+    {"ot_clear_forward", 0x427a40, ot_clear_forward, {0x55, 0x8b, 0xec, 0x57, 0x57, 0x8b, 0x7d, 0x08}},
+    {"ot_clear_reverse", 0x427a70, ot_clear_reverse_entry, {0x55, 0x8b, 0xec, 0x57, 0x57, 0x8b, 0x7d, 0x08}},
+    {"ot_add_prim", 0x427ab0, ot_add_prim_entry, {0x55, 0x8b, 0xec, 0x53, 0x8b, 0x45, 0x08, 0x25}},
+    {"filter_set_thunk", 0x428240, filter_set_thunk, {0xe9, 0x4b, 0x5b, 0xff, 0xff, 0x90, 0x90, 0x90}},
+    {"fog_on_thunk", 0x428250, fog_on_thunk, {0xe9, 0xeb, 0x5b, 0xff, 0xff, 0x90, 0x90, 0x90}},
+    {"fog_off_thunk", 0x428260, fog_off_thunk, {0xe9, 0xfb, 0x5b, 0xff, 0xff, 0x90, 0x90, 0x90}},
+    {"zbuffer_restore", 0x428270, zbuffer_restore, {0xa1, 0x7c, 0xce, 0x6c, 0x00, 0x85, 0xc0, 0x74}},
+    {"debug_line_print", 0x428310, debug_line_print, {0x8b, 0x54, 0x24, 0x04, 0x57, 0x8b, 0xfa, 0x83}},
+    {"clear_colour_store", 0x428390, clear_colour_store, {0x8b, 0x44, 0x24, 0x0c, 0x8b, 0x4c, 0x24, 0x08}},
+    {"depth_range_set", 0x4283d0, depth_range_set, {0x8b, 0x4c, 0x24, 0x04, 0x8b, 0xc1, 0x89, 0x0d}},
+    {"view_border_draw", 0x4284b0, view_border_draw, {0x55, 0x8b, 0xec, 0x83, 0xec, 0x6c, 0xa1, 0x3c}},
+    {"view_viewport_apply", 0x428770, view_viewport_apply, {0x83, 0xec, 0x5c, 0x53, 0x8b, 0x5c, 0x24, 0x64}},
+    {"vertex_project_codes", 0x4288c0, vertex_project_codes, {0x55, 0x8b, 0xec, 0x53, 0x8b, 0x5d, 0x08, 0xd9}},
+    {"vertex_project_float", 0x428900, vertex_project_float_entry, {0x55, 0x8b, 0xec, 0x51, 0x8b, 0x4d, 0x08, 0xd9}},
+    {"light_matrix_load", 0x428940, light_matrix_load_entry, {0x55, 0x8b, 0xec, 0x8b, 0x45, 0x08, 0x8b, 0x08}},
+    {"render_flags_set", 0x428a50, render_flags_set, {0x8b, 0x44, 0x24, 0x08, 0x8b, 0x4c, 0x24, 0x0c}},
+    {"projection_push", 0x428a80, projection_push_entry, {0xa1, 0x6c, 0xce, 0x6c, 0x00, 0x8b, 0x0d, 0x98}},
+    {"projection_pop", 0x428b00, projection_pop_entry, {0xa1, 0xf4, 0xde, 0x4b, 0x00, 0x8b, 0x0d, 0x94}},
+    {"far_plane_set", 0x428b90, far_plane_set_entry, {0x8b, 0x44, 0x24, 0x04, 0x68, 0xfb, 0x01, 0x00}},
+    {"far_plane_get", 0x428bd0, far_plane_get, {0xd9, 0x05, 0x08, 0xcd, 0x6c, 0x00, 0xc3, 0x90}},
+    {"matrix_transpose_s16", 0x428be0, matrix_transpose_s16_entry, {0x83, 0xec, 0x20, 0x8b, 0x44, 0x24, 0x28, 0xb9}},
+    {"texture_surface_lock", 0x428c30, texture_surface_lock, {0x8b, 0x44, 0x24, 0x18, 0x8b, 0x4c, 0x24, 0x14}},
+    {"texture_surface_unlock", 0x428c60, texture_surface_unlock, {0x8b, 0x44, 0x24, 0x0c, 0x8b, 0x4c, 0x24, 0x08}},
+    {"texture_handle_new", 0x428c80, texture_handle_new, {0xe9, 0x6b, 0x79, 0xff, 0xff, 0x90, 0x90, 0x90}},
+    {"texture_surface_upload", 0x428c90, texture_surface_upload, {0x8b, 0x44, 0x24, 0x18, 0x8b, 0x4c, 0x24, 0x14}},
+    {"dword_store", 0x4290a0, dword_store, {0x8b, 0x4c, 0x24, 0x04, 0x8b, 0x44, 0x24, 0x08}},
+    {"vec_normalise_x87", 0x4290b0, vec_normalise_x87_entry, {0x55, 0x8b, 0xec, 0x83, 0xec, 0x10, 0x8b, 0x45}},
+    {"dx_error_ignore", 0x4291f0, dx_error_ignore, {0xc3, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90}},
+    {"light_colour_at", 0x4292b0, light_colour_at, {0x55, 0x8b, 0xec, 0x8b, 0x45, 0x0c, 0x8b, 0x08}},
+    {"textures_unusable_thunk", 0x429340, textures_unusable_thunk, {0xe9, 0x7b, 0x86, 0xff, 0xff, 0x90, 0x90, 0x90}},
+    {"smoke_clouds_draw", 0x42b9a0, smoke_clouds_draw_entry, {0x55, 0x8b, 0xec, 0x81, 0xec, 0xac, 0x06, 0x00}},
     {"controls_analogue", 0x428fe0, controls_analogue, {0x53, 0x56, 0x57, 0x8b, 0x7c, 0x24, 0x10, 0x8d}},
     {"car_handbrake", 0x41b8a0, car_handbrake, {0x8b, 0x44, 0x24, 0x08, 0xf6, 0x40, 0x08, 0x10}},
     {"bodies_begin_step", 0x45c0c0, bodies_begin_step, {0xa1, 0x84, 0x9b, 0x6b, 0x00, 0x8b, 0x15, 0x80}},
