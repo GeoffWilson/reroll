@@ -1777,6 +1777,150 @@ static void GAMEAPI hud_update_entry(uint32_t *slot)
     verify_call2(&hud_update_point, (verify_fn2)0x4386f0, (verify_fn2)(void *)hud_update, (int32_t)(uintptr_t)slot, 0);
 }
 
+/* Group PG: the HUD pieces called from hud_update (sprite packets in the data section through
+ * hud_sprite_set 0x4387d0; no transform, text or message calls) and the light slot moves / frees
+ * (track_cell, cell_row_ranges, light_cells_add, mesh_rows_touch: memory only), every 31st call.
+ * Fuzz-only: the car markers, name texts, screen point and flares (the transform leaves 0x6ccd74
+ * pointing at the caller's stack record, a different address in ours; names also make texts), the
+ * gap bars and the leader's hit (message 0x4600a0), the archive load (files), the fade calls,
+ * light_slot_new, flare_add / flare_quad / flare_quad_colour (more than two arguments), the CPU checks. */
+static struct verify_point hud_speed_digits_point = VERIFY_POINT_VOID("hud_speed_digits", 31, 1);
+
+static void GAMEAPI hud_speed_digits_entry(int32_t v)
+{
+    verify_call2(&hud_speed_digits_point, (verify_fn2)0x438df0, (verify_fn2)(void *)hud_speed_digits, v, 0);
+}
+
+static struct verify_point hud_lap_place_point = VERIFY_POINT_VOID("hud_lap_place", 31, 1);
+
+static void GAMEAPI hud_lap_place_entry(uint8_t *slot)
+{
+    verify_call2(&hud_lap_place_point, (verify_fn2)0x438e60, (verify_fn2)(void *)hud_lap_place, (int32_t)(uintptr_t)slot, 0);
+}
+
+static struct verify_point hud_time_digits_point = VERIFY_POINT_VOID("hud_time_digits", 31, 1);
+
+static void GAMEAPI hud_time_digits_entry(uint8_t *slot)
+{
+    verify_call2(&hud_time_digits_point, (verify_fn2)0x438fb0, (verify_fn2)(void *)hud_time_digits, (int32_t)(uintptr_t)slot, 0);
+}
+
+static struct verify_point hud_warning_sprite_point = VERIFY_POINT("hud_warning_sprite", 31, 1);
+
+static int32_t GAMEAPI hud_warning_sprite_entry(uint8_t *slot)
+{
+    return verify_call2(&hud_warning_sprite_point, (verify_fn2)0x439050, (verify_fn2)(void *)hud_warning_sprite,
+                        (int32_t)(uintptr_t)slot, 0);
+}
+
+static struct verify_point hud_weapon_icons_point = VERIFY_POINT_VOID("hud_weapon_icons", 31, 1);
+
+static void GAMEAPI hud_weapon_icons_entry(uint8_t *slot)
+{
+    verify_call2(&hud_weapon_icons_point, (verify_fn2)0x4390c0, (verify_fn2)(void *)hud_weapon_icons, (int32_t)(uintptr_t)slot, 0);
+}
+
+static struct verify_point hud_lap_banner_point = VERIFY_POINT_VOID("hud_lap_banner", 31, 1);
+
+static void GAMEAPI hud_lap_banner_entry(uint8_t *slot, int32_t hide)
+{
+    verify_call2(&hud_lap_banner_point, (verify_fn2)0x439270, (verify_fn2)(void *)hud_lap_banner, (int32_t)(uintptr_t)slot, hide);
+}
+
+static struct verify_point hud_banner_set_point = VERIFY_POINT_VOID("hud_banner_set", 1, 1);
+
+static void GAMEAPI hud_banner_set_entry(int32_t final)
+{
+    verify_call2(&hud_banner_set_point, (verify_fn2)0x4392e0, (verify_fn2)(void *)hud_banner_set, final, 0);
+}
+
+static struct verify_point hud_split_layout_point = VERIFY_POINT_VOID("hud_split_layout", 31, 1);
+
+static void GAMEAPI hud_split_layout_entry(uint8_t *slot, int32_t mode)
+{
+    verify_call2(&hud_split_layout_point, (verify_fn2)0x439f20, (verify_fn2)(void *)hud_split_layout, (int32_t)(uintptr_t)slot, mode);
+}
+
+static struct verify_point light_cells_remove_point = VERIFY_POINT_VOID("light_cells_remove", 31, 1);
+
+static void GAMEAPI light_cells_remove_entry(uint32_t n)
+{
+    verify_call2(&light_cells_remove_point, (verify_fn2)0x4410f0, (verify_fn2)(void *)light_cells_remove, (int32_t)n, 0);
+}
+
+static struct verify_point light_slot_free_point = VERIFY_POINT_VOID("light_slot_free", 1, 1);
+
+static void GAMEAPI light_slot_free_entry(uint32_t n)
+{
+    verify_call2(&light_slot_free_point, (verify_fn2)0x441370, (verify_fn2)(void *)light_slot_free, (int32_t)n, 0);
+}
+
+static struct verify_point light_reposition_point = VERIFY_POINT_VOID("light_reposition", 31, 1);
+
+static void GAMEAPI light_reposition_entry(uint32_t n, const int32_t *pos)
+{
+    verify_call2(&light_reposition_point, (verify_fn2)0x4413a0, (verify_fn2)(void *)light_reposition, (int32_t)n,
+                 (int32_t)(uintptr_t)pos);
+}
+
+/* Group PH: the argument-less set-ups whose call tree stays in game memory (the cursor bar's,
+ * the menu tiles' and the frame sprites' sprites, every call) and the menu measuring (every 31st
+ * call). The rest: fuzz only (allocation, drawing into ordering tables, sound, or more arguments). */
+static struct verify_point menu_bar_sprites_init_point = VERIFY_POINT_VOID("menu_bar_sprites_init", 1, 1);
+
+static void GAMEAPI menu_bar_sprites_init_entry(void)
+{
+    verify_call2(&menu_bar_sprites_init_point, (verify_fn2)0x446250, (verify_fn2)(void *)menu_bar_sprites_init, 0, 0);
+}
+
+static struct verify_point menu_tiles_init_point = VERIFY_POINT_VOID("menu_tiles_init", 1, 1);
+
+static void GAMEAPI menu_tiles_init_entry(void)
+{
+    verify_call2(&menu_tiles_init_point, (verify_fn2)0x453020, (verify_fn2)(void *)menu_tiles_init, 0, 0);
+}
+
+static struct verify_point menu_frame_sprites_init_point = VERIFY_POINT_VOID("menu_frame_sprites_init", 1, 1);
+
+static void GAMEAPI menu_frame_sprites_init_entry(void)
+{
+    verify_call2(&menu_frame_sprites_init_point, (verify_fn2)0x453130, (verify_fn2)(void *)menu_frame_sprites_init, 0, 0);
+}
+
+static struct verify_point menu_measure_all_point = VERIFY_POINT_VOID("menu_measure_all", 31, 1);
+
+static void GAMEAPI menu_measure_all_entry(void)
+{
+    verify_call2(&menu_measure_all_point, (verify_fn2)0x44cc50, (verify_fn2)(void *)menu_measure_all, 0, 0);
+}
+
+/* Group PI: the menu box quads (per frame, every 31st call; fade_scale and word_exchange only touch game
+ * memory), the side panel quad's and the text box frames' set-up (every call). The side panel placing takes
+ * four arguments; the 3D menu models draw (depth, lighting, model packets) and copy leftover stack bytes:
+ * fuzz only. */
+static struct verify_point menu_box_quads_draw_point = VERIFY_POINT_VOID("menu_box_quads_draw", 31, 1);
+
+static void GAMEAPI menu_box_quads_draw_entry(uint32_t ot, int32_t page)
+{
+    verify_call2(&menu_box_quads_draw_point, (verify_fn2)0x453220, (verify_fn2)(void *)menu_box_quads_draw,
+                 (int32_t)ot, page);
+}
+
+static struct verify_point fe_side_panel_init_point = VERIFY_POINT_VOID("fe_side_panel_init", 1, 1);
+
+static void GAMEAPI fe_side_panel_init_entry(void)
+{
+    verify_call2(&fe_side_panel_init_point, (verify_fn2)0x453570, (verify_fn2)(void *)fe_side_panel_init, 0, 0);
+}
+
+static struct verify_point fe_corner_frames_init_point = VERIFY_POINT_VOID("fe_corner_frames_init", 1, 1);
+
+static void GAMEAPI fe_corner_frames_init_entry(void)
+{
+    verify_call2(&fe_corner_frames_init_point, (verify_fn2)0x453710, (verify_fn2)(void *)fe_corner_frames_init,
+                 0, 0);
+}
+
 /* Reimplemented physics: switched off while verify.c runs the original. */
 static const struct hook physics_hooks[] = {
     {"physics_world_step", 0x461410, physics_world_step_entry, {0x83, 0xec, 0x0c, 0x53, 0x55, 0x56, 0x57, 0xe8}},
@@ -3338,6 +3482,61 @@ static const struct hook physics_hooks[] = {
     {"hud_update", 0x4386f0, hud_update_entry, {0x56, 0x8b, 0x74, 0x24, 0x08, 0x57, 0x8b, 0x06}},
     {"hud_update_extra", 0x438760, hud_update_extra, {0xa1, 0x60, 0x19, 0x4b, 0x00, 0x56, 0x8b, 0x74}},
     {"hud_sprite_set", 0x4387d0, hud_sprite_set, {0x83, 0xec, 0x18, 0x8b, 0x54, 0x24, 0x1c, 0x8b}},
+    {"hud_speed_digits", 0x438df0, hud_speed_digits_entry, {0x56, 0x8b, 0x74, 0x24, 0x08, 0xb8, 0x1f, 0x85}},
+    {"hud_lap_place", 0x438e60, hud_lap_place_entry, {0x8b, 0x44, 0x24, 0x04, 0x33, 0xc9, 0x55, 0x56}},
+    {"hud_time_digits", 0x438fb0, hud_time_digits_entry, {0x51, 0x53, 0x55, 0x33, 0xed, 0x33, 0xc9, 0x56}},
+    {"hud_warning_sprite", 0x439050, hud_warning_sprite_entry, {0xa1, 0xdc, 0x7f, 0x6c, 0x00, 0x56, 0x25, 0xff}},
+    {"hud_weapon_icons", 0x4390c0, hud_weapon_icons_entry, {0x83, 0xec, 0x18, 0x8b, 0x44, 0x24, 0x1c, 0x53}},
+    {"hud_lap_banner", 0x439270, hud_lap_banner_entry, {0x56, 0x57, 0x8b, 0x7c, 0x24, 0x0c, 0x83, 0xce}},
+    {"hud_banner_set", 0x4392e0, hud_banner_set_entry, {0x8b, 0x44, 0x24, 0x04, 0x83, 0xec, 0x08, 0x83}},
+    {"hud_car_markers", 0x439400, hud_car_markers, {0x83, 0xec, 0x60, 0x8b, 0x44, 0x24, 0x64, 0x8b}},
+    {"hud_fade_set", 0x439d50, hud_fade_set, {0x8a, 0x4c, 0x24, 0x08, 0x8b, 0x44, 0x24, 0x04}},
+    {"hud_fade_apply", 0x439d70, hud_fade_apply, {0x51, 0xa0, 0x84, 0xcd, 0x6c, 0x00, 0x53, 0xa8}},
+    {"hud_split_layout", 0x439f20, hud_split_layout_entry, {0x56, 0x8b, 0x74, 0x24, 0x08, 0x57, 0x8b, 0x3d}},
+    {"hud_name_texts", 0x43a000, hud_name_texts, {0x83, 0xec, 0x60, 0x53, 0x55, 0x56, 0x57, 0xc7}},
+    {"car_screen_point", 0x43a3e0, car_screen_point, {0x55, 0x8b, 0xec, 0x83, 0xec, 0x20, 0x8b, 0x45}},
+    {"hud_gap_bars", 0x43a4a0, hud_gap_bars, {0x83, 0xec, 0x1c, 0x53, 0x55, 0x56, 0x57, 0x8b}},
+    {"archive_load_by_name", 0x43b660, archive_load_by_name, {0x56, 0x8b, 0x74, 0x24, 0x08, 0x56, 0xe8, 0xe5}},
+    {"cpu_is_intel", 0x43c370, cpu_is_intel, {0x55, 0x8b, 0xec, 0x83, 0xec, 0x10, 0x53, 0x56}},
+    {"cpu_feature_none", 0x43c3e0, cpu_feature_none, {0x33, 0xc0, 0xc3, 0x90, 0x90, 0x90, 0x90, 0x90}},
+    {"leader_hit", 0x43f040, leader_hit, {0x56, 0x8b, 0x74, 0x24, 0x0c, 0x57, 0x8b, 0x7c}},
+    {"light_cells_remove", 0x4410f0, light_cells_remove_entry, {0x83, 0xec, 0x08, 0x53, 0x55, 0x8b, 0x6c, 0x24}},
+    {"light_slot_new", 0x441220, light_slot_new, {0x83, 0xec, 0x18, 0x57, 0x8b, 0x3d, 0xe8, 0x7f}},
+    {"light_slot_free", 0x441370, light_slot_free_entry, {0x56, 0x8b, 0x74, 0x24, 0x08, 0x56, 0xe8, 0x75}},
+    {"light_reposition", 0x4413a0, light_reposition_entry, {0x83, 0xec, 0x10, 0x53, 0x8b, 0x5c, 0x24, 0x18}},
+    {"flare_add", 0x441d80, flare_add, {0x8b, 0x0d, 0x88, 0xeb, 0x4b, 0x00, 0x83, 0xf9}},
+    {"flare_quad", 0x441de0, flare_quad, {0x55, 0x8b, 0xec, 0x8b, 0x45, 0x14, 0x3d, 0xff}},
+    {"flare_quad_colour", 0x441fa0, flare_quad_colour, {0x55, 0x8b, 0xec, 0x8b, 0x0d, 0xb0, 0x1e, 0x6c}},
+    {"flares_draw", 0x442060, flares_draw, {0x55, 0x8b, 0xec, 0x81, 0xec, 0xe8, 0x00, 0x00}},
+    {"body_triggers_apply", 0x4427a0, body_triggers_apply, {0x8b, 0x44, 0x24, 0x04, 0x56, 0x57, 0x33, 0xff}},
+    {"glyph_sheet_pack", 0x4432d0, glyph_sheet_pack, {0x8b, 0x44, 0x24, 0x20, 0x83, 0xec, 0x1c, 0x53}},
+    {"kr_heap_init", 0x444500, kr_heap_init, {0xa1, 0x78, 0x24, 0x4c, 0x00, 0x85, 0xc0, 0x75}},
+    {"kr_free", 0x444570, kr_free, {0x8b, 0x44, 0x24, 0x04, 0x8d, 0x48, 0xf8, 0xa1}},
+    {"kr_malloc", 0x4445e0, kr_malloc, {0x8b, 0x44, 0x24, 0x04, 0x8b, 0x15, 0x70, 0x24}},
+    {"kr_morecore", 0x444670, kr_morecore, {0x8b, 0x44, 0x24, 0x04, 0x56, 0x83, 0xc0, 0x7f}},
+    {"kr_sbrk", 0x4446c0, kr_sbrk, {0x8b, 0x4c, 0x24, 0x04, 0xa1, 0x6c, 0x24, 0x4c}},
+    {"menu_text_fit", 0x445340, menu_text_fit, {0x51, 0x8b, 0x54, 0x24, 0x0c, 0x53, 0x55, 0x56}},
+    {"menu_bar_sprites_init", 0x446250, menu_bar_sprites_init_entry, {0x53, 0x55, 0x56, 0x57, 0x33, 0xdb, 0xbd, 0x10}},
+    {"menu_cursor_bar_draw", 0x446300, menu_cursor_bar_draw, {0x55, 0x8b, 0xec, 0x83, 0xec, 0x68, 0xa1, 0x9c}},
+    {"menu_slider_bars_draw", 0x446ea0, menu_slider_bars_draw, {0x83, 0xec, 0x1c, 0xa1, 0x9c, 0xb4, 0x4c, 0x00}},
+    {"menu_hold_clear_thunk", 0x447f00, menu_hold_clear_thunk, {0xe9, 0xdb, 0xf5, 0xff, 0xff, 0x90, 0x90, 0x90}},
+    {"menu_hold_reset_thunk", 0x447f10, menu_hold_reset_thunk, {0xe9, 0xeb, 0xf5, 0xff, 0xff, 0x90, 0x90, 0x90}},
+    {"option_onoff_step", 0x447f20, option_onoff_step, {0x8b, 0x44, 0x24, 0x04, 0x33, 0xc9, 0x85, 0xc0}},
+    {"movie_win_lang6", 0x447ff0, movie_win_lang6, {0x6a, 0x06, 0xe8, 0xf9, 0x5b, 0xfe, 0xff, 0x59}},
+    {"menu_measure_all", 0x44cc50, menu_measure_all_entry, {0x56, 0x33, 0xf6, 0x57, 0x89, 0x35, 0x90, 0xb5}},
+    {"menu_item_measure", 0x44ccf0, menu_item_measure, {0x53, 0x55, 0x56, 0x8b, 0x74, 0x24, 0x10, 0x57}},
+    {"menu_loose_items_measure", 0x44ce20, menu_loose_items_measure, {0x56, 0xbe, 0xe0, 0x30, 0x4c, 0x00, 0x56, 0xe8}},
+    {"menu_title_measure", 0x44ce40, menu_title_measure, {0x68, 0x20, 0x29, 0x4c, 0x00, 0xe8, 0xa6, 0xfe}},
+    {"option_number_step", 0x450050, option_number_step, {0x56, 0x8b, 0x74, 0x24, 0x10, 0x85, 0xf6, 0x75}},
+    {"menu_tiles_init", 0x453020, menu_tiles_init_entry, {0x51, 0x53, 0x55, 0x56, 0x57, 0x33, 0xdb, 0xc7}},
+    {"menu_tiles_draw", 0x4530d0, menu_tiles_draw, {0x8b, 0x44, 0x24, 0x08, 0x85, 0xc0, 0x74, 0x05}},
+    {"menu_frame_sprites_init", 0x453130, menu_frame_sprites_init_entry, {0x53, 0x55, 0x56, 0x57, 0x68, 0x00, 0xa0, 0x8c}},
+    {"menu_box_quads_draw", 0x453220, menu_box_quads_draw_entry, {0xa1, 0x08, 0x06, 0x4b, 0x00, 0x8b, 0x0d, 0x34}},
+    {"fe_side_panel_init", 0x453570, fe_side_panel_init_entry, {0x56, 0x57, 0x68, 0x00, 0x00, 0xfa, 0x44, 0x6a}},
+    {"fe_side_panel_draw", 0x4535b0, fe_side_panel_draw, {0x51, 0x8b, 0x44, 0x24, 0x10, 0x53, 0x55, 0x56}},
+    {"fe_corner_frames_init", 0x453710, fe_corner_frames_init_entry, {0x68, 0xa0, 0xfe, 0x4c, 0x00, 0xe8, 0xb6, 0xdf}},
+    {"menu_model_draw", 0x4538e0, menu_model_draw, {0x8b, 0x54, 0x24, 0x04, 0x53, 0x56, 0x33, 0xc9}},
+    {"menu_model_corners_draw", 0x453a00, menu_model_corners_draw, {0x55, 0x8b, 0xec, 0x81, 0xec, 0x48, 0x02, 0x00}},
     {"controls_analogue", 0x428fe0, controls_analogue, {0x53, 0x56, 0x57, 0x8b, 0x7c, 0x24, 0x10, 0x8d}},
     {"car_handbrake", 0x41b8a0, car_handbrake, {0x8b, 0x44, 0x24, 0x08, 0xf6, 0x40, 0x08, 0x10}},
     {"bodies_begin_step", 0x45c0c0, bodies_begin_step, {0xa1, 0x84, 0x9b, 0x6b, 0x00, 0x8b, 0x15, 0x80}},

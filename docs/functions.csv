@@ -5,7 +5,7 @@ address,name,status,notes
 0x43b550,archive_find_by_name,verified,"src/game/st_sb.c. name -> entry index via table at 0x4ad000 ({char *name, s16 entry}, count at 0x4adaa0); -1 if missing. Emulator fuzz"
 0x43b5a0,archive_name_equal,verified,"src/game/setup_v.c. names equal: toupper (CRT 0x498540 by address), '\' = '/', '_' = '.', '__' = '/'. Emulator fuzz"
 0x43b630,archive_load_by_index,verified,src/game/st_sb.c. wraps 0x496590 with allocator save/restore (0x496680/0x496510). Emulator fuzz
-0x43b660,archive_load_by_name,understood,temporarily swaps alloc/free hooks 0x4b4a84/0x4b4a88 to 0x4445e0/0x444570 around the load
+0x43b660,archive_load_by_name,verified,src/game/orig_pg.c. the original's instruction sequences. Emulator fuzz
 0x43b6c0,file_open_any,verified,"src/game/st_sb.c. archive entry by name if present (memory file, table 0x6c25c0), else disk via 0x476c30. Emulator fuzz"
 0x43b7f0,file_read_any,verified,"src/game/st_sb.c. memory file (table 0x6c25c0: {u8 *data, u32 pos}) or disk via 0x476e20. Emulator fuzz"
 0x476d90,os_file_open,understood,"CreateFileA, retries every 500 ms on sharing violation (error 0x21)"
@@ -1716,3 +1716,57 @@ address,name,status,notes
 0x4375c7,error_dialog_proc,verified,"src/game/orig_pf.c. C0 (a below b, or unordered). Emulator fuzz"
 0x438760,hud_update_extra,verified,"src/game/orig_pf.c. C0 (a below b, or unordered). Emulator fuzz"
 0x4387d0,hud_sprite_set,verified,"src/game/orig_pf.c. C0 (a below b, or unordered). Emulator fuzz"
+0x438df0,hud_speed_digits,verified,src/game/orig_pg.c. the original's instruction sequences. Emulator fuzz
+0x438e60,hud_lap_place,verified,src/game/orig_pg.c. the original's instruction sequences. Emulator fuzz
+0x438fb0,hud_time_digits,verified,src/game/orig_pg.c. the original's instruction sequences. Emulator fuzz
+0x439050,hud_warning_sprite,verified,src/game/orig_pg.c. the original's instruction sequences. Emulator fuzz
+0x4390c0,hud_weapon_icons,verified,src/game/orig_pg.c. the original's instruction sequences. Emulator fuzz
+0x439270,hud_lap_banner,verified,src/game/orig_pg.c. the original's instruction sequences. Emulator fuzz
+0x4392e0,hud_banner_set,verified,src/game/orig_pg.c. the original's instruction sequences. Emulator fuzz
+0x439400,hud_car_markers,verified,src/game/orig_pg.c. the original's instruction sequences. Emulator fuzz
+0x439d50,hud_fade_set,verified,src/game/orig_pg.c. the original's instruction sequences. Emulator fuzz
+0x439d70,hud_fade_apply,verified,src/game/orig_pg.c. the original's instruction sequences. Emulator fuzz
+0x439f20,hud_split_layout,verified,src/game/orig_pg.c. the original's instruction sequences. Emulator fuzz
+0x43a000,hud_name_texts,verified,src/game/orig_pg.c. the original's instruction sequences. Emulator fuzz
+0x43a3e0,car_screen_point,verified,src/game/orig_pg.c. the original's instruction sequences. Emulator fuzz
+0x43a4a0,hud_gap_bars,verified,src/game/orig_pg.c. the original's instruction sequences. Emulator fuzz
+0x43c370,cpu_is_intel,verified,src/game/orig_pg.c. the original's instruction sequences. Emulator fuzz
+0x43c3e0,cpu_feature_none,verified,src/game/orig_pg.c. the original's instruction sequences. Emulator fuzz
+0x43f040,leader_hit,verified,src/game/orig_pg.c. the original's instruction sequences. Emulator fuzz
+0x4410f0,light_cells_remove,verified,src/game/orig_pg.c. the original's instruction sequences. Emulator fuzz
+0x441220,light_slot_new,verified,src/game/orig_pg.c. the original's instruction sequences. Emulator fuzz
+0x441370,light_slot_free,verified,src/game/orig_pg.c. the original's instruction sequences. Emulator fuzz
+0x4413a0,light_reposition,verified,src/game/orig_pg.c. the original's instruction sequences. Emulator fuzz
+0x441d80,flare_add,verified,src/game/orig_pg.c. the original's instruction sequences. Emulator fuzz
+0x441de0,flare_quad,verified,src/game/orig_pg.c. the original's instruction sequences. Emulator fuzz
+0x441fa0,flare_quad_colour,verified,src/game/orig_pg.c. the original's instruction sequences. Emulator fuzz
+0x442060,flares_draw,verified,src/game/orig_pg.c. the original's instruction sequences. Emulator fuzz
+0x4427a0,body_triggers_apply,verified,src/game/orig_ph.c. the original's instructions ---- Emulator fuzz
+0x4432d0,glyph_sheet_pack,verified,src/game/orig_ph.c. the original's instructions ---- Emulator fuzz
+0x444500,kr_heap_init,verified,src/game/orig_ph.c. the original's instructions ---- Emulator fuzz
+0x444570,kr_free,verified,src/game/orig_ph.c. the original's instructions ---- Emulator fuzz
+0x4445e0,kr_malloc,verified,src/game/orig_ph.c. the original's instructions ---- Emulator fuzz
+0x444670,kr_morecore,verified,src/game/orig_ph.c. the original's instructions ---- Emulator fuzz
+0x4446c0,kr_sbrk,verified,src/game/orig_ph.c. the original's instructions ---- Emulator fuzz
+0x445340,menu_text_fit,verified,src/game/orig_ph.c. the original's instructions ---- Emulator fuzz
+0x446250,menu_bar_sprites_init,verified,src/game/orig_ph.c. the original's instructions ---- Emulator fuzz
+0x446300,menu_cursor_bar_draw,verified,src/game/orig_ph.c. the original's instructions ---- Emulator fuzz
+0x446ea0,menu_slider_bars_draw,verified,src/game/orig_ph.c. the original's instructions ---- Emulator fuzz
+0x447f00,menu_hold_clear_thunk,verified,src/game/orig_ph.c. the original's instructions ---- Emulator fuzz
+0x447f10,menu_hold_reset_thunk,verified,src/game/orig_ph.c. the original's instructions ---- Emulator fuzz
+0x447f20,option_onoff_step,verified,src/game/orig_ph.c. the original's instructions ---- Emulator fuzz
+0x447ff0,movie_win_lang6,verified,src/game/orig_ph.c. the original's instructions ---- Emulator fuzz
+0x44cc50,menu_measure_all,verified,src/game/orig_ph.c. the original's instructions ---- Emulator fuzz
+0x44ccf0,menu_item_measure,verified,src/game/orig_ph.c. the original's instructions ---- Emulator fuzz
+0x44ce20,menu_loose_items_measure,verified,src/game/orig_ph.c. the original's instructions ---- Emulator fuzz
+0x44ce40,menu_title_measure,verified,src/game/orig_ph.c. the original's instructions ---- Emulator fuzz
+0x450050,option_number_step,verified,src/game/orig_ph.c. the original's instructions ---- Emulator fuzz
+0x453020,menu_tiles_init,verified,src/game/orig_ph.c. the original's instructions ---- Emulator fuzz
+0x4530d0,menu_tiles_draw,verified,src/game/orig_ph.c. the original's instructions ---- Emulator fuzz
+0x453130,menu_frame_sprites_init,verified,src/game/orig_ph.c. the original's instructions ---- Emulator fuzz
+0x453220,menu_box_quads_draw,verified,src/game/orig_pi.c. the original's instructions ---- Emulator fuzz
+0x453570,fe_side_panel_init,verified,src/game/orig_pi.c. the original's instructions ---- Emulator fuzz
+0x4535b0,fe_side_panel_draw,verified,src/game/orig_pi.c. the original's instructions ---- Emulator fuzz
+0x453710,fe_corner_frames_init,verified,src/game/orig_pi.c. the original's instructions ---- Emulator fuzz
+0x4538e0,menu_model_draw,verified,src/game/orig_pi.c. the original's instructions ---- Emulator fuzz
+0x453a00,menu_model_corners_draw,verified,src/game/orig_pi.c. the original's instructions ---- Emulator fuzz
