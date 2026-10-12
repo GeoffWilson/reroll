@@ -173,6 +173,64 @@ void GAMEAPI ai_aim_at_node(uint8_t *car, int32_t *v, uint32_t line_index, uint3
 void GAMEAPI ai_steer_to(uint8_t *car, const int32_t *target, int32_t check, int32_t reverse);
 void GAMEAPI ai_drive(uint8_t *car);
 void GAMEAPI ai_pace(uint8_t *car);
+int32_t GAMEAPI netplay_chat_reset(void); /* 0x45c340 */
+void GAMEAPI netplay_body_pack(uint32_t body, uint32_t out); /* 0x45c350 */
+void GAMEAPI netplay_record_copy(const uint32_t *src, uint32_t *dst); /* 0x45c3c0 */
+void GAMEAPI netplay_car_pack(uint32_t car, uint32_t out); /* 0x45c3e0 */
+void GAMEAPI netplay_car_state_apply(int32_t slot, uint32_t rec); /* 0x45c4e0 */
+void GAMEAPI netplay_car_state_send(int32_t slot); /* 0x45c540 */
+void GAMEAPI netplay_body_unpack(uint32_t rec, uint32_t body); /* 0x45c5e0 */
+void GAMEAPI netplay_record_copy_keep(const uint32_t *src, uint32_t *dst); /* 0x45c660 */
+void GAMEAPI netplay_car_unpack(uint32_t rec, uint32_t car); /* 0x45c690 */
+void GAMEAPI netplay_car_state_load(uint32_t car, uint32_t rec, uint32_t *objp, uint32_t rec2, uint32_t rec3); /* 0x45c780 */
+void GAMEAPI netplay_car_state_tick(void); /* 0x45c7d0 */
+void GAMEAPI netplay_weapon_kind_set(int32_t slot, uint32_t kind, int32_t which); /* 0x45c880 */
+void GAMEAPI netplay_weapon_fire(int32_t slot, uint32_t kind, int32_t which, int32_t age, int32_t size, uint32_t data); /* 0x45c8c0 */
+void GAMEAPI netplay_car_look_get(int32_t slot, uint8_t *a, uint8_t *b, uint8_t *c, uint16_t *d); /* 0x45ca30 */
+void GAMEAPI netplay_car_look_set(int32_t slot, const uint8_t *a, const uint8_t *b, const uint8_t *c, const uint16_t *d); /* 0x45ca90 */
+void GAMEAPI netplay_players_mark(void); /* 0x45caf0 */
+void GAMEAPI netplay_settings_apply(uint32_t src); /* 0x45cd00 */
+uint32_t GAMEAPI netplay_settings_pack(uint32_t head, uint32_t *size); /* 0x45cf50 */
+void GAMEAPI netplay_chat_texts_clear(void); /* 0x45cfb0 */
+void GAMEAPI netplay_chat_show(uint32_t info, uint32_t colour); /* 0x45cfe0 */
+int32_t GAMEAPI netplay_slot_flag_find(void); /* 0x45d1e0 */
+void GAMEAPI netplay_race_bytes_set(const uint8_t *src); /* 0x45d210 */
+void GAMEAPI netplay_message_handle(uint32_t msg, uint32_t size, uint32_t from); /* 0x45d230 */
+int32_t GAMEAPI netplay_send_byte(uint32_t kind, uint32_t value, uint32_t flags); /* 0x45ddb0 */
+int32_t GAMEAPI netplay_players_send(void); /* 0x45dde0 */
+int32_t GAMEAPI netplay_controls_send(int32_t player, uint32_t a, uint32_t b, int32_t send); /* 0x45deb0 */
+int32_t GAMEAPI netplay_controls_relay(void); /* 0x45e120 */
+int32_t GAMEAPI netplay_race_start_send(void); /* 0x45e200 */
+int32_t GAMEAPI netplay_clock_send(void); /* 0x45e340 */
+void GAMEAPI netplay_player_count_update(void); /* 0x45e3c0 */
+int32_t GAMEAPI netplay_settings_send(void); /* 0x45e400 */
+int32_t GAMEAPI netplay_look_send(void); /* 0x45e4a0 */
+int32_t GAMEAPI netplay_bad_message_reply(uint32_t to, uint32_t seq); /* 0x45e5b0 */
+int32_t GAMEAPI netplay_car_state_post(uint32_t data, uint32_t size, uint32_t time, int32_t slot); /* 0x45e600 */
+int32_t GAMEAPI missile_lock_level(const uint32_t *who); /* 0x458760 */
+void GAMEAPI light_colours_from_ids(uint32_t ids, uint32_t *out); /* 0x459cb0 */
+void GAMEAPI model_camera_matrix_set(uint8_t *body); /* 0x459e80 */
+void GAMEAPI model_draw_lit(uint8_t *body, uint32_t lights); /* 0x45a260 */
+int32_t GAMEAPI model_view_depth(uint8_t *body); /* 0x45a2a0 */
+void GAMEAPI prim_uv_rotate(uint8_t *prim, int32_t k); /* 0x45a2f0 */
+void GAMEAPI model_faces_draw(uint8_t *body, int32_t depth); /* 0x45a430 */
+void GAMEAPI model_faces_draw_smooth(uint8_t *body, int32_t depth); /* 0x45ab20 */
+void GAMEAPI light_colours_set(const uint32_t *lights); /* 0x45b200 */
+void GAMEAPI body_tint_approach(uint8_t *body, uint8_t *tint); /* 0x45b390 */
+void GAMEAPI model_lights_set(uint8_t *body, const uint32_t *lights); /* 0x45b400 */
+uint32_t GAMEAPI tint_byte_approach(uint32_t cur, uint32_t want); /* 0x45b9f0 */
+void GAMEAPI light_direction_at(const int32_t *pos, const int32_t *light, int32_t *out); /* 0x45ba30 */
+int32_t GAMEAPI k5_object_hit(uint8_t *self, uint8_t *obj, uint8_t *hit); /* 0x45bb70 */
+int32_t GAMEAPI k5_object_trigger(uint8_t *body); /* 0x45bbf0 */
+void GAMEAPI fe_item_model_draw(void); /* 0x455e90 */
+void GAMEAPI fe_second_model_draw(void); /* 0x456800 */
+void GAMEAPI fe_car_choice_draw(void); /* 0x457020 */
+void GAMEAPI fe_mode_model_draw(void); /* 0x4579a0 */
+void GAMEAPI flame_step(void); /* 0x457bf0 */
+void GAMEAPI flame_texture_info(uint16_t *page, uint16_t *a, uint16_t *b, uint16_t *c, uint16_t *d); /* 0x457d10 */
+void GAMEAPI flame_upload(void); /* 0x457d50 */
+void GAMEAPI flame_update(void); /* 0x457e90 */
+void GAMEAPI flame_init(void); /* 0x457ea0 */
 void GAMEAPI menu_box_quads_draw(uint32_t ot, int32_t page); /* 0x453220 */
 void GAMEAPI fe_side_panel_init(void); /* 0x453570 */
 void GAMEAPI fe_side_panel_draw(uint32_t ot, int32_t page, int32_t x, int32_t y); /* 0x4535b0 */

@@ -1770,3 +1770,61 @@ address,name,status,notes
 0x453710,fe_corner_frames_init,verified,src/game/orig_pi.c. the original's instructions ---- Emulator fuzz
 0x4538e0,menu_model_draw,verified,src/game/orig_pi.c. the original's instructions ---- Emulator fuzz
 0x453a00,menu_model_corners_draw,verified,src/game/orig_pi.c. the original's instructions ---- Emulator fuzz
+0x455e90,fe_item_model_draw,verified,src/game/orig_pj.c. the original's instructions ---- Emulator fuzz
+0x456800,fe_second_model_draw,verified,src/game/orig_pj.c. the original's instructions ---- Emulator fuzz
+0x457020,fe_car_choice_draw,verified,src/game/orig_pj.c. the original's instructions ---- Emulator fuzz
+0x4579a0,fe_mode_model_draw,verified,src/game/orig_pj.c. the original's instructions ---- Emulator fuzz
+0x457bf0,flame_step,verified,src/game/orig_pj.c. the original's instructions ---- Emulator fuzz
+0x457d10,flame_texture_info,verified,src/game/orig_pj.c. the original's instructions ---- Emulator fuzz
+0x457d50,flame_upload,verified,src/game/orig_pj.c. the original's instructions ---- Emulator fuzz
+0x457e90,flame_update,verified,src/game/orig_pj.c. the original's instructions ---- Emulator fuzz
+0x457ea0,flame_init,verified,src/game/orig_pj.c. the original's instructions ---- Emulator fuzz
+0x458760,missile_lock_level,verified,src/game/orig_pk.c. the original's instructions ---- Emulator fuzz
+0x459cb0,light_colours_from_ids,verified,src/game/orig_pk.c. the original's instructions ---- Emulator fuzz
+0x459e80,model_camera_matrix_set,verified,src/game/orig_pk.c. the original's instructions ---- Emulator fuzz
+0x45a260,model_draw_lit,verified,src/game/orig_pk.c. the original's instructions ---- Emulator fuzz
+0x45a2a0,model_view_depth,verified,src/game/orig_pk.c. the original's instructions ---- Emulator fuzz
+0x45a2f0,prim_uv_rotate,verified,src/game/orig_pk.c. the original's instructions ---- Emulator fuzz
+0x45a430,model_faces_draw,verified,src/game/orig_pk.c. the original's instructions ---- Emulator fuzz
+0x45ab20,model_faces_draw_smooth,verified,src/game/orig_pk.c. the original's instructions ---- Emulator fuzz
+0x45b200,light_colours_set,verified,src/game/orig_pk.c. the original's instructions ---- Emulator fuzz
+0x45b390,body_tint_approach,verified,src/game/orig_pk.c. the original's instructions ---- Emulator fuzz
+0x45b400,model_lights_set,verified,src/game/orig_pk.c. the original's instructions ---- Emulator fuzz
+0x45b9f0,tint_byte_approach,verified,src/game/orig_pk.c. the original's instructions ---- Emulator fuzz
+0x45ba30,light_direction_at,verified,src/game/orig_pk.c. the original's instructions ---- Emulator fuzz
+0x45bb70,k5_object_hit,verified,src/game/orig_pk.c. the original's instructions ---- Emulator fuzz
+0x45bbf0,k5_object_trigger,verified,src/game/orig_pk.c. the original's instructions ---- Emulator fuzz
+0x45c340,netplay_chat_reset,verified,"src/game/orig_pl.c. * strlen + 1 bytes, dwords first, forwards. Emulator fuzz"
+0x45c350,netplay_body_pack,verified,"src/game/orig_pl.c. * strlen + 1 bytes, dwords first, forwards. Emulator fuzz"
+0x45c3c0,netplay_record_copy,verified,"src/game/orig_pl.c. * strlen + 1 bytes, dwords first, forwards. Emulator fuzz"
+0x45c3e0,netplay_car_pack,verified,"src/game/orig_pl.c. * strlen + 1 bytes, dwords first, forwards. Emulator fuzz"
+0x45c4e0,netplay_car_state_apply,verified,"src/game/orig_pl.c. * strlen + 1 bytes, dwords first, forwards. Emulator fuzz"
+0x45c540,netplay_car_state_send,verified,"src/game/orig_pl.c. * strlen + 1 bytes, dwords first, forwards. Emulator fuzz"
+0x45c5e0,netplay_body_unpack,verified,"src/game/orig_pl.c. * strlen + 1 bytes, dwords first, forwards. Emulator fuzz"
+0x45c660,netplay_record_copy_keep,verified,"src/game/orig_pl.c. * strlen + 1 bytes, dwords first, forwards. Emulator fuzz"
+0x45c690,netplay_car_unpack,verified,"src/game/orig_pl.c. * strlen + 1 bytes, dwords first, forwards. Emulator fuzz"
+0x45c780,netplay_car_state_load,verified,"src/game/orig_pl.c. * strlen + 1 bytes, dwords first, forwards. Emulator fuzz"
+0x45c7d0,netplay_car_state_tick,verified,"src/game/orig_pl.c. * strlen + 1 bytes, dwords first, forwards. Emulator fuzz"
+0x45c880,netplay_weapon_kind_set,verified,"src/game/orig_pl.c. * strlen + 1 bytes, dwords first, forwards. Emulator fuzz"
+0x45c8c0,netplay_weapon_fire,verified,"src/game/orig_pl.c. * strlen + 1 bytes, dwords first, forwards. Emulator fuzz"
+0x45ca30,netplay_car_look_get,verified,"src/game/orig_pl.c. * strlen + 1 bytes, dwords first, forwards. Emulator fuzz"
+0x45ca90,netplay_car_look_set,verified,"src/game/orig_pl.c. * strlen + 1 bytes, dwords first, forwards. Emulator fuzz"
+0x45caf0,netplay_players_mark,verified,"src/game/orig_pl.c. * strlen + 1 bytes, dwords first, forwards. Emulator fuzz"
+0x45cd00,netplay_settings_apply,verified,"src/game/orig_pl.c. * strlen + 1 bytes, dwords first, forwards. Emulator fuzz"
+0x45cf50,netplay_settings_pack,verified,"src/game/orig_pl.c. * strlen + 1 bytes, dwords first, forwards. Emulator fuzz"
+0x45cfb0,netplay_chat_texts_clear,verified,"src/game/orig_pl.c. * strlen + 1 bytes, dwords first, forwards. Emulator fuzz"
+0x45cfe0,netplay_chat_show,verified,"src/game/orig_pl.c. * strlen + 1 bytes, dwords first, forwards. Emulator fuzz"
+0x45d1e0,netplay_slot_flag_find,verified,"src/game/orig_pl.c. * strlen + 1 bytes, dwords first, forwards. Emulator fuzz"
+0x45d210,netplay_race_bytes_set,verified,"src/game/orig_pl.c. * strlen + 1 bytes, dwords first, forwards. Emulator fuzz"
+0x45d230,netplay_message_handle,verified,"src/game/orig_pl.c. * strlen + 1 bytes, dwords first, forwards. Emulator fuzz"
+0x45ddb0,netplay_send_byte,verified,"src/game/orig_pl.c. * strlen + 1 bytes, dwords first, forwards. Emulator fuzz"
+0x45dde0,netplay_players_send,verified,"src/game/orig_pl.c. * strlen + 1 bytes, dwords first, forwards. Emulator fuzz"
+0x45deb0,netplay_controls_send,verified,"src/game/orig_pl.c. * strlen + 1 bytes, dwords first, forwards. Emulator fuzz"
+0x45e120,netplay_controls_relay,verified,"src/game/orig_pl.c. * strlen + 1 bytes, dwords first, forwards. Emulator fuzz"
+0x45e200,netplay_race_start_send,verified,"src/game/orig_pl.c. * strlen + 1 bytes, dwords first, forwards. Emulator fuzz"
+0x45e340,netplay_clock_send,verified,"src/game/orig_pl.c. * strlen + 1 bytes, dwords first, forwards. Emulator fuzz"
+0x45e3c0,netplay_player_count_update,verified,"src/game/orig_pl.c. * strlen + 1 bytes, dwords first, forwards. Emulator fuzz"
+0x45e400,netplay_settings_send,verified,"src/game/orig_pl.c. * strlen + 1 bytes, dwords first, forwards. Emulator fuzz"
+0x45e4a0,netplay_look_send,verified,"src/game/orig_pl.c. * strlen + 1 bytes, dwords first, forwards. Emulator fuzz"
+0x45e5b0,netplay_bad_message_reply,verified,"src/game/orig_pl.c. * strlen + 1 bytes, dwords first, forwards. Emulator fuzz"
+0x45e600,netplay_car_state_post,verified,"src/game/orig_pl.c. * strlen + 1 bytes, dwords first, forwards. Emulator fuzz"
