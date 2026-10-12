@@ -8,6 +8,8 @@
 void widescreen_install(float output_aspect);
 /* the output window's aspect changed */
 void widescreen_set_aspect(float output_aspect);
+/* After each present: the frame's packet copies are no longer linked. */
+void widescreen_frame_end(void);
 
 
 #endif

@@ -173,6 +173,118 @@ void GAMEAPI ai_aim_at_node(uint8_t *car, int32_t *v, uint32_t line_index, uint3
 void GAMEAPI ai_steer_to(uint8_t *car, const int32_t *target, int32_t check, int32_t reverse);
 void GAMEAPI ai_drive(uint8_t *car);
 void GAMEAPI ai_pace(uint8_t *car);
+int32_t GAMEAPI clip_far_z(uint32_t *in, uint32_t *out, int32_t *next); /* 0x417950 */
+int32_t GAMEAPI clip_polygon_a(uint32_t flags); /* 0x417af0 */
+int32_t GAMEAPI clip_polygon_b(uint32_t flags); /* 0x417ce0 */
+void clip_vertex_add(void); /* 0x4180c0: asm entry, register arguments eax (colour bytes), ecx / edx (texture indices), ebx (six dwords) */
+void GAMEAPI clip_vertex_add_c(uint32_t packed, uint32_t u, uint32_t v, const uint32_t *src); /* 0x4180c0 body */
+void GAMEAPI clip_vertex_add_2d(uint32_t xy, uint32_t uv, uint32_t rgba); /* 0x418170 */
+void GAMEAPI clip_vertices_restart(void); /* 0x418260 */
+int32_t GAMEAPI clip_polygon_2d(void); /* 0x418290 */
+void GAMEAPI screen_colour_apply(void); /* 0x41b2f0 */
+void GAMEAPI replay_files_save(void); /* 0x41c550 */
+int32_t GAMEAPI cpuid_available(void); /* 0x41c8c0 */
+void GAMEAPI cpu_features_read(void); /* 0x41c8f0 */
+int32_t GAMEAPI cpu_check(void); /* 0x41c930 */
+void GAMEAPI fatal_error(const uint8_t *fmt, ...); /* 0x41c970 */
+uint32_t GAMEAPI fatal_format(const uint8_t *fmt, const uint32_t *args); /* 0x41c9d0 */
+uint8_t *GAMEAPI fatal_number(uint8_t *dst, uint32_t value, uint32_t conv, int32_t width); /* 0x41cd00 */
+void GAMEAPI debug_hook_nop(void); /* 0x41cec0 */
+int32_t GAMEAPI d3d_init(uint32_t unused, uint32_t zbuffer); /* 0x41ced0 */
+void GAMEAPI d3d_tables_alloc(void); /* 0x41cfd0 */
+int32_t GAMEAPI ddraw_query_d3d(void); /* 0x41d100 */
+int32_t GAMEAPI d3d_shutdown(void); /* 0x41d130 */
+int32_t GAMEAPI d3d_device_create(void); /* 0x41d1f0 */
+int32_t GAMEAPI d3d_devices_enumerate(void); /* 0x41d250 */
+int32_t GAMEAPI d3d_device_pick(void); /* 0x41d6d0 */
+int32_t GAMEAPI d3d_texture_format_pick(void); /* 0x41d730 */
+int32_t GAMEAPI texture_slot_release(int32_t i); /* 0x41d890 */
+int32_t GAMEAPI texture_slots_release(void); /* 0x41d910 */
+int32_t GAMEAPI texture_slot_handle(int32_t i); /* 0x41d940 */
+int32_t GAMEAPI zbuffer_create(uint32_t width, uint32_t height); /* 0x41d980 */
+int32_t GAMEAPI d3d_render_states(void); /* 0x41db00 */
+void GAMEAPI d3d_filter_set(void); /* 0x41dd90 */
+int32_t GAMEAPI d3d_filter_nearest(void); /* 0x41ddd0 */
+void GAMEAPI d3d_fog_colour_set(uint32_t r, uint32_t g, uint32_t b); /* 0x41de10 */
+void GAMEAPI d3d_fog_on(void); /* 0x41de40 */
+void GAMEAPI d3d_fog_off(void); /* 0x41de60 */
+void GAMEAPI d3d_zbuffer_on(void); /* 0x41de80 */
+void GAMEAPI d3d_zbuffer_off(void); /* 0x41dec0 */
+void GAMEAPI d3d_state_defaults(void); /* 0x41dee0 */
+int32_t GAMEAPI d3d_viewport_create(uint32_t width, uint32_t height); /* 0x41df10 */
+int32_t GAMEAPI cpu_has_3dnow(void); /* 0x4010c0 */
+int32_t GAMEAPI cpu_ext_level(void); /* 0x4010f0 */
+int32_t GAMEAPI cpu_3dnow_get(void); /* 0x401110 */
+int32_t GAMEAPI track_object_vanish(uint8_t *obj); /* 0x401230 */
+void GAMEAPI dome_scale(int16_t *v); /* 0x404980 */
+void GAMEAPI sky_dome_draw(uint8_t *view); /* 0x4049b0 */
+void GAMEAPI dome_vertex(const uint32_t *point, uint8_t *out, uint8_t *flag, float far); /* 0x404e00 */
+void GAMEAPI dome_quad_add(uint8_t *packet, const uint8_t *a, const uint8_t *b, const uint8_t *c, const uint8_t *d, uint32_t fa, uint32_t fb, uint32_t fc, uint32_t fd, uint32_t colour); /* 0x404e50 */
+void GAMEAPI dome_tri_add(uint8_t *packet, const uint8_t *a, const uint8_t *b, const uint8_t *c, uint32_t fa, uint32_t fb, uint32_t fc, uint32_t colour); /* 0x404ee0 */
+void GAMEAPI sky_quads_draw(void); /* 0x404f50 */
+int32_t GAMEAPI blast_object_hit(uint8_t *obj); /* 0x405280 */
+void GAMEAPI blast_object_wreck(uint8_t *obj); /* 0x4052b0 */
+int32_t GAMEAPI screenshot_dump(void); /* 0x405c10 */
+int32_t GAMEAPI crumble_queue_add(uint8_t *obj); /* 0x405ed0 */
+void GAMEAPI tv_camera_begin(int32_t view); /* 0x408270 */
+void GAMEAPI tv_camera_end(void); /* 0x40ad60 */
+void GAMEAPI camera_event_cut(uint8_t *from, int32_t *point, uint32_t kind, int16_t length); /* 0x40ae50 */
+void GAMEAPI camera_blend_begin(uint8_t **rec); /* 0x40cbe0 */
+void GAMEAPI camera_blend_end(uint8_t **rec); /* 0x40cd00 */
+void GAMEAPI camera_blend_apply(uint8_t **rec); /* 0x40cd90 */
+void GAMEAPI vec_lerp8(const int32_t *a, const int32_t *b, int32_t *out, int32_t k); /* 0x40cfa0 */
+int32_t GAMEAPI charanim_upload(uint32_t c, uint32_t f); /* 0x4114b0 */
+int32_t GAMEAPI charanim_load(uint32_t c, uint32_t f); /* 0x4115e0 */
+int32_t GAMEAPI charanim_load_all(void); /* 0x4116f0 */
+void GAMEAPI charanim_texture_info(uint16_t *handle, uint16_t *origin, int16_t *u, int16_t *v, uint16_t *uv); /* 0x411740 */
+int32_t GAMEAPI object_part_hit(uint8_t *obj, uint8_t *body, int32_t part, int32_t *point); /* 0x412bf0 */
+int32_t GAMEAPI clip_plane(const uint32_t *in, const float *plane, uint32_t *out, int32_t *next); /* 0x417060 */
+int32_t GAMEAPI clip_plane_flat(const uint32_t *in, const float *plane, uint32_t *out, int32_t *next); /* 0x417270 */
+int32_t GAMEAPI clip_near(const uint32_t *in, uint32_t *out, int32_t *next); /* 0x417450 */
+int32_t GAMEAPI clip_far(const uint32_t *in, uint32_t *out, int32_t *next); /* 0x417600 */
+int32_t GAMEAPI clip_near_list(const uint32_t *in, uint32_t *out, int32_t *next); /* 0x4177b0 */
+void GAMEAPI crtc_entry(void); /* 0x498ec5 */
+void GAMEAPI crtc_fpmath(void); /* 0x4979a0 */
+void GAMEAPI crtc_clock_init(void); /* 0x499059 */
+void GAMEAPI crtc_initstdio(void); /* 0x49accc */
+void GAMEAPI crtc_initmbctable(void); /* 0x49d2e7 */
+void GAMEAPI crtc_lockexit(void); /* 0x498d50 */
+void GAMEAPI crtc_unlockexit(void); /* 0x498d59 */
+void GAMEAPI crtc_initterm(uint32_t *first, uint32_t *last); /* 0x498d62 */
+void GAMEAPI crtc_exit_quick(int32_t code); /* 0x498c9a */
+void GAMEAPI crtc_amsg_exit(int32_t n); /* 0x498fcd */
+void GAMEAPI crtc_fptrap(void); /* 0x49f925 */
+int32_t GAMEAPI crtc_endstdio(void); /* 0x49ad74 */
+uint32_t __attribute__((stdcall)) crtc_threadstart(uint8_t *ptd); /* 0x498df3 */
+uint8_t *GAMEAPI crtc_getptd(void); /* 0x49bcf1 */
+void GAMEAPI crtc_initptd(uint8_t *ptd); /* 0x49bcde */
+int32_t *GAMEAPI crtc_errno(void); /* 0x49d48e */
+int32_t *GAMEAPI crtc_doserrno(void); /* 0x49d497 */
+void GAMEAPI crtc_dosmaperr(uint32_t oserr); /* 0x49d41b */
+void GAMEAPI crtc_lock(int32_t n); /* 0x49b161 */
+void GAMEAPI crtc_unlock(int32_t n); /* 0x49b1c2 */
+uint8_t *GAMEAPI crtc_fopen(const char *name, const char *mode); /* 0x499459 */
+uint32_t GAMEAPI crtc_fread(void *buf, uint32_t size, uint32_t num, uint8_t *s); /* 0x49908e */
+int32_t GAMEAPI crtc_fseek(uint8_t *s, int32_t offset, int32_t whence); /* 0x4991a5 */
+int32_t GAMEAPI crtc_ftell(uint8_t *s); /* 0x49925e */
+int32_t GAMEAPI crtc_fclose(uint8_t *s); /* 0x4994f9 */
+int32_t GAMEAPI crtc_fputs(const char *str, uint8_t *s); /* 0x4996dc */
+int32_t GAMEAPI crtc_fflush(uint8_t *s); /* 0x499576 */
+int32_t GAMEAPI crtc_printf(const char *format, ...); /* 0x497f7a */
+int32_t GAMEAPI crtc_toupper_lk(int32_t c); /* 0x4985af */
+int32_t GAMEAPI crtc_tolower_lk(int32_t c); /* 0x4986ea */
+int32_t GAMEAPI crtc_get_string_type(uint32_t type, const char *src, int32_t n, uint16_t *out, uint32_t cp, uint32_t lcid, int32_t error); /* 0x49aee3 */
+int32_t GAMEAPI crtc_lcmap_string(uint32_t lcid, uint32_t flags, const char *src, int32_t n, char *dst, int32_t dstn, uint32_t cp, int32_t error); /* 0x49ba3b */
+uint8_t *GAMEAPI crtc_mbsdec(const uint8_t *start, const uint8_t *p); /* 0x49cea2 */
+uint8_t *GAMEAPI crtc_mbsnbcpy(uint8_t *dst, const uint8_t *src, uint32_t n); /* 0x49d303 */
+uint32_t GAMEAPI crtc_mbctoupper(uint32_t c); /* 0x49d4a0 */
+void GAMEAPI crtc_fmod(void); /* 0x4987e0: asm, fmod(double, double) -> st(0) */
+void GAMEAPI crtc_atan2(void); /* 0x498820: asm, atan2(double y, double x) -> st(0) */
+void GAMEAPI crtc_one_arg_error(void); /* 0x49a8e7: asm, _startOneArgErrorHandling (eax, ecx, edx, st(0), frame) */
+void GAMEAPI crtc_two_arg_error(void); /* 0x49a8d0: asm, the two-argument entry */
+void GAMEAPI crtc_powhlp(void); /* 0x49ab37: asm, int _powhlp(double x, double y, double *result) */
+void GAMEAPI crtc_except2(void); /* 0x4a0f1a: asm, double _except2(flags, op, double a, double b, double r, cw) */
+void GAMEAPI crtc_handle_qnan2(void); /* 0x4a0eba: asm, double _handle_qnan2(op, double a, double b, cw) */
 int32_t GAMEAPI cd_volume_get(void); /* 0x497630 */
 int32_t GAMEAPI cd_volume_available(void); /* 0x4977b0 */
 int32_t GAMEAPI msvc_sprintf(char *buf, const char *format, ...); /* 0x4979f0 */

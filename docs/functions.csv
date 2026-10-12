@@ -47,8 +47,8 @@ address,name,status,notes
 0x479be0,draw_view,understood,"(slot): viewport rect from slot+8, camera object = (*(slot+0x28))[0] -> position +0x34, view matrix +0xc4 (copied to 0x6ce5a0 by 0x423d10), then draws the world"
 0x4386f0,hud_update,understood,"(slot): HUD digits (speed, position, laps, timers); flash countdowns at car +0x65c/+0x65d drop once per call"
 0x40b000,camera_speed_zoom,verified,"src/game/post_i.c. (slot, camera pos): pulls the camera toward the target car by speed; relinks the camera object. Emulator fuzz; in game"
-0x408270,tv_camera_begin,understood,"(view): backs up the view's camera object (+0x34, 0xd8 bytes) to 0x4b616c and overwrites it with TV camera state 0x6cf6e0 + view*0x150 (showcase/replays)"
-0x40ad60,tv_camera_end,understood,restores the camera object saved by tv_camera_begin
+0x408270,tv_camera_begin,verified,"src/game/orig_na.c. the TV camera takes over a view: saves the field of view (0x6cce6c, truncated, to 0x4b6244) and the view's camera object (+0x34, 0xd8 bytes, to 0x4b616c), copies TV state 0x6cf6e0 + view * 0x150 over it, camera flags from the TV record (+0x30, +0x1c) and bit 4, its field of view (+0x24), the sound listener if flag 4. Emulator fuzz"
+0x40ad60,tv_camera_end,verified,src/game/orig_na.c. gives the view (0x6cd408) its camera object and field of view back; camera flags 0x10 and 0x40 off. Emulator fuzz
 0x423d10,set_view_matrix,understood,copies 5 dwords (9 x int16 view matrix + pad) to 0x6ce5a0
 0x4611d0,grid_unlink,verified,"src/game/post_f.c. unlinks a world object from its grid cell (object+0xc cell, +4/+6 link indices; pool 0x6b9b90, 0x80 per index). Emulator fuzz; in game"
 0x460fb0,grid_link,verified,src/game/post_f.c. finds the grid cell for object +0x34 (0x419420) and links the object into it. Emulator fuzz; in game
@@ -1422,3 +1422,112 @@ address,name,status,notes
 0x4993f0,msvc_strncmp,verified,src/game/crt_cb.c. strncmp: -1 / 0 / 1 (unsigned characters). Emulator fuzz
 0x49946c,msvc_calloc,verified,"src/game/crt_cb.c. calloc: zeroed (HEAP_ZERO_MEMORY), new handler retries. Emulator fuzz"
 0x49972a,msvc_vsnprintf,verified,src/game/crt_cb.c. _vsnprintf: at most count characters; -1 if they did not all fit (then no terminator either). Emulator fuzz
+0x498ec5,crtc_entry,verified,"src/game/crt_cc.c. the exe's entry point (WinMainCRTStartup): Windows version, heap, threads, low-level I/O, command line and environment, the initialisers, then WinMain (0x4351e0: hInstance from GetModuleHandleA(0), no previous instance, the command line after the program name, the start-up info's show command or SW_SHOWDEFAULT) and exit with its result. No SEH frame: the runtime's exception filter is not installed. Emulator fuzz"
+0x4979a0,crtc_fpmath,verified,"src/game/crt_cc.c. _fpmath (_FPinit 0x4b4aac): the FDIV check (_adjust_fdiv: IsProcessorFeaturePresent(0) when kernel32 has it), 53-bit precision, exceptions cleared. Not done: _cfltcvt_init (0x4979b8), which points the float-conversion table 0x4b4d90-0x4b4da4 at the runtime's _cfltcvt, _cropzeros, _fassign... Only the runtime's own _output / _input called through it, and group CB's sprintf has its own conversion, so the table keeps its _fptrap entries (the original's code is not referenced). Emulator fuzz"
+0x499059,crtc_clock_init,verified,src/game/crt_cc.c. the clock's start time (a .CRT$XI initialiser). Emulator fuzz
+0x49accc,crtc_initstdio,verified,"src/game/crt_cc.c. _initstdio (a .CRT$XI initialiser): __piob with _nstream (512 by default, at least 20) entries, the first 20 pointing at _iob; the standard streams without a handle get _file -1. Emulator fuzz"
+0x49d2e7,crtc_initmbctable,verified,src/game/crt_cc.c. __initmbctable (a .CRT$XI initialiser): the ANSI code page. Emulator fuzz
+0x498d50,crtc_lockexit,verified,src/game/crt_cc.c. _lockexit / _unlockexit. Emulator fuzz
+0x498d59,crtc_unlockexit,verified,src/game/crt_cc.c. Emulator fuzz
+0x498d62,crtc_initterm,verified,"src/game/crt_cc.c. _initterm: call each non-null function pointer in [first, last). Emulator fuzz"
+0x498c9a,crtc_exit_quick,verified,src/game/crt_cc.c. _exit. Emulator fuzz
+0x498fcd,crtc_amsg_exit,verified,src/game/crt_cc.c. _amsg_exit: report runtime error `n` and leave (_exit 255 through _aexit_rtn). Emulator fuzz
+0x49f925,crtc_fptrap,verified,"src/game/crt_cc.c. _fptrap, the float-conversion table's entries before _fpmath fills it: ""floating point not loaded"". Emulator fuzz"
+0x49ad74,crtc_endstdio,verified,"src/game/crt_cc.c. _endstdio (the .CRT$XP terminator exit runs): flush all, and close all when exiting without terminating (_cexit); eax as left by them. Emulator fuzz"
+0x498df3,crtc_threadstart,verified,"src/game/crt_cc.c. _threadstart, the thread procedure _beginthread passes to CreateThread: the thread's data, then start(arg), then _endthread (no SEH frame). Emulator fuzz"
+0x49bcf1,crtc_getptd,verified,"src/game/crt_cc.c. _getptd: this thread's data, made on first use (the last error is kept). Emulator fuzz"
+0x49bcde,crtc_initptd,verified,src/game/crt_cc.c. _initptd. Emulator fuzz
+0x49d48e,crtc_errno,verified,src/game/crt_cc.c. errno and _doserrno (the thread's +8 / +0xc). Emulator fuzz
+0x49d497,crtc_doserrno,verified,src/game/crt_cc.c. Emulator fuzz
+0x49d41b,crtc_dosmaperr,verified,src/game/crt_cc.c. _dosmaperr: a Windows error to errno (table 0x4b5550). Emulator fuzz
+0x49b161,crtc_lock,verified,"src/game/crt_cc.c. _lock: a runtime lock (table 0x4b50c4), made on first use. Emulator fuzz"
+0x49b1c2,crtc_unlock,verified,src/game/crt_cc.c. _unlock. Emulator fuzz
+0x499459,crtc_fopen,verified,src/game/crt_cc.c. fopen (_fsopen 0x499428 with _SH_DENYNO). Emulator fuzz
+0x49908e,crtc_fread,verified,src/game/crt_cc.c. fread. Emulator fuzz
+0x4991a5,crtc_fseek,verified,src/game/crt_cc.c. fseek. Emulator fuzz
+0x49925e,crtc_ftell,verified,src/game/crt_cc.c. ftell. Emulator fuzz
+0x4994f9,crtc_fclose,verified,src/game/crt_cc.c. fclose. Emulator fuzz
+0x4996dc,crtc_fputs,verified,"src/game/crt_cc.c. fputs: 0, or -1 if not all was written. Emulator fuzz"
+0x499576,crtc_fflush,verified,src/game/crt_cc.c. fflush (NULL: every writing stream). Emulator fuzz
+0x497f7a,crtc_printf,verified,"src/game/crt_cc.c. printf: _vsnprintf (group CB's engine) into a buffer, then the text through the stream as _output puts it (stops at the first failed write: -1). Emulator fuzz"
+0x4985af,crtc_toupper_lk,verified,"src/game/crt_cc.c. _toupper_lk / _tolower_lk (""C"" locale: ASCII; else LCMapString). Emulator fuzz"
+0x4986ea,crtc_tolower_lk,verified,src/game/crt_cc.c. Emulator fuzz
+0x49aee3,crtc_get_string_type,verified,"src/game/crt_cc.c. __crtGetStringTypeA: GetStringTypeW on the string widened in code page `cp` (else the current one), or GetStringTypeA where only that works. Emulator fuzz"
+0x49ba3b,crtc_lcmap_string,verified,"src/game/crt_cc.c. __crtLCMapStringA: LCMapStringW on the widened string, back to `cp` (else the current code page), or LCMapStringA where only that works. Emulator fuzz"
+0x49cea2,crtc_mbsdec,verified,src/game/crt_cc.c. _mbsdec: the character before `p` (0 at the start). Emulator fuzz
+0x49d303,crtc_mbsnbcpy,verified,"src/game/crt_cc.c. _mbsnbcpy: at most n bytes, not splitting a lead byte, padded with zeros. Emulator fuzz"
+0x49d4a0,crtc_mbctoupper,verified,src/game/crt_cc.c. _mbctoupper. Emulator fuzz
+0x4987e0,crtc_fmod,verified,src/game/crt_cc.c. Emulator fuzz
+0x498820,crtc_atan2,verified,src/game/crt_cc.c. Emulator fuzz
+0x49a8e7,crtc_one_arg_error,verified,src/game/crt_cc.c. Emulator fuzz
+0x49a8d0,crtc_two_arg_error,verified,src/game/crt_cc.c. Emulator fuzz
+0x49ab37,crtc_powhlp,verified,src/game/crt_cc.c. Emulator fuzz
+0x4a0f1a,crtc_except2,verified,src/game/crt_cc.c. Emulator fuzz
+0x4a0eba,crtc_handle_qnan2,verified,src/game/crt_cc.c. Emulator fuzz
+0x4010c0,cpu_has_3dnow,verified,"src/game/orig_na.c. cpuid 0x80000001, edx bit 31 (3DNow!): 1 or 0. The original's inline asm leaves ebx clobbered (sic); ours preserves it. Emulator fuzz"
+0x4010f0,cpu_ext_level,verified,src/game/orig_na.c. cpuid 0x80000000's eax (highest extended leaf). Emulator fuzz
+0x401110,cpu_3dnow_get,verified,src/game/orig_na.c. the 3DNow! flag cpu_detect_amd set (0x4b5e44). Emulator fuzz
+0x401230,track_object_vanish,verified,"src/game/orig_na.c. a moving track object's update when it goes (kinds 0x1f..): flags 0x2200 off and 0x1000 on, +0x148 = 0, body_retire, +0x184 = 2, +0x188 = 0, collapse start 0x4427a0, pair_list_remove. Returns 0. Emulator fuzz"
+0x404980,dome_scale,verified,"src/game/orig_na.c. an int16 scaled by 0x6cd400 * 440 / 65536, in place. Emulator fuzz"
+0x4049b0,sky_dome_draw,verified,"src/game/orig_na.c. the sky dome round the view object (position +0x34, int16 parts): a brightness from 0x486240 tints the sky colour 0x4b5fd0 (quads, code 0x98) and the fog colour (rules 0x6c1eb0 +0x30..0x32, set through 0x428390); the sun flare (0x441d80) unless the rules (+4 bit 4), the race (+0x553 & 3) or the view's cell (+4 bit 8) forbid it; then 3 rings of 32 vertices (table *0x6d0a40: 4 int16 per vertex, the 4th the ring spacing via 0x404980) and a centre, drawn as 32 triangles (packets *0x4b5fbc, 0x60 each, code 0x94) and 64 quads (*0x4b5fb0, 0x78 each). The GTE vector's pad word (0x6ccc6a) gets 0 here, leftover stack in the original. Emulator fuzz"
+0x404e00,dome_vertex,verified,"src/game/orig_na.c. project an int16 point (GTE vector 0x6ccc64, 8 bytes) into a 24-byte screen vertex (0x6ccd78 then 0x6ccd80); *flag = 2 if the vertex's depth (+4, float) is beyond `far`, else 0. Emulator fuzz"
+0x404e50,dome_quad_add,verified,"src/game/orig_na.c. a quad packet (0x78 bytes) from four screen vertices unless their clip codes (+0) share a bit: vertices at +8, +0x24, +0x40, +0x5c, colour word +4, linked on 0x6cd6f8 / 0x6cdd08. Arguments 6-9 (the vertices' flags) are not read. Emulator fuzz"
+0x404ee0,dome_tri_add,verified,"src/game/orig_na.c. the triangle version (0x60 bytes: +8, +0x24, +0x40, colour +4, lists 0x6cd700 / 0x6cdd0c). Arguments 5-7 are not read. Emulator fuzz"
+0x404f50,sky_quads_draw,verified,"src/game/orig_na.c. the sky quads (count 0x6d0a00, int16 corner points 4 x 8 bytes each at *0x6d0a38, packets *0x4b5fc0 + 0x78 each) unless detail flag 0x6ccd84 bit 2: projected and linked like 0x404e50, colour word left as it is. Emulator fuzz"
+0x405280,blast_object_hit,verified,"src/game/orig_na.c. a class-2 object hit: its blast entry's timer bytes +6 / +7 cleared, then blown up (0x4052b0). Returns 1. Emulator fuzz"
+0x4052b0,blast_object_wreck,verified,"src/game/orig_na.c. an object blown up: state +0x19a = 5, off the grid, collapse start, every model part (count model+0x27) marked broken (+0x194 words: bits 0x0a000000 off, 0x05000000 on); the blast entry's +9 = 1. Emulator fuzz"
+0x405c10,screenshot_dump,verified,"src/game/orig_na.c. the front buffer (0x4d5f4c, size 0x4acc38 x 0x4acc3c, 16-bit pixels unpacked by the shift pairs 0x4d5f60 / 0x4d5f58 / 0x4d5f50) to the first free \RollCage\Dumps\Dump%d.bmp, bottom row first. The info header block from 0x476ae0 is never freed (sic); 0x4b5fe8 gets a header too. Returns 0 if that allocation fails, else 1. Emulator fuzz"
+0x405ed0,crumble_queue_add,verified,"src/game/orig_na.c. queue an object and its chain (+0x19c) for collapsing: queue of 64 {object, next index} at 0x6d04c0 (head 0x6d04a0, count 0x6d04a2), the last entry's next 0xff; then an event cut (kind 15, 100 steps) to the last object. Returns 0. Emulator fuzz"
+0x40ae50,camera_event_cut,verified,"src/game/orig_na.c. an event camera cut (kind < 0x11) unless in race mode 2, the kind is 10 / 15 with fewer than 2 players (0x4b65f4) or the last cut is under 45 steps old (0x6cf6d2): event point 0x6cf6b0, kind 0x6cf6a0, length 0x6cf6d4; kind 15 watches from the nearest spot of any kind within 0x5dc (zoom by 0x40add0, object 0x6cf7e0), else from `from` or the nearest spot. Emulator fuzz"
+0x40cbe0,camera_blend_begin,verified,"src/game/orig_na.c. unless the blend is off (rec +0x28 -> +0x5a == 0) or camera flags 0x10 / 2 are set: saves the camera object's position (0x4b60e0) and matrix (0x4b6020) and flags bits 6..10 (0x4b6160, 0x4b63bc), blends (0x40cd90); if the camera is then within 16 << 10 of the car, flags get 0x40 and the car's +0x64e. Emulator fuzz"
+0x40cd00,camera_blend_end,verified,"src/game/orig_na.c. undoes camera_blend_begin: position, matrix and flag bits back, relinked. Emulator fuzz"
+0x40cd90,camera_blend_apply,verified,"src/game/orig_na.c. moves the camera object (rec +0x28 -> *) k/8 (rec +0x5a) of the way toward a spot 20 units along the car's side axis (+0xc6.., sign by gravity flag +0x63f), turning it to look along the car's forward / side / up axis (rec +0x50 / +0x4c / +0x4d flags); 0x407220 builds the matrix. Emulator fuzz"
+0x40cfa0,vec_lerp8,verified,"src/game/orig_na.c. out = a / 8 * k + b / 8 * (8 - k), per component (division truncating). Emulator fuzz"
+0x4114b0,charanim_upload,verified,"src/game/orig_na.c. uploads character c's frame f (c <= 6, f <= 0x15) into the animation texture (handle 0x4b7da8): palette locked (0x428c30), the frame's RGBX palette (+0x10) stored as BGRX, converted (0x41e1f0) and the pixels (+0x14, size +4 / +2 / +6) blitted (0x477860), unlocked (0x428c60). The frame size goes to 0x4b6600 / 0x4b6604. 0 if out of range, else 1. Emulator fuzz"
+0x4115e0,charanim_load,verified,"src/game/orig_na.c. loads CHARANIM\<name>%04d.BMP (names 0x4a7cdc..0x4a7cac) for character c, frame f + 1 into its record (0x477530); palette entries with all of R, G, B <= 8 become 4, 4, 4. 0 if out of range or not loaded, else 1 (frame size to 0x4b6600 / 0x4b6604). Emulator fuzz"
+0x4116f0,charanim_load_all,verified,"src/game/orig_na.c. creates the animation texture (0x428c80, 256 x 0x8c, handle 0x4b7da8) and loads every frame of the 7 characters. Returns 1. Emulator fuzz"
+0x411740,charanim_texture_info,verified,"src/game/orig_na.c. the animation texture's handle, origin and far corner (width - 1, (height + 0xff) << 8, both) as words. Emulator fuzz"
+0x412bf0,object_part_hit,verified,"src/game/orig_na.c. an object part (index `part` of +0x194) of kind 4 hit by a body: if the root object (+0x1b0 chain) still stands (+0x198 parts left) and the hit is hard enough (part bits 28..31 <= body +0xa8 (x 64 for body kinds 0xc / 0x11, else x 3/4) * |point| >> 16), the part breaks (blast 0x46bb50, +8 bit), the root loses one part; kinds 0xc / 0x11 break every kind-4 part. A root with none left is queued to collapse. Returns 1 if the part broke. Emulator fuzz"
+0x417060,clip_plane,verified,"src/game/orig_na.c. clip against a plane, every attribute interpolated. Emulator fuzz"
+0x417270,clip_plane_flat,verified,"src/game/orig_na.c. the same, new vertices taking the colour of the edge's start. Emulator fuzz"
+0x417450,clip_near,verified,src/game/orig_na.c. clip to depth >= the near limit 0x6ccd04. Emulator fuzz
+0x417600,clip_far,verified,src/game/orig_na.c. clip to depth < the far limit 0x6ccd08. Emulator fuzz
+0x4177b0,clip_near_list,verified,"src/game/orig_na.c. the near clip again, attributes interpolated one at a time (0x10, 0x14, 4, 0x18, 0x1c) and the colour copied from the edge's start; out[0] counted in place; with no input vertices *next is kept. Emulator fuzz"
+0x417950,clip_far,verified,src/game/orig_nb.c. Emulator fuzz
+0x417af0,clip_polygon_a,verified,src/game/orig_nb.c. Emulator fuzz
+0x417ce0,clip_polygon_b,verified,src/game/orig_nb.c. Emulator fuzz
+0x4180c0,clip_vertex_add,verified,src/game/orig_nb.c. Emulator fuzz
+0x418170,clip_vertex_add_2d,verified,src/game/orig_nb.c. Emulator fuzz
+0x418260,clip_vertices_restart,verified,src/game/orig_nb.c. Emulator fuzz
+0x418290,clip_polygon_2d,verified,src/game/orig_nb.c. Emulator fuzz
+0x41b2f0,screen_colour_apply,verified,src/game/orig_nb.c. Emulator fuzz
+0x41c550,replay_files_save,verified,src/game/orig_nb.c. Emulator fuzz
+0x41c8c0,cpuid_available,verified,src/game/orig_nb.c. Emulator fuzz
+0x41c8f0,cpu_features_read,verified,src/game/orig_nb.c. Emulator fuzz
+0x41c930,cpu_check,verified,src/game/orig_nb.c. Emulator fuzz
+0x41c970,fatal_error,verified,src/game/orig_nb.c. Emulator fuzz
+0x41c9d0,fatal_format,verified,src/game/orig_nb.c. Emulator fuzz
+0x41cd00,fatal_number,verified,src/game/orig_nb.c. Emulator fuzz
+0x41cec0,debug_hook_nop,verified,src/game/orig_nb.c. Emulator fuzz
+0x41ced0,d3d_init,verified,src/game/orig_nb.c. Emulator fuzz
+0x41cfd0,d3d_tables_alloc,verified,src/game/orig_nb.c. Emulator fuzz
+0x41d100,ddraw_query_d3d,verified,src/game/orig_nb.c. Emulator fuzz
+0x41d130,d3d_shutdown,verified,src/game/orig_nb.c. Emulator fuzz
+0x41d1f0,d3d_device_create,verified,src/game/orig_nb.c. Emulator fuzz
+0x41d250,d3d_devices_enumerate,verified,src/game/orig_nb.c. Emulator fuzz
+0x41d6d0,d3d_device_pick,verified,src/game/orig_nb.c. Emulator fuzz
+0x41d730,d3d_texture_format_pick,verified,src/game/orig_nb.c. Emulator fuzz
+0x41d890,texture_slot_release,verified,src/game/orig_nb.c. Emulator fuzz
+0x41d910,texture_slots_release,verified,src/game/orig_nb.c. Emulator fuzz
+0x41d940,texture_slot_handle,verified,src/game/orig_nb.c. Emulator fuzz
+0x41d980,zbuffer_create,verified,src/game/orig_nb.c. Emulator fuzz
+0x41db00,d3d_render_states,verified,src/game/orig_nb.c. Emulator fuzz
+0x41dd90,d3d_filter_set,verified,src/game/orig_nb.c. Emulator fuzz
+0x41ddd0,d3d_filter_nearest,verified,src/game/orig_nb.c. Emulator fuzz
+0x41de10,d3d_fog_colour_set,verified,src/game/orig_nb.c. Emulator fuzz
+0x41de40,d3d_fog_on,verified,src/game/orig_nb.c. Emulator fuzz
+0x41de60,d3d_fog_off,verified,src/game/orig_nb.c. Emulator fuzz
+0x41de80,d3d_zbuffer_on,verified,src/game/orig_nb.c. Emulator fuzz
+0x41dec0,d3d_zbuffer_off,verified,src/game/orig_nb.c. Emulator fuzz
+0x41dee0,d3d_state_defaults,verified,src/game/orig_nb.c. Emulator fuzz
+0x41df10,d3d_viewport_create,verified,src/game/orig_nb.c. Emulator fuzz

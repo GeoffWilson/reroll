@@ -38,7 +38,9 @@ void nt_profile_flush(void);
 #include "runtime.h"
 #include "win32.h"
 
+#include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #define G32(a) (*(uint32_t *)(a))
 #define G_WINDOW (*(HWND *)0x6c8000)
@@ -51,8 +53,8 @@ void nt_profile_flush(void);
 #define TEX_QUEUE_COUNT (*(int32_t *)0x4bde04)
 #define TEX_QUEUE ((const int32_t *)0x4b836c)
 
-#define MAX_PRIMS 0x10000
-#define MAX_VERTS 0x40000
+#define MAX_PRIMS 0x40000
+#define MAX_VERTS 0x100000
 
 static int state; /* 0 off, 1 on and waiting for the window, 2 running, -1 failed */
 static int target_w, target_h;
@@ -67,7 +69,9 @@ static uint32_t tex_signature[TEX_SLOTS], tex_checksum[TEX_SLOTS];
 static uint8_t tex_dirty[TEX_SLOTS];
 static int tex_rescan, tex_round;
 static uint8_t *rgba; /* conversion buffer */
-static uint32_t stat_uploads, stat_frames;
+static int debug_frames_left = -1, debug_line_len;
+static char debug_line[512];
+static uint32_t stat_uploads, stat_frames, stat_walks, stat_prims, stat_max_walks, stat_max_prims, frame_prims;
 static uint64_t stat_draw, stat_textures, stat_present, stat_last, stat_freq;
 
 static uint64_t now(void)
@@ -393,8 +397,49 @@ static int open_frame(int black)
     return 1;
 }
 
+/* REROLL_DEBUG_LEAKS: the translucent list (0x6cdd80) must not run into the
+ * world list (0x6cd510): finds the packet that links across. */
+static void check_leak(uint32_t start)
+{
+    static int on = -1;
+    static uint32_t found;
+    uint32_t word = start, steps = 0, hist[8] = {0}, entry = 0;
+    if (on < 0)
+        on = getenv("REROLL_DEBUG_LEAKS") != 0;
+    if (!on || start != 0x6ce57c)
+        return;
+    while (word && word != 0xffffffffu && steps++ < 200000) {
+        uint32_t a = word & 0x7fffffffu, k;
+        if (a >= 0x6cd510 && a < 0x6cdd10) {
+            if (found == 0) {
+                void widescreen_log_pools(void);
+                widescreen_log_pools();
+            }
+            if (found++ < 12) {
+                char line[400];
+                int len = 0;
+                for (k = 0; k < 8; k++) {
+                    uint32_t h = hist[(steps + k) & 7];
+                    if (h)
+                        len += snprintf(line + len, sizeof line - (size_t)len, " %x/%x", h,
+                                        h >= 0x10000 ? (uint32_t)((const uint8_t *)h)[7] : 0u);
+                }
+                log_printf("leak: from list entry %x:%s -> world %x", entry, line, a);
+            }
+            return;
+        }
+        if (a >= 0x6cdd80 && a < 0x6ce580)
+            entry = a;
+        if (!readable(a, 8))
+            return;
+        hist[steps & 7] = a;
+        word = *(const uint32_t *)a;
+    }
+}
+
 static void draw_walk(rd_read_fn read, void *ctx, uint32_t start)
 {
+    check_leak(start);
     struct rd_list list;
     struct vkr_state s;
     uint64_t t0;
@@ -411,7 +456,23 @@ static void draw_walk(rd_read_fn read, void *ctx, uint32_t start)
     rd_decode(read, ctx, &list);
     read_state(&s);
     vkr_draw(win.r, &list, &s, &map);
+    if (list.prim_count >= list.prim_max || list.vert_count + 64 > list.vert_max) {
+        static uint32_t full;
+        if (full++ % 200 == 0)
+            log_printf("vulkan: walk %d from %x is full (%u prims, %u vertices, %u packets; %u times so far)",
+                       frame_walks, start, list.prim_count, list.vert_count, list.stats.packets, full);
+    }
+    if (debug_frames_left > 0 && frame_walks < 24) { /* REROLL_DEBUG_FRAMES */
+        uint32_t k, blend = 0;
+        for (k = 0; k < list.prim_count; k++)
+            blend += (list.prims[k].code & 2) != 0;
+        debug_line_len += snprintf(debug_line + debug_line_len, sizeof debug_line - debug_line_len, " %u/%u",
+                                   list.prim_count, blend);
+        if (debug_frames_left == 1)
+            log_printf("frame walk %d starts at %x", frame_walks, start);
+    }
     frame_walks++;
+    frame_prims += list.prim_count;
     stat_draw += now() - t0;
 }
 
@@ -580,7 +641,31 @@ int vkgame_flip(void)
                    (uint32_t)GetForegroundWindow());
     t0 = now();
     vkwin_present(&win);
+    widescreen_frame_end();
     stat_present += now() - t0;
+    if (debug_frames_left < 0) {
+        const char *e = getenv("REROLL_DEBUG_FRAMES"); /* "first,count": per-walk prims/blended of those frames */
+        debug_frames_left = 0;
+        if (e)
+            debug_frames_left = atoi(e) ? -(atoi(e) + 2) : 0;
+    }
+    if (debug_frames_left < -1 && (int)presents >= -debug_frames_left - 2) {
+        const char *e = getenv("REROLL_DEBUG_FRAMES"), *comma = strchr(e, ',');
+        debug_frames_left = comma ? atoi(comma + 1) : 300;
+    }
+    if (debug_frames_left > 0) {
+        log_printf("frame %u:%s", presents, debug_line);
+        debug_frames_left--;
+    }
+    debug_line_len = 0;
+    debug_line[0] = 0;
+    stat_walks += (uint32_t)frame_walks;
+    stat_prims += frame_prims;
+    if ((uint32_t)frame_walks > stat_max_walks)
+        stat_max_walks = (uint32_t)frame_walks;
+    if (frame_prims > stat_max_prims)
+        stat_max_prims = frame_prims;
+    frame_prims = 0;
     frame_open = 0;
     presents++;
 #ifdef REROLL_NATIVE
@@ -591,13 +676,16 @@ int vkgame_flip(void)
         if (!stat_freq)
             QueryPerformanceFrequency(&stat_freq);
         if (stat_last)
-            log_printf("vulkan: %u frames, %d us per frame: draw %d, textures %d (%u uploads), present %d", presents,
-                       per_frame_us(t - stat_last), per_frame_us(stat_draw), per_frame_us(stat_textures), stat_uploads,
-                       per_frame_us(stat_present));
+            log_printf("vulkan: %u frames, %d us per frame: draw %d, textures %d (%u uploads), present %d; "
+                       "walks %u (max %u), prims %u (max %u) per frame",
+                       presents, per_frame_us(t - stat_last), per_frame_us(stat_draw), per_frame_us(stat_textures),
+                       stat_uploads, per_frame_us(stat_present), stat_walks / 1000, stat_max_walks, stat_prims / 1000,
+                       stat_max_prims);
         stat_last = t;
         stat_frames = 0;
         stat_draw = stat_textures = stat_present = 0;
         stat_uploads = 0;
+        stat_walks = stat_prims = stat_max_walks = stat_max_prims = 0;
     }
     return 1;
 }

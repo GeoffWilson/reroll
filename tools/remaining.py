@@ -30,7 +30,11 @@ def main():
     wrapped = set()
     src = {}
     for path in glob.glob(os.path.join(ROOT, 'src', '**', '*.c'), recursive=True):
-        src[path] = open(path).read()
+        text = open(path).read()
+        # comments name addresses without calling them
+        text = re.sub(r'/\*.*?\*/', ' ', text, flags=re.S)
+        text = re.sub(r'//[^\n]*', ' ', text)
+        src[path] = text
     for text in src.values():
         for m in re.finditer(r'hook_install_trampoline\(&(\w+)', text):
             d = re.search(r'struct hook ' + m.group(1) + r'\s*=\s*\{\s*"[^"]*",\s*(0x[0-9a-f]+)', text)

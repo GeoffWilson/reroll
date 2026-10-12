@@ -47,6 +47,7 @@
  * Vulkan renderer): the same extra-run path also draws the sections no
  * list has, out to that distance (docs/renderer/plan.md, step 8). */
 #include "widescreen.h"
+#include <stdlib.h>
 
 #include "hook.h"
 #include "log.h"
@@ -320,6 +321,7 @@ static const void *scanned; /* the PVS data the tables below were built from */
 static uint8_t reach[MAX_SECTIONS][MAX_ROWS]; /* bit n - 1: some list draws the row at detail level n */
 static uint8_t list_seen[0x10000 / 8];
 static uint8_t lod_ok[MAX_SECTIONS]; /* bit n - 1: the section's level n quads are drawable */
+static uint8_t extra_off[MAX_SECTIONS]; /* looped even at full detail: no extra rows of it */
 static float far_distance; /* world units; 0: the game's own lists */
 
 static void scan_list(uint32_t offset)
@@ -448,6 +450,7 @@ static void scan_track(void)
         for (r = 0; r < n && r < MAX_ROWS; r++)
             reached += reach[i][r] != 0;
     }
+    memset(extra_off, 0, sizeof extra_off);
     for (i = 0; i < G_SECTION_COUNT && i < MAX_SECTIONS; i++)
         if ((lod_ok[i] = (uint8_t)check_levels(G_SECTIONS[i])) != 0xf)
             log_printf("fartrack: section %u detail levels %x", i, lod_ok[i]);
@@ -526,9 +529,26 @@ static void add_far_sections(void)
  * stay in them: after each extra section is drawn, every packet it linked
  * into the view's ordering table is copied here and the copies linked in
  * its place. Two pools, one per view of a frame. */
-#define POOL_SIZE 0x800000 /* the whole track's packets fit */
-static uint8_t pools[2][POOL_SIZE];
-static uint32_t pool_used[2];
+#define POOL_SIZE 0x1000000 /* a frame's: every view's extra track and objects */
+static uint8_t pool[POOL_SIZE];
+void widescreen_log_pools(void);
+void widescreen_log_pools(void)
+{
+    log_printf("leak: pool %x-%x; object buffers %x (+limit %x), %x (+limit %x)", (uint32_t)pool,
+               (uint32_t)pool + POOL_SIZE,
+               *(uint32_t *)0x4beb84, *(uint32_t *)0x6c1e34, *(uint32_t *)0x6c1e1c, *(uint32_t *)0x6c1e38);
+}
+/* One pool for the whole frame, emptied once it has been presented: the
+ * copies stay linked until their view's lists are drawn, and the far
+ * objects of one view can be drawn while the game works on another view
+ * record (two pools, emptied per view, had copies overwritten while still
+ * linked: the translucent list then ran into the world list). */
+static uint32_t pool_used;
+
+void widescreen_frame_end(void)
+{
+    pool_used = 0;
+}
 static uint32_t saved_ot[512], saved_ot2[512];
 static uint32_t detach_overflow, detach_loops;
 
@@ -553,39 +573,70 @@ static uint32_t *view_ot(void)
     return (uint32_t *)0x6cd510;
 }
 
-static void detach_table(uint32_t *ot, const uint32_t *saved, int pool)
-{
-    int i;
+/* Packets already copied in this walk: a packet linked twice (a shared
+ * record used twice) makes a loop, and the walk stops at the first repeat
+ * instead of copying the loop over and over. */
+#define SEEN_SLOTS 0x8000
+static uint32_t seen_address[SEEN_SLOTS], seen_stamp[SEEN_SLOTS], stamp;
 
+static int seen_before(uint32_t address)
+{
+    uint32_t h = (address >> 2) * 2654435761u >> 17;
+    while (seen_stamp[h] == stamp) {
+        if (seen_address[h] == address)
+            return 1;
+        h = (h + 1) & (SEEN_SLOTS - 1);
+    }
+    seen_stamp[h] = stamp;
+    seen_address[h] = address;
+    return 0;
+}
+
+static void detach_table(uint32_t *ot, const uint32_t *saved)
+{
+    int i, looped = 0;
+
+    if (++stamp == 0) {
+        memset(seen_stamp, 0, sizeof seen_stamp);
+        stamp = 1;
+    }
     for (i = 0; i < 512; i++) {
         uint32_t word = ot[i], *link = &ot[i];
-        int guard = 0x4000;
+        int guard = SEEN_SLOTS / 2;
         if (word == saved[i])
             continue;
-        while (word != saved[i] && !(word & 0x80000000u) && --guard > 0) {
+        while (word != saved[i] && !(word & 0x80000000u)) {
             const uint8_t *packet = (const uint8_t *)word;
             uint32_t size = packet_bytes(packet), next = *(const uint32_t *)packet;
             uint8_t *copy;
-            if (pool_used[pool] + size > POOL_SIZE) {
+            if (seen_before(word) || --guard <= 0) {
+                looped = 1;
+                break;
+            }
+            if (pool_used + size > POOL_SIZE) {
                 detach_overflow++;
                 break;
             }
-            copy = pools[pool] + pool_used[pool];
-            pool_used[pool] += (size + 3) & ~3u;
+            copy = pool + pool_used;
+            pool_used += (size + 3) & ~3u;
             memcpy(copy, packet, size);
             *link = (uint32_t)copy;
             link = (uint32_t *)copy;
             word = next;
         }
         *link = saved[i];
-        if (guard <= 0)
-            detach_loops++;
     }
+    if (looped)
+        detach_loops++;
 }
 
-static void detach(int pool)
+/* Both lists: the track's opaque quads go to 0x6cd510 and its translucent
+ * ones to the view's own list 0x6cdd80 (in the z-buffer mode the game
+ * uses), and both share the records. */
+static void detach(void)
 {
-    detach_table(view_ot(), saved_ot, pool);
+    detach_table(view_ot(), saved_ot);
+    detach_table((uint32_t *)0x6cdd80, saved_ot2);
 }
 
 /* The render records a chunk uses. The track's records are shared between
@@ -627,7 +678,7 @@ static int row_records(const uint8_t *section, uint32_t lod, uint32_t row, int m
 }
 
 /* Textures, lighting and drawing of one chunk, detached at once. */
-static void draw_chunk(int pool, uint32_t second_view)
+static void draw_chunk(uint32_t second_view)
 {
     if (!chunk[0])
         return;
@@ -636,16 +687,22 @@ static void draw_chunk(int pool, uint32_t second_view)
     rows_light_marks(chunk);
     rows_light(chunk, second_view);
     memcpy(saved_ot, view_ot(), sizeof saved_ot);
+    memcpy(saved_ot2, (const void *)0x6cdd80, sizeof saved_ot2);
     track_draw(chunk);
     {
         uint32_t loops = detach_loops, k;
-        detach(pool);
-        if (detach_loops != loops) /* still a shared record: those sections' coarse levels are not used again */
-            for (k = 0; k < chunk[0]; k++) {
+        detach();
+        if (detach_loops != loops) /* still a shared record: those sections' coarse levels are not used again, */
+            for (k = 0; k < chunk[0]; k++) { /* and at full detail, no extra rows of them at all */
                 const uint16_t *run = (const uint16_t *)&chunk[1 + 2 * k];
-                if (lod_ok[run[0]] != 1)
+                if (run[3] > 1 && lod_ok[run[0]] != 1) {
                     log_printf("fartrack: section %u row %u lod %u looped: full detail from now on", run[0], run[1], run[3]);
-                lod_ok[run[0]] = 1;
+                    lod_ok[run[0]] = 1;
+                } else if (run[3] == 1 && !extra_off[run[0]]) {
+                    log_printf("fartrack: section %u row %u looped at full detail: no extra rows from now on", run[0],
+                               run[1]);
+                    extra_off[run[0]] = 1;
+                }
             }
     }
     chunk[0] = 0;
@@ -664,7 +721,7 @@ static void chunk_add(uint32_t section, uint32_t first, uint32_t length, uint32_
 
 /* The extra runs in chunks that fit the game's fixed tables (see CHUNK_*)
  * and use no render record twice: runs are split where a row would. */
-static void draw_extra(int pool)
+static void draw_extra(void)
 {
     uint32_t i, rows = 0, second_view = G_VIEW == 0x6cd4a0 ? 0 : 1;
 
@@ -675,6 +732,8 @@ static void draw_extra(int pool)
         uint32_t lod, base, start = 0, r;
         const uint8_t *section = G_SECTIONS[run[0]];
 
+        if (extra_off[run[0]])
+            continue;
         if (!(lod_ok[run[0]] & (1u << (run[3] - 1)))) { /* a level the section lacks: full detail */
             run[2] = (uint16_t)(run[2] << (run[3] - 1));
             run[3] = 1;
@@ -688,7 +747,7 @@ static void draw_extra(int pool)
                     chunk_add(run[0], run[1] + (start << (lod - 1)), r - start, lod);
                     start = r;
                 }
-                draw_chunk(pool, second_view);
+                draw_chunk(second_view);
                 rows = 0;
             }
             row_records(section, lod, base + r, 1);
@@ -698,7 +757,7 @@ static void draw_extra(int pool)
             rows += run[2] - start + 1;
         }
     }
-    draw_chunk(pool, second_view);
+    draw_chunk(second_view);
 }
 
 /* 0x47a030(cell): the extra track at the wide edges is drawn first, then
@@ -722,10 +781,8 @@ static uint32_t *visibility(void *cell)
             add_far_sections();
         extra_runs_total += extra[0];
         if (extra[0]) {
-            int pool = G_VIEW == 0x6cd4a0 ? 0 : 1;
-            uint32_t *previous = *(uint32_t **)(pool ? 0x5d9458 : 0x5d9454);
-            pool_used[pool] = 0;
-            draw_extra(pool);
+            uint32_t *previous = *(uint32_t **)(G_VIEW == 0x6cd4a0 ? 0x5d9454 : 0x5d9458);
+            draw_extra();
             /* the extra sections overwrote shared records' texture words:
              * the original's list (next) must treat all its rows as newly
              * visible, so its "previous" list (after its swap) is emptied */
@@ -743,7 +800,16 @@ static uint32_t *visibility(void *cell)
 static const struct hook visibility_hook = {"wide_visibility", 0x47a030, visibility,
                                             {0xa1, 0x0c, 0xe6, 0x6c, 0x00, 0x56, 0x3d, 0xa0}};
 
-/* ---- objects on the extra rows (REROLL_FAR_OBJECTS=0 turns them off) ---- */
+/* ---- objects on the extra rows (off by default; REROLL_FAR_OBJECTS=1) ----
+ *
+ * Known problem (2026-10-12): with this second object pass, the game's own
+ * pass afterwards sometimes links one of its packets into both the world
+ * list 0x6cd510 and the translucent list 0x6cdd80, so the translucent list
+ * runs on into the world and the effects flicker (REROLL_DEBUG_LEAKS=1
+ * reports it). The list is still sound after the far call and its
+ * detach; why the original pass then double-links (per-object packets,
+ * not the shared buffer; not the hidden-object limit) is not found yet.
+ * Planned instead: draw far objects in the renderer, not through 0x459b20. */
 
 /* 0x459b20 draws the objects of the cells the view's list reaches (the
  * chains 0x47dd70 gathers into 0x5d7040, light words in 0x5d6ac0) and
@@ -811,14 +877,128 @@ static void hide_unwanted(uint32_t chain)
     }
 }
 
+/* REROLL_DEBUG_FARDIFF=1: which game data the far call leaves changed
+ * (after its own restores), by address, logged every 500 calls. */
+#define DIFF_START 0x4a7000u
+#define DIFF_END 0x6d3000u
+static int far_diff = -1;
+static uint8_t *diff_before;
+static uint32_t diff_count[(DIFF_END - DIFF_START) / 4], diff_calls;
+
+static void far_diff_before(void)
+{
+    if (!diff_before)
+        diff_before = malloc(DIFF_END - DIFF_START);
+    if (diff_before)
+        memcpy(diff_before, (const void *)DIFF_START, DIFF_END - DIFF_START);
+}
+
+static void far_diff_after(void)
+{
+    const uint32_t *now = (const uint32_t *)DIFF_START, *was = (const uint32_t *)diff_before;
+    uint32_t i, n = (DIFF_END - DIFF_START) / 4;
+    if (!diff_before)
+        return;
+    for (i = 0; i < n; i++)
+        if (now[i] != was[i])
+            diff_count[i]++;
+    if (++diff_calls % 500 == 0) {
+        uint32_t start = 0, run = 0;
+        log_printf("fardiff: %u calls; words changed (address, words, times):", diff_calls);
+        for (i = 0; i <= n; i++) {
+            if (i < n && diff_count[i]) {
+                if (!run)
+                    start = i;
+                run++;
+                continue;
+            }
+            if (run)
+                log_printf("fardiff:   %x %u %u", DIFF_START + start * 4, run, diff_count[start]);
+            run = 0;
+        }
+        memset(diff_count, 0, sizeof diff_count);
+    }
+}
+
+/* REROLL_DEBUG_LEAKS: does the translucent list (0x6cdd80) run into the
+ * world list's entries? (1 = yes) */
+static int list_leaks(void)
+{
+    uint32_t word = 0x80000000u | 0x6ce57c, steps = 0;
+    while (word && word != 0xffffffffu && steps++ < 200000) {
+        uint32_t a = word & 0x7fffffffu;
+        if (a >= 0x6cd510 && a < 0x6cdd10)
+            return 1;
+        if (a < 0x10000)
+            return 0;
+        word = *(const uint32_t *)a;
+    }
+    return 0;
+}
+static int leak_debug = -1;
+static uint32_t far_buffer_end; /* where the far call's shared-buffer packets ended */
+
+/* The first packet on the translucent list whose chain then reaches the
+ * world list's entries: where its memory is. */
+static void leak_report(void)
+{
+    static uint32_t reports;
+    uint32_t word = 0x80000000u | 0x6ce57c, steps = 0, hist[64], n = 0;
+    while (word && word != 0xffffffffu && steps++ < 200000) {
+        uint32_t a = word & 0x7fffffffu;
+        if (a >= 0x6cd510 && a < 0x6cdd10)
+            break;
+        if (a < 0x10000)
+            return;
+        hist[n++ & 63] = a;
+        word = *(const uint32_t *)a;
+    }
+    if (reports++ >= 20 || !(word & 0x7fffffffu))
+        return;
+    {
+        uint32_t base0 = *(uint32_t *)0x4beb84, lim0 = *(uint32_t *)0x6c1e34, base1 = *(uint32_t *)0x6c1e1c,
+                 lim1 = *(uint32_t *)0x6c1e38, k;
+        uint32_t first = n;
+        while (first > 0 && n - first < 63 && hist[(first - 1) & 63] >= (uint32_t)pool &&
+               hist[(first - 1) & 63] < (uint32_t)pool + POOL_SIZE)
+            first--;
+        log_printf("leak: %u far copies at the end", n - first);
+        for (k = first > 4 ? first - 4 : 0; k < first + 1 && k < n; k++) {
+            uint32_t a = hist[k & 63];
+            const char *where = a >= (uint32_t)pool && a < (uint32_t)pool + POOL_SIZE ? "far copy"
+                                : a >= base0 && a < lim0                               ? "shared buffer 0"
+                                : a >= base1 && a < lim1                               ? "shared buffer 1"
+                                : a >= 0x6cdd80 && a < 0x6ce580                        ? "list entry"
+                                                                                       : "elsewhere";
+            log_printf("leak:   %x code %x (%s%s)", a, a >= 0x10000 ? (uint32_t)((const uint8_t *)a)[7] : 0u, where,
+                       (where[0] == 's' && a < far_buffer_end) ? ", below the far call's end" : "");
+        }
+        log_printf("leak: -> world entry %x; shared buffers %x-%x / %x-%x, far call ended at %x, view %x",
+                   word & 0x7fffffffu, base0, lim0, base1, lim1, far_buffer_end, *(uint32_t *)0x6ce60c);
+    }
+}
+static uint32_t leak_counts[4];
+
 static void objects(void)
 {
     uint32_t n = 0, i, own;
     const uint8_t *cells = *(const uint8_t **)0x6bfaf8;
     const uint16_t *cell_list = *(const uint16_t **)0x6bfae4;
 
+    if (far_diff < 0)
+        far_diff = getenv("REROLL_DEBUG_FARDIFF") != 0;
+    if (leak_debug < 0)
+        leak_debug = getenv("REROLL_DEBUG_LEAKS") != 0;
+    if (leak_debug)
+        leak_counts[0] += list_leaks();
     if (!far_objects || !extra_ready || !extra[0]) {
         objects_original();
+        if (leak_debug) {
+            leak_counts[2] += list_leaks();
+            if (++leak_counts[3] % 2000 == 0)
+                log_printf("leak: of %u object passes (no far call this time or far objects off), after the original %u",
+                           leak_counts[3], leak_counts[2]);
+        }
         return;
     }
     extra_ready = 0;
@@ -847,22 +1027,38 @@ static void objects(void)
     }
     if (n) {
         uint32_t trigger_counter = *(uint32_t *)0x6b9b94;
+        if (far_diff)
+            far_diff_before();
         STATIC_LIST[n] = 0;
         memcpy(trigger_save, (const void *)0x6b9ba0, sizeof trigger_save);
         memcpy(gte_save, (const void *)GTE_START, sizeof gte_save);
         memcpy(saved_ot, (const void *)0x6cd510, sizeof saved_ot);
         memcpy(saved_ot2, (const void *)0x6cdd80, sizeof saved_ot2);
+        if (far_diff) {
+            static int shown;
+            if (shown++ % 2000 == 0)
+                log_printf("leak: at the far call 0x6cdd80[0..3] = %x %x %x %x, [511] = %x; view %x", saved_ot2[0],
+                           saved_ot2[1], saved_ot2[2], saved_ot2[3], saved_ot2[511], *(uint32_t *)0x6ce60c);
+        }
         hidden_count = 0;
         memset(object_seen, 0, sizeof object_seen);
         for (i = 0; i < own; i++)
             mark_objects(saved_static[i]);
         for (i = 0; i < n; i++)
             hide_unwanted(STATIC_LIST[i]);
+        if (leak_debug) {
+            static uint32_t most;
+            if (hidden_count > most) {
+                most = hidden_count;
+                log_printf("leak: hidden %u objects (limit %u), %u far chains, %u own", most, HIDDEN_MAX, n, own);
+            }
+        }
         objects_original();
+        far_buffer_end = *(uint32_t *)0x6c1e18;
         /* objects share packet buffers between objects never seen together
          * (as the track's records): the far ones' packets are copied out */
-        detach_table((uint32_t *)0x6cd510, saved_ot, G_VIEW == 0x6cd4a0 ? 0 : 1);
-        detach_table((uint32_t *)0x6cdd80, saved_ot2, G_VIEW == 0x6cd4a0 ? 0 : 1);
+        detach_table((uint32_t *)0x6cd510, saved_ot);
+        detach_table((uint32_t *)0x6cdd80, saved_ot2);
         for (i = 0; i < hidden_count; i++)
             *hidden[i] |= 0x400;
         memcpy((void *)0x6b9ba0, trigger_save, sizeof trigger_save);
@@ -872,8 +1068,21 @@ static void objects(void)
             STATIC_LIST[i] = saved_static[i];
             STATIC_LIGHTS[i] = saved_lights[i];
         }
+        if (far_diff)
+            far_diff_after();
+        if (leak_debug)
+            leak_counts[1] += list_leaks();
     }
     objects_original();
+    if (leak_debug) {
+        if (list_leaks()) {
+            leak_counts[2]++;
+            leak_report();
+        }
+        if (++leak_counts[3] % 2000 == 0)
+            log_printf("leak: of %u object passes, the translucent list ran into the world list: before %u, after the far "
+                       "call %u, after the original %u", leak_counts[3], leak_counts[0], leak_counts[1], leak_counts[2]);
+    }
 }
 
 static const struct hook objects_hook = {"far_objects", 0x459b20, objects,
@@ -1131,7 +1340,7 @@ void widescreen_install(float output_aspect)
     if (far_distance > 0.0f || aspect > 0.0f) {
         manager_original = (manager_fn)hook_install_trampoline(&visibility_hook, 6);
         far_objects = far_distance > 0.0f &&
-                      !(GetEnvironmentVariableA("REROLL_FAR_OBJECTS", value, sizeof value) && value[0] == '0');
+                      GetEnvironmentVariableA("REROLL_FAR_OBJECTS", value, sizeof value) && value[0] == '1';
         if (far_objects)
             objects_original = (objects_fn)hook_install_trampoline(&objects_hook, 8);
     }

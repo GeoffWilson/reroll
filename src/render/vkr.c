@@ -273,7 +273,12 @@ static void barrier(struct vkr *r, VkImage image, VkImageLayout from, VkImageLay
  * has finished with them (the frame before last). */
 static void next_frame(struct vkr *r)
 {
-    r->frame_index = (r->frame_index + 1) % FRAMES;
+    static int in_flight;
+    if (!in_flight) { /* REROLL_FRAMES=1: wait for each frame (for comparisons) */
+        const char *e = getenv("REROLL_FRAMES");
+        in_flight = e && atoi(e) >= 1 && atoi(e) <= FRAMES ? atoi(e) : FRAMES;
+    }
+    r->frame_index = (r->frame_index + 1) % in_flight;
     r->f = &r->frames[r->frame_index];
     r->vkWaitForFences(r->device, 1, &r->f->done, VK_TRUE, UINT64_MAX);
 }
@@ -869,6 +874,7 @@ void vkr_destroy(struct vkr *r)
         for (i = 0; i < VKR_SLOTS; i++)
             free_texture(r, &r->textures[i]);
         free_texture(r, &r->white);
+        free(r->verts);
         if (r->target_view)
             r->vkDestroyImageView(r->device, r->target_view, 0);
         if (r->target)
@@ -927,41 +933,26 @@ int vkr_begin(struct vkr *r, int w, int h, const float clear[4])
     memcpy(r->clear, clear, sizeof r->clear);
     r->vert_count = 0;
     r->command_count = 0;
-    if (!vertex_room(r, 1))
-        return 0;
-    r->verts = r->f->vertex_mapped;
-    r->vert_max = (uint32_t)(r->f->vertex_size / sizeof(struct vertex));
-    return 1;
+    return vertex_room(r, 1);
 }
 
-/* The frame's vertices are written straight into its vertex buffer
- * (r->verts is the buffer's mapping), grown here when full. */
+/* The frame's vertices are built in ordinary memory (r->verts) and
+ * copied into its vertex buffer at the submit (record_frame): writing them
+ * straight into mapped memory was slower (the vertex code reads back what
+ * it writes). */
 static int vertex_room(struct vkr *r, uint32_t want)
 {
-    struct frame *f = r->f;
-    VkBuffer old = f->vertex_buffer;
-    VkDeviceMemory old_memory = f->vertex_memory;
-    void *old_mapped = f->vertex_mapped;
-    VkDeviceSize old_size = f->vertex_size, size = old_size ? old_size : 0x10000 * sizeof(struct vertex);
-    if ((VkDeviceSize)want * sizeof(struct vertex) <= old_size)
+    uint32_t max = r->vert_max ? r->vert_max : 0x10000;
+    struct vertex *grown;
+    if (want <= r->vert_max)
         return 1;
-    while (size < (VkDeviceSize)want * sizeof(struct vertex))
-        size *= 2;
-    if (!make_buffer(r, size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, &f->vertex_buffer, &f->vertex_memory)) {
-        f->vertex_buffer = old;
-        f->vertex_memory = old_memory;
+    while (max < want)
+        max *= 2;
+    grown = realloc(r->verts, (size_t)max * sizeof *r->verts);
+    if (!grown)
         return 0;
-    }
-    r->vkMapMemory(r->device, f->vertex_memory, 0, size, 0, &f->vertex_mapped);
-    f->vertex_size = size;
-    if (old) { /* this frame's previous submit has finished with it */
-        memcpy(f->vertex_mapped, old_mapped, (size_t)r->vert_count * sizeof(struct vertex));
-        r->vkUnmapMemory(r->device, old_memory);
-        r->vkDestroyBuffer(r->device, old, 0);
-        r->vkFreeMemory(r->device, old_memory, 0);
-    }
-    r->verts = f->vertex_mapped;
-    r->vert_max = (uint32_t)(size / sizeof(struct vertex));
+    r->verts = grown;
+    r->vert_max = max;
     return 1;
 }
 
@@ -1271,8 +1262,12 @@ static int record_frame(struct vkr *r)
     VkDeviceSize zero = 0;
     uint32_t i;
 
-    if (!r->f->vertex_buffer)
+    if (!ensure_buffer(r, (VkDeviceSize)(r->vert_count ? r->vert_count : 1) * sizeof(struct vertex),
+                       VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, &r->f->vertex_buffer, &r->f->vertex_memory,
+                       &r->f->vertex_mapped, &r->f->vertex_size))
         return 0;
+    if (r->vert_count) /* into cached memory: a plain copy */
+        memcpy(r->f->vertex_mapped, r->verts, (size_t)r->vert_count * sizeof(struct vertex));
     record_uploads(r);
     /* the target and depth are shared by the frames in flight: wait for the
      * previous frame's blit (or copy) out of the target and its depth tests */
