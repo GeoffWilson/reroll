@@ -173,6 +173,47 @@ void GAMEAPI ai_aim_at_node(uint8_t *car, int32_t *v, uint32_t line_index, uint3
 void GAMEAPI ai_steer_to(uint8_t *car, const int32_t *target, int32_t check, int32_t reverse);
 void GAMEAPI ai_drive(uint8_t *car);
 void GAMEAPI ai_pace(uint8_t *car);
+int32_t GAMEAPI net_message_send_to(int32_t mode, uint32_t to, uint32_t msg, uint32_t size, uint32_t flags); /* 0x48cdd0 */
+int32_t GAMEAPI net_packet_filter(const uint32_t *packet, uint32_t from); /* 0x48cf40 */
+int32_t GAMEAPI net_session_lock(void); /* 0x48d110 */
+int32_t GAMEAPI net_session_unlock(void); /* 0x48d1c0 */
+int32_t GAMEAPI net_chat_send(char *text); /* 0x48d270 */
+void GAMEAPI net_chat_clear(void); /* 0x48d350 */
+int32_t GAMEAPI net_send_queue_low(void); /* 0x48d390 */
+int32_t GAMEAPI net_message_queue_count(void); /* 0x48d3e0 */
+int32_t GAMEAPI net_connection_available(uint32_t kind); /* 0x48d450 */
+void GAMEAPI net_players_timeout(void); /* 0x48d4a0 */
+void GAMEAPI menu_water_init(void); /* 0x48d4f0 */
+void GAMEAPI water_mesh_alloc(uint32_t *w); /* 0x48d530 */
+void GAMEAPI water_mesh_reset(uint8_t *w); /* 0x48d580 */
+void GAMEAPI water_textures_set(uint8_t *w, uint32_t name_a, uint32_t name_b); /* 0x48d5a0 */
+void GAMEAPI water_texture_get(uint32_t *dst); /* 0x48d600 */
+void GAMEAPI snatch_draw(void); /* 0x48fdd0 */
+void GAMEAPI snatch_mesh_draw(uint8_t *body); /* 0x48fdf0 */
+void GAMEAPI snatch_state_check(void); /* 0x4906f0 */
+void GAMEAPI menu_camera_set(const int32_t *pos, const uint32_t *matrix); /* 0x490740 */
+void GAMEAPI water_mesh_transform(uint32_t *w); /* 0x4908a0 */
+int32_t GAMEAPI water_slope_lookup(int32_t v); /* 0x490b90 */
+void GAMEAPI water_lights_set(void); /* 0x490be0 */
+void GAMEAPI water_light_matrix_set(void); /* 0x490bf0 */
+void GAMEAPI water_colour_matrix_set(void); /* 0x490ca0 */
+void GAMEAPI water_back_colour_set(void); /* 0x490e40 */
+void GAMEAPI water_mesh_draw(void); /* 0x490ed0 */
+void ddraw_create_thunk(void); /* 0x4910f0 */
+void ddraw_enumerate_thunk(void); /* 0x4910f6 */
+void dinput_create_thunk(void); /* 0x4910fc */
+void dplay_lobby_create_thunk(void); /* 0x492b88 */
+void movie_chunk_read(void); /* 0x492b90: asm entry, movie in ecx */
+int32_t GAMEAPI movie_play_loop(uint8_t *m); /* 0x492dc0 */
+uint32_t GAMEAPI movie_open(uint32_t path, uint32_t window, const uint32_t *config, uint32_t offset); /* 0x492f90 */
+int32_t GAMEAPI movie_close(uint8_t *m); /* 0x493140 */
+uint32_t GAMEAPI movie_player_run(uint32_t path, uint32_t window, const uint32_t *config); /* 0x493210 */
+int32_t GAMEAPI movie_thread_proc(uint8_t *m); /* 0x4932d0 */
+void movie_fatal_error(void); /* 0x493340: asm entry, text in ecx */
+void movie_sound_init(void); /* 0x493360: asm entry, movie in ecx */
+void movie_sound_release(void); /* 0x493590: asm entry, movie in ecx */
+void movie_sound_start(void); /* 0x4935e0: asm entry, movie in ecx */
+void __attribute__((stdcall)) movie_sound_timer(uint32_t id, uint32_t msg, uint32_t user, uint32_t dw1, uint32_t dw2); /* 0x4937e0 */
 int32_t GAMEAPI texture_upload_body(int32_t page, int32_t w, int32_t h, uint32_t pixels, uint32_t palette, uint32_t flags); /* 0x41e710 */
 void GAMEAPI vk_probe_body(void); /* 0x41f720 */
 uint32_t GAMEAPI create_window_body(uint32_t unused, int32_t x, int32_t y, int32_t w, int32_t h, int32_t fullscreen); /* 0x4771c0 */
