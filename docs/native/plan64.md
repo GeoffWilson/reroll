@@ -76,6 +76,24 @@ Measure: `tools/remaining.py` after each batch, plus a run-time check
   C still calls them; ported code calls our SDL / Vulkan / file layers
   directly, and native/ shrinks to what is used.
 
+## Status (2026-10-13)
+
+Phase 1 is done: `tools/remaining.py` finds no original function the game
+can reach (its one listing, 0x4979b7, is a lone `ret` stored as _FPmtinit /
+_FPmtterm, which crt_fpmt_patch points at C). About 2,500 hooks: the
+Ghidra-listed functions in groups, the 19 trampoline wrappers as plain C
+bodies (orig_wa/wb/wc), and about 140 entry points Ghidra never made
+functions (callbacks reached only through immediates or data tables:
+orig_xa/xb/xc/xd, found by scanning for code addresses used as values).
+Every one is fuzzed against the original in the emulator.
+
+Phase 2, first step done: no original code is the default. The loader maps
+reroll_data.bin (made from Rollcage.exe on the first run, after checking it
+is the expected version); `REROLL_NO_EXE=0` or `REROLL_VERIFY` map the
+original instead. Menus, the attract demo and races run that way. Left for
+phase 2: the import table, fake COM objects and Win32 layer shrink to what
+the C still calls.
+
 ## Phase 3: 64-bit
 
 Game memory keeps its layout: the data image stays at 0x4a0000-0x6d6000

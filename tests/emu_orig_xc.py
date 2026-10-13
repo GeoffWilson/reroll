@@ -53,6 +53,8 @@ def S(name, kinds):
 # argument kinds: v dword, b byte, h word, s string, p dword pointed at (the choice value)
 STUBS = {
     0x450C00: S("menu_choice_callback", "vvvpv"),
+    0x449160: S("name_entry_input", "vvvvvvvv"),
+    0x405320: S("records_reset", "vvvv"),
     0x447F20: S("option_onoff_step", "vvv"),
     0x4481A0: S("menu_text_get", "vvvv"),
     0x4979F0: S("sprintf", "vsv"),
@@ -167,7 +169,7 @@ class Stubs:
     def _hook(self, uc, address, size, _):
         name, kinds = STUBS[address]
         esp = uc.reg_read(UC_X86_REG_ESP)
-        words = struct.unpack("<8I", bytes(uc.mem_read(esp, 32)))
+        words = struct.unpack("<12I", bytes(uc.mem_read(esp, 48)))
         raw = list(words[1:1 + len(kinds)])
         logged = []
         for kind, a in zip(kinds, raw):
@@ -215,6 +217,24 @@ def g_choice(off):
             st.script["choice_value"] = [pick(rng, 0, 1, 2, 3, 4, 0x1FF, rng.getrandbits(32))]
         return [cmd(rng), TEXT], True
     return gen
+
+
+def g_name_action(st, rng):
+    # 0x449860 (lead): player record b at *0x4cb4b8, 0x730 bytes each
+    b = pick(rng, 0, 1, 3, 5, -1, -3, -128, 127)
+    st.put(0x4CB588, "<b", b)
+    st.put(0x4CB49C, "<i", pick(rng, 0, 1, 6, -1, -2, -200, rng.getrandbits(32)))
+    rec = RACE + 0x100  # record b lands here, filled with random words
+    st.put(0x4CB4B8, "<I", (rec - b * 0x730) & 0xFFFFFFFF)
+    for off in range(0x510, 0x540, 4):
+        st.sput(rec + off, "<I", rng.getrandbits(32))
+    st.script["name_entry_input"] = [rng.getrandbits(32)]
+    return [rng.getrandbits(32)], True
+
+
+def g_records_thunk(st, rng):
+    st.script["records_reset"] = [rng.getrandbits(32)]
+    return [rng.getrandbits(32), rng.getrandbits(32)], True
 
 
 def g_onoff_race(off):
@@ -395,6 +415,9 @@ def g_homer(st, rng):
 # name: (address, generator)
 TESTS = {
     "comm_parity_option": (0x450D40, g_choice(0x3F)),
+    "comm_port_option": (0x450CA0, g_choice(0x3C)),
+    "name_entry_action": (0x449860, g_name_action),
+    "records_reset_thunk": (0x44FFA0, g_records_thunk),
     "comm_stopbits_option": (0x450D90, g_choice(0x3E)),
     "comm_flowcontrol_option": (0x450DE0, g_choice(0x3D)),
     "setup_weapons_toggle": (0x450E50, g_onoff_race(0xA86)),

@@ -128,19 +128,22 @@ uint32_t GAMEAPI network_messages_menu(void)
 }
 
 /* 0x4518a0: the multiplayer menu (two items; the first is selected when
- * 0x4af798 is set). */
+ * 0x4af798 is set).
+ * Deliberate change: "Networked" is greyed out and "Single Machine"
+ * selected. The network game itself is C (orig_pl/pm/pu/pv), but there is
+ * no transport under it yet (native/dplayx.c answers "no network"), so its
+ * screens could only lead to an empty session list. */
 uint32_t GAMEAPI multiplayer_menu(void)
 {
-    uint32_t first, second;
+    uint32_t first;
 
     *(uint32_t *)0x4cb48c = 1;
     g_options[0x75] = 0;
     menu_title((const char *)0x4affb4, 0);
     first = menu_item(0, -1, 0x2d, 1, 0x33);
-    second = menu_item(0, -1, 0x44, 1, 0x33);
-    if (*(uint32_t *)0x4af798)
-        second = first;
-    return menu_select(second);
+    *(uint8_t *)0x4c9dfd = 1; /* the next item greyed out */
+    menu_item(0, -1, 0x44, 1, 0x33);
+    return menu_select(first);
 }
 
 /* 0x44ffd0: a laps menu with the given handler. */

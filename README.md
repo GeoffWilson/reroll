@@ -2,18 +2,20 @@
 
 An incremental reimplementation of **Rollcage** (Psygnosis / Attention to
 Detail, 1999, PC Direct3D version) as a native Linux program, in the style of
-OpenRCT2: the original `Rollcage.exe` is loaded at its own addresses and its
-functions are replaced, one at a time, with C. About 1,350 of them are C so
-far (physics, car handling, AI, race set-up, the front end, sound logic). The
-rest, mostly scene drawing, still runs as the original machine code on top of
-a small Windows layer built on SDL3, and everything is drawn by a new Vulkan
-renderer.
+OpenRCT2: the original `Rollcage.exe` was loaded at its own addresses and its
+functions were replaced, one at a time, with C. Now every function the game
+runs is C (about 2,500, each checked against the original machine code), and
+the game runs without any original code: only the exe's data (tables,
+strings, menu layouts) is still used, read once from your copy into
+`reroll_data.bin`. It runs on a small Windows layer built on SDL3, and
+everything is drawn by a new Vulkan renderer. Next: a 64-bit build
+(`docs/native/plan64.md`).
 
 **No game files are included.** This repository holds only reverse-engineered
 code, notes and tools written for the project. To play you need your own copy
-of Rollcage (the PC version): the program loads `Rollcage.exe` and the game's
-data from your installation, and plays music from your CD (or a BIN/CUE image
-of it).
+of Rollcage (the PC version): the program reads the game's data from your
+installation (and, once, the data inside your `Rollcage.exe`), and plays music
+from your CD (or a BIN/CUE image of it).
 
 ## What it adds
 
@@ -37,16 +39,17 @@ Not done yet: movies (skipped), network play.
 
 ## Requirements
 
-- Linux on x86-64 with 32-bit libraries: the program is i386, because the
-  original code runs inside it. On Arch: `lib32-sdl3`, `lib32-vulkan-icd-loader`
+- Linux on x86-64 with 32-bit libraries: the program is still i386 (the game's
+  memory layout and 32-bit pointers; the 64-bit build is the next step). On Arch: `lib32-sdl3`, `lib32-vulkan-icd-loader`
   (and your GPU's 32-bit Vulkan driver), `lib32-libdecor` for window title bars
   on Wayland.
 - To build: clang, `glslc` (shaderc), Python 3.
 - The game: an installed copy of Rollcage. The expected executable is
   `Direct3D/Rollcage.exe`, sha256
   `0648503bf95e692859a96efcacc101b33af9312e4e4ba80c6e9d00692c0e5879`
-  (image base 0x400000). Every hook checks the original bytes it replaces, so a
-  different executable is left alone.
+  (image base 0x400000). On the first run its data (everything but its code)
+  is copied to `Direct3D/reroll_data.bin` (`rollcage --extract-data` does the
+  same); a different executable is refused. After that the exe isn't read.
 
 ## Build and run
 
@@ -65,10 +68,14 @@ reimplementation) next to the executable, keeps the registry settings in
 `reroll_registry.reg` and the display settings in `reroll_display.cfg`.
 
 Useful environment variables: `REROLL_DRAW_DISTANCE` (world units, `0` = the
-original's), `REROLL_FAR_OBJECTS=0`, `REROLL_ANISOTROPY`, `REROLL_MAX_FPS`,
+original's), `REROLL_FAR_OBJECTS=1` (trackside objects past the original's
+range; off, being reworked), `REROLL_ANISOTROPY`, `REROLL_MAX_FPS`,
 `REROLL_VSYNC`, `REROLL_WINDOW=WxH`. For tests without a window:
 `SDL_VIDEO_DRIVER=offscreen` with `REROLL_SHOT_EVERY=n` (saves frames) and
-`REROLL_KEYS="ms:Key,..."` (scripted key presses).
+`REROLL_KEYS="ms:Key,..."` (scripted key presses). `REROLL_NO_EXE=0` maps the
+original exe's code again instead of `reroll_data.bin` (for comparing with the
+original; `REROLL_VERIFY=1`, which runs the originals beside ours, does this
+itself).
 
 ## Checking against the original
 
@@ -96,13 +103,16 @@ Besides the additions above:
   CD-ROM drive and otherwise disables League, Arcade and Time Attack; the
   game only reads the installed data, and the music comes from the CD
   image.
+- **No network play yet** (`fe_n.c`): Multiplayer's "Networked" is greyed out.
+  The network game is ported, but there is no transport under it yet
+  (`native/dplayx.c` reports no network).
 - **Frame rate** (`frame.c`, `interp.c`): physics keeps the original 32 ms steps
   on its own clock; per-draw state (HUD flash countdowns, the trackside trigger
   queue) still advances once per step.
 
 ## Layout
 
-    native/         the loader (maps Rollcage.exe, fills its imports) and the
+    native/         the loader (maps reroll_data.bin, fills its imports) and the
                     Windows layer: KERNEL32, USER32 (SDL3 window), DirectDraw /
                     Direct3D stand-ins, DirectInput, QMixer and CD audio
     src/            hook installer, verifier, log, capture, the Vulkan renderer's

@@ -1,11 +1,14 @@
 /* The game's built-in data without the original exe (docs/native/plan64.md,
- * phase 2). `rollcage --extract-data` copies the user's Rollcage.exe,
- * minus its code, to reroll_data.bin next to it: the headers and every
- * section except .text, whose raw data is dropped (raw size 0). The loader
- * maps that file like the exe (REROLL_NO_EXE=1) and fills the code range
- * with int3: only our hooks' jumps are written into it (src/hook.c), so
- * calls by address still reach the C, and any original code still needed
- * traps and is named in native.log. */
+ * phase 2). `rollcage --extract-data` (or the first run, when the file is
+ * missing) copies the user's Rollcage.exe, minus its code, to
+ * reroll_data.bin next to it: the headers and every section except .text,
+ * whose raw data is dropped (raw size 0). Only the version our C is built
+ * for is accepted (757760 bytes, sha256 0648503b...). The loader maps that
+ * file like the exe (the default; REROLL_NO_EXE=0 or REROLL_VERIFY map the
+ * original instead) and fills the code range with int3: only our hooks'
+ * jumps are written into it (src/hook.c), so calls by address still reach
+ * the C, and any original code still needed traps and is named in
+ * native.log. */
 #include "nt.h"
 
 #include <fcntl.h>
@@ -54,6 +57,17 @@ int nt_data_extract(const char *exe, const char *out_path)
     if (file[0] != 'M' || file[1] != 'Z' || memcmp(nt, "PE\0\0", 4)) {
         fprintf(stderr, "%s is not an exe\n", exe);
         return 0;
+    }
+    {
+        /* the version the C is built for: FNV-1a 64 of the whole file */
+        uint64_t h = 0xcbf29ce484222325ull;
+        for (off_t k = 0; k < st.st_size; k++)
+            h = (h ^ file[k]) * 0x100000001b3ull;
+        if (st.st_size != 757760 || h != 0x6277a76425c1ac1bull) {
+            fprintf(stderr, "%s is not the Rollcage.exe this build needs (the 1999 PC release, 757760 bytes, sha256 0648503b...)\n",
+                    exe);
+            return 0;
+        }
     }
     header_size = get32(nt + 0x18 + 60);
     count = nt[6] | nt[7] << 8;

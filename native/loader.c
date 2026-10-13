@@ -236,7 +236,16 @@ static void configure(int argc, char **argv)
     config_default(nt_config.drive_d, sizeof nt_config.drive_d, "REROLL_DRIVE_D", fallback);
     config_default(nt_config.exe_windows, sizeof nt_config.exe_windows, "REROLL_EXE",
                    "C:\\Program Files (x86)\\Psygnosis\\Rollcage\\Direct3D\\Rollcage.exe");
-    nt_no_exe = getenv("REROLL_NO_EXE") && atoi(getenv("REROLL_NO_EXE"));
+    {
+        /* no original code by default (reroll_data.bin); the original exe
+         * when asked (REROLL_NO_EXE=0), and for shadow verification, which
+         * runs the originals beside ours */
+        const char *no_exe = getenv("REROLL_NO_EXE"), *verify = getenv("REROLL_VERIFY");
+        if (no_exe)
+            nt_no_exe = atoi(no_exe) != 0;
+        else
+            nt_no_exe = !(verify && verify[0] && verify[0] != '0');
+    }
     {
         /* the game's folder: the exe's, whether or not the exe is there */
         char folder[512];
@@ -297,7 +306,7 @@ int main(int argc, char **argv)
 
     if (argc > 1 && !strcmp(argv[1], "--extract-data")) {
         char out[600];
-        unsetenv("REROLL_NO_EXE");
+        setenv("REROLL_NO_EXE", "0", 1);
         configure(1, argv);
         snprintf(out, sizeof out, "%s/reroll_data.bin", nt_config.data_dir);
         return nt_data_extract(nt_config.exe_host, out) ? 0 : 1;
@@ -320,8 +329,16 @@ int main(int argc, char **argv)
         nt_log("loader: cannot map the low memory at 0x10000 (%s)", strerror(errno));
     nt_lowmem_init();
     nt_lowmem_arena(0); /* ours until the game starts */
-    if (nt_no_exe && access(nt_config.exe_host, R_OK) != 0)
-        nt_fatal("no %s: run rollcage --extract-data once (it reads Rollcage.exe)", nt_config.exe_host);
+    if (nt_no_exe && access(nt_config.exe_host, R_OK) != 0) {
+        /* first run: the data comes from the user's Rollcage.exe, once */
+        char exe[600];
+        if (!nt_host_path(nt_config.exe_windows, exe, sizeof exe, 1) || access(exe, R_OK) != 0)
+            nt_fatal("no %s and no %s to make it from: copy Rollcage.exe from the CD into the game folder once",
+                     nt_config.exe_host, nt_config.exe_windows);
+        nt_log("loader: first run, extracting the game's data from %s", exe);
+        if (!nt_data_extract(exe, nt_config.exe_host))
+            nt_fatal("cannot make %s from %s (see the terminal)", nt_config.exe_host, exe);
+    }
     map_exe(nt_config.exe_host);
     if (nt_no_exe)
         nt_data_trap_install();
@@ -336,6 +353,10 @@ int main(int argc, char **argv)
     nt_set_current_directory(directory);
     if (chdir(nt_config.data_dir))
         nt_log("cannot enter %s", nt_config.data_dir);
+    /* src/log.c appends (the game restarts itself in place after a race);
+     * each launch starts the file afresh */
+    if (truncate("reroll.log", 0) != 0 && errno != ENOENT)
+        nt_log("cannot clear reroll.log (%s)", strerror(errno));
 
     /* the game runs on a stack below 2 GB, as on Windows */
     {

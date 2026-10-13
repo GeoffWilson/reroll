@@ -125,8 +125,12 @@ def make_state(rng, name):
     netrec = bytes(rng.getrandbits(8) for _ in range(0x600))
     screen = pick(rng, CASE[0] % 0x82, CASE[0] % 0x82, CASE[0] % 0x82, rng.randrange(0, 0x82),
                   rng.randrange(0, 0x82), rng.randrange(0, 0x82), -1, 0x82, 0x1000, rng.getrandbits(32) - 0x80000000)
+    if screen == 0x2C:  # the multiplayer screen greys out "Networked" on purpose (fe_l.c): not compared
+        screen = 0x2B
     nxt = pick(rng, -1, -1, 6, 9, 0xB, 0x11, 0x16, 0x1F, 0x28, 0x3C, 0x53, 0x5B, 0x5F, 0x71, 0x72,
                rng.randrange(0, 0x82), rng.randrange(-8, 0x100))
+    if nxt == 0x2C:
+        nxt = 0x2B
     g = {}
     for a, n in WATCHED:  # leftovers from earlier screens
         if a != CONFIG:

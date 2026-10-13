@@ -731,3 +731,36 @@ int32_t GAMEAPI snatch_hit(uint8_t *body, uint8_t *other, int32_t event)
     CALL2(0x48ddd0, body, 1);
     return 0;
 }
+
+/* ============================================ found later (no-exe run) */
+
+/* 0x450ca0: the comms port choice (config +0x3c, 0..3), like 0x450d40;
+ * its address sat behind a jump table, where the listing loses sync. */
+int32_t GAMEAPI comm_port_option(int32_t cmd, uint32_t text)
+{
+    return comm_choice(cmd, text, 0x3c, 3, 0x4afe70);
+}
+
+/* 0x449860: the name entry item's action (template slot 0x4ca2f8, set by
+ * 0x4490f8): player record b (0x4cb588, signed) of the 0x730-byte records
+ * at *0x4cb4b8 edits through name_entry_input 0x449160 with the record's
+ * +0x518..+0x530; a negative b at or above *0x4cb49c (signed): 0. */
+int32_t GAMEAPI name_entry_action(uint32_t key)
+{
+    int32_t b = GS8(0x4cb588);
+    uint32_t r;
+
+    if (b < 0 && b >= (int32_t)G32(0x4cb49c))
+        return 0;
+    r = G32(0x4cb4b8) + (uint32_t)b * 0x730;
+    return ((int32_t GAMEAPI(*)(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t))0x449160)(
+        key, U32(r, 0x518), U32(r, 0x51c), U32(r, 0x520), U32(r, 0x524), U32(r, 0x528), U32(r, 0x52c), U32(r, 0x530));
+}
+
+/* 0x44ffa0: jmp 0x405320 (the records menu's reset action, slot
+ * 0x4ca300): the same stack, so a jump. */
+void records_reset_thunk(void); /* asm */
+__asm__(".globl records_reset_thunk\n"
+        "records_reset_thunk:\n\t"
+        "movl $0x405320, %eax\n\t"
+        "jmp *%eax\n");

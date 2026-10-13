@@ -24,8 +24,8 @@
 #define g_attract_level (*(uint32_t *)0x6c8160)
 #define g_attract_on (*(uint32_t *)0x4ac994)
 #define g_menu_page (*(uint32_t *)0x4ac980)
-#define g_item_off (*(uint8_t *)0x4c9dfc)   /* next item greyed out */
-#define g_item_hide (*(uint8_t *)0x4c9dfd)  /* next item hidden */
+#define g_item_off (*(uint8_t *)0x4c9dfc)   /* next item left out (seen in game) */
+#define g_item_hide (*(uint8_t *)0x4c9dfd)  /* next item greyed out (seen in game; fe_y.c agrees) */
 #define g_item_flag (*(uint8_t *)0x4c9dfb)
 #define g_item_last (*(uint8_t *)0x4c9e00)
 #define g_network (*(uint32_t *)0x4cb48c)   /* the multiplayer screens are for a network game */
@@ -434,6 +434,9 @@ void GAMEAPI menu_screen_build(void)
         if (G32(0x4acc54) != 2)
             g_item_hide = 1;
         menu_add(0, -1, 0x2e, 1, 0x33);
+        /* Deliberate change: "Networked" greyed out, no transport yet
+         * (as multiplayer_menu, fe_n.c) */
+        g_item_hide = 1;
         menu_add(0, -1, 0x46, 1, 0x33);
         break;
     case 0x2d:

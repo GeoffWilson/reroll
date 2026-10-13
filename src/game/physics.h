@@ -173,6 +173,22 @@ void GAMEAPI ai_aim_at_node(uint8_t *car, int32_t *v, uint32_t line_index, uint3
 void GAMEAPI ai_steer_to(uint8_t *car, const int32_t *target, int32_t check, int32_t reverse);
 void GAMEAPI ai_drive(uint8_t *car);
 void GAMEAPI ai_pace(uint8_t *car);
+int32_t GAMEAPI d3d_render_states_thunk(void); /* 0x4219d0 */
+int32_t GAMEAPI capslock_state(void); /* 0x43d260 */
+void GAMEAPI name_entry_box_place(void); /* 0x448880 */
+int32_t GAMEAPI name_entry_input(uint32_t action, uint8_t *text, int32_t mode, int32_t size, uint32_t screen, int32_t screen_arg, uint32_t on_change, uint32_t on_event); /* 0x449160 */
+void GAMEAPI net_slots_place(void); /* 0x452980 */
+void GAMEAPI net_host_boxes_place(void); /* 0x452c20 */
+void GAMEAPI net_sessions_box_place(void); /* 0x452ce0 */
+int32_t GAMEAPI net_player_count(void); /* 0x45f4f0 */
+int32_t GAMEAPI net_send_type7(const uint8_t *data); /* 0x45fbe0 */
+int32_t GAMEAPI net_slot_ready(uint32_t slot); /* 0x460980 */
+void GAMEAPI movie_text_draw(const uint8_t *text, int32_t x, int32_t y); /* 0x488ad0 */
+int32_t GAMEAPI movie_text_clear(int32_t top); /* 0x488cc0 */
+int32_t GAMEAPI net_sessions_search_start(void); /* 0x48b610 */
+int32_t GAMEAPI net_sessions_search_poll(void); /* 0x48b6d0 */
+int32_t GAMEAPI net_joined(void); /* 0x48d490 */
+void GAMEAPI cdaudio_replay_request(void); /* 0x496c60 */
 int32_t GAMEAPI comm_parity_option(int32_t cmd, uint32_t text); /* 0x450d40 */
 int32_t GAMEAPI comm_stopbits_option(int32_t cmd, uint32_t text); /* 0x450d90 */
 int32_t GAMEAPI comm_flowcontrol_option(int32_t cmd, uint32_t text); /* 0x450de0 */
@@ -1024,6 +1040,10 @@ int32_t GAMEAPI d3d_device_create(void); /* 0x41d1f0 */
 int32_t GAMEAPI d3d_devices_enumerate(void); /* 0x41d250 */
 int32_t GAMEAPI d3d_device_pick(void); /* 0x41d6d0 */
 int32_t GAMEAPI d3d_texture_format_pick(void);
+int32_t GAMEAPI comm_port_option(int32_t cmd, uint32_t text); /* 0x450ca0 */
+int32_t GAMEAPI name_entry_action(uint32_t key); /* 0x449860 */
+void records_reset_thunk(void); /* 0x44ffa0: asm, jmp 0x405320 */
+int32_t __attribute__((stdcall)) net_session_enum_cb(const uint8_t *desc, uint32_t *timeout, uint32_t flags, void *context); /* 0x48bb30 */
 int32_t __attribute__((stdcall)) d3d_texture_format_cb(const uint8_t *desc, void *context); /* 0x41d790 */ /* 0x41d730 */
 int32_t GAMEAPI texture_slot_release(int32_t i); /* 0x41d890 */
 int32_t GAMEAPI texture_slots_release(void); /* 0x41d910 */
