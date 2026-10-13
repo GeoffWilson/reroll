@@ -173,6 +173,129 @@ void GAMEAPI ai_aim_at_node(uint8_t *car, int32_t *v, uint32_t line_index, uint3
 void GAMEAPI ai_steer_to(uint8_t *car, const int32_t *target, int32_t check, int32_t reverse);
 void GAMEAPI ai_drive(uint8_t *car);
 void GAMEAPI ai_pace(uint8_t *car);
+int32_t GAMEAPI comm_parity_option(int32_t cmd, uint32_t text); /* 0x450d40 */
+int32_t GAMEAPI comm_stopbits_option(int32_t cmd, uint32_t text); /* 0x450d90 */
+int32_t GAMEAPI comm_flowcontrol_option(int32_t cmd, uint32_t text); /* 0x450de0 */
+int32_t GAMEAPI setup_weapons_toggle(int32_t cmd); /* 0x450e50 */
+int32_t GAMEAPI setup_mirror_toggle(int32_t cmd); /* 0x450f10 */
+int32_t GAMEAPI setup_weather_choice(int32_t cmd, uint32_t text); /* 0x450f70 */
+int32_t GAMEAPI setup_daytime_choice(int32_t cmd, uint32_t text); /* 0x451060 */
+void GAMEAPI audio_music_volume_slider(uint32_t value); /* 0x451300 */
+void GAMEAPI audio_effects_volume_slider(uint32_t value); /* 0x451330 */
+int32_t GAMEAPI audio_toggle_4d4548(int32_t cmd); /* 0x451360 */
+int32_t GAMEAPI audio_toggle_4b1c84(int32_t cmd); /* 0x4513a0 */
+int32_t GAMEAPI audio_toggle_4b1c88(int32_t cmd); /* 0x451400 */
+int32_t GAMEAPI audio_toggle_4d4540(int32_t cmd); /* 0x451450 */
+int32_t GAMEAPI audio_toggle_4d4544(int32_t cmd); /* 0x451490 */
+int32_t GAMEAPI audio_toggle_4b1c78(int32_t cmd); /* 0x4514d0 */
+int32_t GAMEAPI audio_toggle_4b1c7c(int32_t cmd); /* 0x451510 */
+int32_t GAMEAPI audio_toggle_4b1c80(int32_t cmd); /* 0x451550 */
+int32_t GAMEAPI audio_channels_choice(int32_t cmd, uint32_t text); /* 0x451590 */
+int32_t GAMEAPI audio_speaker_choice(int32_t cmd, uint32_t text); /* 0x451650 */
+int32_t GAMEAPI audio_cd_track_action(int32_t action); /* 0x451720 */
+int32_t GAMEAPI audio_cd_shuffle_choice(int32_t cmd, uint32_t text); /* 0x451750 */
+int32_t GAMEAPI series_cursor_arrived(int32_t index, int32_t value); /* 0x451bf0 */
+int32_t GAMEAPI control_toggle_1a2(int32_t cmd); /* 0x452350 */
+int32_t GAMEAPI control_toggle_1a3(int32_t cmd); /* 0x4523c0 */
+int32_t GAMEAPI control_binding_action(int32_t action); /* 0x452430 */
+int32_t GAMEAPI control_pad_choice(int32_t cmd, uint8_t *text); /* 0x452760 */
+int32_t GAMEAPI menu_countdown_handler(int32_t action); /* 0x452950 */
+int32_t GAMEAPI net_host_menu_handler(int32_t action); /* 0x452d30 */
+int32_t GAMEAPI net_join_menu_handler(int32_t action); /* 0x452db0 */
+void GAMEAPI net_sessions_found_select(void); /* 0x452e30 */
+int32_t GAMEAPI net_sessions_handler(int32_t action); /* 0x452e40 */
+int32_t GAMEAPI menu_counter_handler(int32_t action); /* 0x453000 */
+int32_t GAMEAPI pickup_fallen_hit(uint8_t *body, uint8_t *other, int32_t event); /* 0x458310 */
+int32_t GAMEAPI homer_hit(uint8_t *body, uint8_t *other, int32_t event); /* 0x4596f0 */
+int32_t GAMEAPI snatch_hit(uint8_t *body, uint8_t *other, int32_t event); /* 0x48dc20 */
+int32_t GAMEAPI fecb_cheat_58b(int32_t event); /* 0x44daa0 */
+int32_t GAMEAPI fecb_cheat_58d(int32_t event); /* 0x44dae0 */
+int32_t GAMEAPI fecb_onoff_92(int32_t event); /* 0x44db20 */
+int32_t GAMEAPI fecb_choice4_80(int32_t event, uint32_t buf); /* 0x44db60 */
+int32_t GAMEAPI fecb_goto_48(int32_t event); /* 0x44dc50 */
+int32_t GAMEAPI fecb_refuse_sound(int32_t event); /* 0x44dc90 */
+int32_t GAMEAPI fecb_choice_8a(int32_t event, uint32_t buf); /* 0x44dce0 */
+int32_t GAMEAPI fecb_choice_87(int32_t event, uint32_t buf); /* 0x44dd30 */
+int32_t GAMEAPI fecb_choice_88(int32_t event, uint32_t buf); /* 0x44de10 */
+int32_t GAMEAPI fecb_onoff_34(int32_t event); /* 0x44dea0 */
+int32_t GAMEAPI fecb_onoff_83(int32_t event); /* 0x44dee0 */
+int32_t GAMEAPI fecb_onoff_37(int32_t event); /* 0x44df20 */
+int32_t GAMEAPI fecb_onoff_93(int32_t event); /* 0x44df60 */
+int32_t GAMEAPI fecb_store_a0(void); /* 0x44dfa0 */
+int32_t GAMEAPI fecb_store_120(void); /* 0x44e040 */
+int32_t GAMEAPI fecb_store_12b(void); /* 0x44e080 */
+int32_t GAMEAPI fecb_store_16c(void); /* 0x44e0b0 */
+int32_t GAMEAPI fecb_chat_send(int32_t event); /* 0x44e0e0 */
+int32_t GAMEAPI fecb_store_c0(void); /* 0x44e1c0 */
+void GAMEAPI fecb_edit_line(int32_t event, int32_t value); /* 0x44e1f0 */
+int32_t GAMEAPI fecb_store_macro(const char *text); /* 0x44e200 */
+int32_t GAMEAPI fecb_store_message(const char *text); /* 0x44e250 */
+void GAMEAPI fecb_value_60c(uint32_t value); /* 0x44e460 */
+void GAMEAPI fecb_world_pick(int32_t event, int32_t world); /* 0x44e590 */
+void GAMEAPI fecb_set_1d(int32_t value); /* 0x44e7e0 */
+void GAMEAPI fecb_track_pick(int32_t event, int32_t track); /* 0x44eb00 */
+int32_t GAMEAPI fecb_track_menu(int32_t event); /* 0x44eb20 */
+int32_t GAMEAPI fecb_step_choice(int32_t dir); /* 0x44eeb0 */
+int32_t GAMEAPI fecb_profile_rename(void); /* 0x44f510 */
+void GAMEAPI fecb_set_mode(int32_t mode); /* 0x44fe60 */
+int32_t GAMEAPI fecb_number_2f(int32_t event, uint32_t buf); /* 0x450000 */
+int32_t GAMEAPI fecb_number_77(int32_t event, uint32_t buf); /* 0x450160 */
+int32_t GAMEAPI fecb_race_585(int32_t event, uint32_t buf); /* 0x450260 */
+int32_t GAMEAPI fecb_three_8b(int32_t event, uint32_t buf); /* 0x450490 */
+int32_t GAMEAPI fecb_onoff_24(int32_t event); /* 0x450580 */
+int32_t GAMEAPI fecb_onoff_28(int32_t event); /* 0x4505e0 */
+int32_t GAMEAPI fecb_onoff_29(int32_t event); /* 0x450640 */
+int32_t GAMEAPI fecb_three_2c(int32_t event, uint32_t buf); /* 0x450760 */
+int32_t GAMEAPI fecb_render_44(int32_t event); /* 0x450950 */
+int32_t GAMEAPI fecb_render_48(int32_t event); /* 0x4509c0 */
+int32_t GAMEAPI fecb_three_33(int32_t event, uint32_t buf); /* 0x450a30 */
+int32_t GAMEAPI fecb_blend_434(int32_t event, uint32_t buf); /* 0x450ae0 */
+int32_t GAMEAPI fecb_choice_3a(int32_t event, uint32_t buf); /* 0x450cf0 */
+int32_t GAMEAPI track_object_hit_blast(uint8_t *obj); /* 0x401120 */
+int32_t GAMEAPI track_object_hit_k23(uint8_t *obj); /* 0x401280 */
+int32_t GAMEAPI driller_hit(uint8_t *self, uint8_t *other, uint8_t *hit); /* 0x424990 */
+int32_t GAMEAPI movie_frame_check(void); /* 0x42d8e0 */
+void GAMEAPI screen_ot_first(void); /* 0x423af0 */
+void GAMEAPI screen_ot_swap(void); /* 0x423ba0 */
+void GAMEAPI clock_tick(void); /* 0x435140 */
+void GAMEAPI movie_win_lang0(void); /* 0x447f90 */
+void GAMEAPI movie_win_lang1(void); /* 0x447fa0 */
+void GAMEAPI movie_win_lang2(void); /* 0x447fb0 */
+void GAMEAPI movie_win_lang3(void); /* 0x447fc0 */
+void GAMEAPI movie_win_lang4(void); /* 0x447fd0 */
+void GAMEAPI movie_win_lang5(void); /* 0x447fe0 */
+void GAMEAPI menu_item_text_keep(void); /* 0x448cf0 */
+int32_t GAMEAPI menu_input_back10(int32_t action); /* 0x448d60 */
+int32_t GAMEAPI menu_input_net(int32_t action); /* 0x449120 */
+uint32_t GAMEAPI menu_slider_set_64(uint32_t value); /* 0x44ce70 */
+uint32_t GAMEAPI menu_slider_set_68(uint32_t value); /* 0x44ce80 */
+uint32_t GAMEAPI menu_slider_set_6c(uint32_t value); /* 0x44ce90 */
+uint32_t GAMEAPI menu_slider_set_70(uint32_t value); /* 0x44cea0 */
+int32_t GAMEAPI menu_names_cb(int32_t cmd, uint8_t *dst); /* 0x44ceb0 */
+int32_t GAMEAPI menu_param_cb_0b(int32_t cmd, uint8_t *dst); /* 0x44cfc0 */
+int32_t GAMEAPI menu_param_cb_1f(int32_t cmd, uint8_t *dst); /* 0x44d130 */
+int32_t GAMEAPI menu_split_mode_cb(int32_t cmd, uint8_t *dst); /* 0x44d170 */
+int32_t GAMEAPI menu_movie_play(int32_t action); /* 0x44d290 */
+int32_t GAMEAPI menu_movie_cb(int32_t cmd, uint8_t *dst); /* 0x44d2f0 */
+int32_t GAMEAPI menu_toggle_0c(int32_t action); /* 0x44d3e0 */
+int32_t GAMEAPI menu_toggle_0e(int32_t action); /* 0x44d420 */
+int32_t GAMEAPI menu_toggle_39(int32_t action); /* 0x44d460 */
+int32_t GAMEAPI menu_toggle_0a(int32_t action); /* 0x44d4a0 */
+int32_t GAMEAPI menu_toggle_10(int32_t action); /* 0x44d8d0 */
+int32_t GAMEAPI menu_toggle_11(int32_t action); /* 0x44d910 */
+int32_t GAMEAPI menu_race_bit_720_5(int32_t action); /* 0x44d4e0 */
+int32_t GAMEAPI menu_race_bit_720_1(int32_t action); /* 0x44d760 */
+int32_t GAMEAPI menu_race_bit_720_2(int32_t action); /* 0x44d7b0 */
+int32_t GAMEAPI menu_race_bit_720_3(int32_t action); /* 0x44d810 */
+int32_t GAMEAPI menu_race_bit_720_4(int32_t action); /* 0x44d870 */
+int32_t GAMEAPI menu_race_bit_721_0(int32_t action); /* 0x44d540 */
+int32_t GAMEAPI menu_race_bit_721_1(int32_t action); /* 0x44d590 */
+int32_t GAMEAPI menu_race_bit_721_2(int32_t action); /* 0x44d5e0 */
+int32_t GAMEAPI menu_race_bit_721_3(int32_t action); /* 0x44d640 */
+int32_t GAMEAPI menu_race_bit_721_5(int32_t action); /* 0x44d6a0 */
+int32_t GAMEAPI menu_race_bit_721_4(int32_t action); /* 0x44d700 */
+int32_t GAMEAPI menu_time_cb(int32_t cmd, uint8_t *dst); /* 0x44d950 */
+int32_t GAMEAPI menu_moved_idle(void); /* 0x44da90 */
 int32_t GAMEAPI net_message_send_to(int32_t mode, uint32_t to, uint32_t msg, uint32_t size, uint32_t flags); /* 0x48cdd0 */
 int32_t GAMEAPI net_packet_filter(const uint32_t *packet, uint32_t from); /* 0x48cf40 */
 int32_t GAMEAPI net_session_lock(void); /* 0x48d110 */

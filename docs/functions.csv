@@ -2188,3 +2188,126 @@ address,name,status,notes
 0x493590,movie_sound_release,verified,"src/game/orig_pv.c. asm entry, movie in ecx Emulator fuzz"
 0x4935e0,movie_sound_start,verified,"src/game/orig_pv.c. asm entry, movie in ecx Emulator fuzz"
 0x4937e0,movie_sound_timer,verified,src/game/orig_pv.c. the original's instructions ---- Emulator fuzz
+0x401120,track_object_hit_blast,verified,"src/game/orig_xa.c. a track object's hit callback: with flag 0x2000 it comes loose (flags 0x2200 off, 0x1000 on, off the pair list) and gets a random spin from the LCG 0x4b11dc (x * 16807 & 0x7fffffff) in +0x80/+0x84/+0x88; otherwise it blows up (explosion 9 / 0x13aaf, off the grid, retired, collapse, debris 0x403950). Returns 0. Emulator fuzz"
+0x401280,track_object_hit_k23,verified,"src/game/orig_xa.c. the kind-0x23 track object's hit callback: explosion 7 / 0x13a2f, collapse, off the grid, retired, collapse again (sic), debris. Returns 0. Emulator fuzz"
+0x423af0,screen_ot_first,verified,"src/game/orig_xa.c. the first OT draw: view (0x4bde74 & 0xffff) of the 0x870-byte view records 0x6cd4a0 (viewport +0x5c), its OT drawn, the second buffer's OT 0x6ce5f4 drawn, buffers set to 0x6cdd10 / 0x6ce5f8 and their OTs cleared; with race +0x54c set, 0x6ce604 = 1 and 0x6ce600 = 0. Emulator fuzz"
+0x423ba0,screen_ot_swap,verified,"src/game/orig_xa.c. draw the current buffer (0x6ce60c: viewport +0x5c, OT +0x86c, the small OT 0x6ce608 + 4), swap to the other one (0x6cd4a0 / 0x6cdd10, small OTs 0x6ce5f8 / 0x6ce5f0), clear its OTs; 0x6ce600 = 0, 0x6ce604 = 1. Emulator fuzz"
+0x424990,driller_hit,verified,"src/game/orig_xa.c. the driller head's hit callback. Hit by a body (not the last two it hit, +0x1b0 / +0x1b4): remembered, car_blast_hit 0x4599c0(other, hit), the owner (+0x180) flagged 0x20000; in race modes 3 / 8 (race +0x551) a car hit scores for the owner (race +8 + owner's +0x64e) after the three checks 0x45ef80 / 0x45eed0 / 0x45ef30 (then 0x45fbe0), or without them when 0x45eed0 says 0; a car hit (not state +0x70c == 8) sends the kill message 0x4600a0(car id, owner id, 9). Hit by the world (not a hit with +0x44 == -4): explosion 1 / 0xd1a49 at the head, +0x198 = 0, +0x194 = 0x10, off the grid, retired, its voice (+0x1ac) stopped, and the three trail parts (+0x184..) ended (0x458a20(part, 1)) and taken off the grid. Returns 0. Emulator fuzz"
+0x42d8e0,movie_frame_check,verified,"src/game/orig_xa.c. the movie player's per-frame callback. Counts the frame (0x4be2b4); of the queued texts (16-byte records at 0x6cc400: x, y, frame, text; count 0x4be2b8) picks a due frame as the original's loop does, and if it is later than the shown one (0x4ac738) clears the text area (0x488cc0, height 0xc0, or 0x180 for the tall screen 0x4be2bc) and draws every text of that frame (0x488ad0(text, x, y + height)). Then a pending window message: if it is a WM_KEYDOWN of backspace, tab, enter, escape or space returns 1 (stop the movie), else 0. Emulator fuzz"
+0x435140,clock_tick,verified,"src/game/orig_xa.c. the race clock's timer tick: counts 0x4be388 unless paused (0x4d1198); with race +0x54c set, a frame pending (0x6ce600) and the tick at or past 0x6c0a38, draws: 0x423ba0 (race +0x552 == 0) or 0x423af0. Emulator fuzz"
+0x447f90,movie_win_lang0,verified,src/game/orig_xa.c. the winner's movie in language 0..5 (0x42dbf0). Emulator fuzz
+0x447fa0,movie_win_lang1,verified,src/game/orig_xa.c. Emulator fuzz
+0x447fb0,movie_win_lang2,verified,src/game/orig_xa.c. Emulator fuzz
+0x447fc0,movie_win_lang3,verified,src/game/orig_xa.c. Emulator fuzz
+0x447fd0,movie_win_lang4,verified,src/game/orig_xa.c. Emulator fuzz
+0x447fe0,movie_win_lang5,verified,src/game/orig_xa.c. Emulator fuzz
+0x448cf0,menu_item_text_keep,verified,"src/game/orig_xa.c. an item's select handler: the current item's (cursor 0x4cb588, if in range) text +0x1fc into 0x4cb5e8 and its value words +0x4f8 / +0x4fc into 0x4af70c / 0x4af710. Emulator fuzz"
+0x448d60,menu_input_back10,verified,src/game/orig_xa.c. a menu input handler: action 10 runs 0x448880. Returns 0. Emulator fuzz
+0x449120,menu_input_net,verified,"src/game/orig_xa.c. a menu input handler passing the action and seven globals (0x4c98e0, 0x4c2914, 0x4cb468, 0x4c2480, 0x4c2918, 0x6bf164, 0x6bf160) on to 0x449160; returns its result. Emulator fuzz"
+0x44ce70,menu_slider_set_64,verified,src/game/orig_xa.c. float slider callbacks: the value into config +0x64 / +0x68 / +0x6c / +0x70 (eax keeps it). Emulator fuzz
+0x44ce80,menu_slider_set_68,verified,src/game/orig_xa.c. Emulator fuzz
+0x44ce90,menu_slider_set_6c,verified,src/game/orig_xa.c. Emulator fuzz
+0x44cea0,menu_slider_set_70,verified,src/game/orig_xa.c. Emulator fuzz
+0x44ceb0,menu_names_cb,verified,"src/game/orig_xa.c. a names item (index config +0x86 into the names 0x4cb16c, count 0x4cb574, out of range -> 0): the name is always copied to config +0xe0; command 0x12 copies it to dst, 0x13 the 8 bytes at 0x4b008c, 0x14 / 0x15..0x16 step the index down / up with wrap. Returns 1, or 0 for other commands. Emulator fuzz"
+0x44cfc0,menu_param_cb_0b,verified,"src/game/orig_xa.c. a two-word value item on config +0x0b / +0x1f through menu_param_callback 0x44d000 (flag 0 / 1): -1 -> 0, else the result is stored and 1 returned. Emulator fuzz"
+0x44d130,menu_param_cb_1f,verified,src/game/orig_xa.c. Emulator fuzz
+0x44d170,menu_split_mode_cb,verified,"src/game/orig_xa.c. the split screen mode item (config +0x0f, 0..4): command 0x12 shows ""2H"" / ""2V"" / ""3"" / ""4"" (0x4b00bc / b8 / b4 / b0) or the 8 bytes at 0x4b008c, 0x13 the same 8 bytes, 0x14 steps down (above 4 -> 4), 0x15 / 0x16 up (above 4 -> 0). Returns 1, or 0 for other commands. Emulator fuzz"
+0x44d290,menu_movie_play,verified,"src/game/orig_xa.c. the movie menu's select handler: actions 6 / 7, when 0x4475f0(0) allows, run the chosen entry of the table 0x4af680 between 0x443a10 and 0x443b00 and return 1; else 0. Emulator fuzz"
+0x44d2f0,menu_movie_cb,verified,"src/game/orig_xa.c. the movie menu item: command 0x12 the chosen entry's name, 0x13 the text at 0x4af6f0, 0x14 index down (no wrap, sic), 0x15 / 0x16 up with wrap. Returns 1, or 0 for other commands. Emulator fuzz"
+0x44d3e0,menu_toggle_0c,verified,src/game/orig_xa.c. config +0x0c / +0x0e / +0x39 / +0x0a / +0x10 / +0x11 on/off. Emulator fuzz
+0x44d420,menu_toggle_0e,verified,src/game/orig_xa.c. Emulator fuzz
+0x44d460,menu_toggle_39,verified,src/game/orig_xa.c. Emulator fuzz
+0x44d4a0,menu_toggle_0a,verified,src/game/orig_xa.c. Emulator fuzz
+0x44d4e0,menu_race_bit_720_5,verified,"src/game/orig_xa.c. race +0x720 bits 5, 1, 2, 3, 4; 0x44d540, 0x44d590, 0x44d5e0, 0x44d640, 0x44d6a0, 0x44d700: race +0x721 bits 0, 1, 2, 3, 5, 4. Returns 1 when the bit is now clear. Emulator fuzz"
+0x44d540,menu_race_bit_721_0,verified,src/game/orig_xa.c. Emulator fuzz
+0x44d590,menu_race_bit_721_1,verified,src/game/orig_xa.c. Emulator fuzz
+0x44d5e0,menu_race_bit_721_2,verified,src/game/orig_xa.c. Emulator fuzz
+0x44d640,menu_race_bit_721_3,verified,src/game/orig_xa.c. Emulator fuzz
+0x44d6a0,menu_race_bit_721_5,verified,src/game/orig_xa.c. Emulator fuzz
+0x44d700,menu_race_bit_721_4,verified,src/game/orig_xa.c. Emulator fuzz
+0x44d760,menu_race_bit_720_1,verified,src/game/orig_xa.c. Emulator fuzz
+0x44d7b0,menu_race_bit_720_2,verified,src/game/orig_xa.c. Emulator fuzz
+0x44d810,menu_race_bit_720_3,verified,src/game/orig_xa.c. Emulator fuzz
+0x44d870,menu_race_bit_720_4,verified,src/game/orig_xa.c. Emulator fuzz
+0x44d8d0,menu_toggle_10,verified,src/game/orig_xa.c. Emulator fuzz
+0x44d910,menu_toggle_11,verified,src/game/orig_xa.c. Emulator fuzz
+0x44d950,menu_time_cb,verified,"src/game/orig_xa.c. the time item (config word +0x12, milliseconds; step 100, or 1000 with 0x4beb38 set): command 0x12 clamps it (0 -> 30000, then into 5000..60000) and prints it in seconds (""%.2f"" 0x4b00c8 of the float value / 1000.0f), 0x13 prints 60.0 with 0x4b00c0, 0x14 / 0x15..0x16 step it down / up (kept in 0..60000). Returns 1, or 0 for other commands. Emulator fuzz"
+0x44da90,menu_moved_idle,verified,src/game/orig_xa.c. a menu's moved handler: a tail jump to 0x448000 (attract mode timer restart); returns its result. Emulator fuzz
+0x44daa0,fecb_cheat_58b,verified,src/game/orig_xb.c. cheats menu: on/off race +0x58b. Emulator fuzz
+0x44dae0,fecb_cheat_58d,verified,src/game/orig_xb.c. cheats menu: on/off race +0x58d. Emulator fuzz
+0x44db20,fecb_onoff_92,verified,src/game/orig_xb.c. cheats menu: on/off option +0x92. Emulator fuzz
+0x44db60,fecb_choice4_80,verified,"src/game/orig_xb.c. the four-way option +0x80 (texts 0x4aff14), skipping the unavailable ones (0x448330); a change runs config_mirror_flag. Emulator fuzz"
+0x44dc50,fecb_goto_48,verified,"src/game/orig_xb.c. entry action: on accept (6/7) with select repeat, go to screen 0x48. Emulator fuzz"
+0x44dc90,fecb_refuse_sound,verified,"src/game/orig_xb.c. entry action: on accept with fewer than 2 (0x45f4f0) and select repeat, the ""can't"" sound 0x18. Emulator fuzz"
+0x44dce0,fecb_choice_8a,verified,"src/game/orig_xb.c. choice option +0x8a, 4 values (0x4aff3c). Emulator fuzz"
+0x44dd30,fecb_choice_87,verified,"src/game/orig_xb.c. choice option +0x87 (0x4aff70): 3 values when 0x4cb584 is set, fixed at 3 in a network game, else 2 values. Emulator fuzz"
+0x44de10,fecb_choice_88,verified,"src/game/orig_xb.c. choice option +0x88 (0x4aff70): fixed at 3 in a network game, else 2 values. Emulator fuzz"
+0x44dea0,fecb_onoff_34,verified,src/game/orig_xb.c. on/off option +0x34. Emulator fuzz
+0x44dee0,fecb_onoff_83,verified,src/game/orig_xb.c. on/off option +0x83. Emulator fuzz
+0x44df20,fecb_onoff_37,verified,src/game/orig_xb.c. on/off option +0x37. Emulator fuzz
+0x44df60,fecb_onoff_93,verified,src/game/orig_xb.c. on/off option +0x93. Emulator fuzz
+0x44dfa0,fecb_store_a0,verified,src/game/orig_xb.c. text entry done: 0x20 bytes from the edit buffer 0x4c2ac0 to option +0xa0. Emulator fuzz
+0x44e040,fecb_store_120,verified,src/game/orig_xb.c. text entry done: 11 bytes from 0x4c2f00 to option +0x120 (the player name). Emulator fuzz
+0x44e080,fecb_store_12b,verified,src/game/orig_xb.c. text entry done: 0x41 bytes from 0x4c2484 to option +0x12b. Emulator fuzz
+0x44e0b0,fecb_store_16c,verified,src/game/orig_xb.c. text entry done: 0x33 bytes from 0x4cb0dc to option +0x16c (the chat line). Emulator fuzz
+0x44e0e0,fecb_chat_send,verified,"src/game/orig_xb.c. chat line accepted (6/7): ""<name><0x4a7f94><line>"" sent (0x48d270), the line cleared, the screen rebuilt. The original's buffer is 0x40 bytes on its stack, unchecked. Emulator fuzz"
+0x44e1c0,fecb_store_c0,verified,src/game/orig_xb.c. text entry done: 0x20 bytes from 0x4ca82c to option +0xc0. Emulator fuzz
+0x44e1f0,fecb_edit_line,verified,src/game/orig_xb.c. entry action: the line being edited (0x4af708) = the entry's value. Emulator fuzz
+0x44e200,fecb_store_macro,verified,"src/game/orig_xb.c. text entry done: chat macro 0x4af708 (0..9) = text, at option +0xdce + 0x40 * n. Emulator fuzz"
+0x44e250,fecb_store_message,verified,"src/game/orig_xb.c. text entry done: system message 0x4af708 (0..0x1d) = text, at option +0x104e + 0x40 * n. Emulator fuzz"
+0x44e460,fecb_value_60c,verified,src/game/orig_xb.c. entry draw hook: 0x4af60c = value & 0xff. Emulator fuzz
+0x44e590,fecb_world_pick,verified,"src/game/orig_xb.c. world menu entry action: option +0x41 = the world, then series_validate (tail jump). Emulator fuzz"
+0x44e7e0,fecb_set_1d,verified,src/game/orig_xb.c. entry draw hook: option +0x1d = value when 0xf..0x12. Emulator fuzz
+0x44eb00,fecb_track_pick,verified,"src/game/orig_xb.c. track menu entry action: series_track_set(option +0x41, track), then track_menu_choice_fix (tail jump). Emulator fuzz"
+0x44eb20,fecb_track_menu,verified,"src/game/orig_xb.c. track menu: accept (6/7) goes back (0x4cb0d0 == 2) or to screen 0x4cb0d4 with mode 0x4cb0d0; 8/9 run 0x44ebb0(0x80, 0); each only with select repeat. Emulator fuzz"
+0x44eeb0,fecb_step_choice,verified,"src/game/orig_xb.c. repeat handler: up (0) / down (1) steps the screen's choice byte option +0xbcc + screen through 0..*0x4ca528-1 (wrapping on the way up, clamped), skipping the values whose bit is set in the mask *0x4c2910 (at most 0x20 tries); a change rebuilds the screen with sound 0x1b; 10 runs 0x448880. The original keeps the old value in its argument's slot. Emulator fuzz"
+0x44f510,fecb_profile_rename,verified,"src/game/orig_xb.c. name entry done: the profile name of slot *0x4c291c (low byte) = the 10 bytes at 0x4ca854, then track_records_rename(track 0x4c24c5, slot). Emulator fuzz"
+0x44fe60,fecb_set_mode,verified,"src/game/orig_xb.c. entry draw hook: option +4 = mode 1..4; modes 1/2 set +0x76 = 0/1 and +0x74 = 2, modes 3/4 set +0x74 = mode. Emulator fuzz"
+0x450000,fecb_number_2f,verified,"src/game/orig_xb.c. number option +0x2f (default and minimum race +0x585 + 3, up to 0x32). Emulator fuzz"
+0x450160,fecb_number_77,verified,"src/game/orig_xb.c. number option +0x77 (default 3, 1..0x32). Emulator fuzz"
+0x450260,fecb_race_585,verified,"src/game/orig_xb.c. race +0x585 (0..2, texts 0x4b0234), stepping over 1 unless race +0x720 bit 3 and over 2 unless bit 4; a step runs race_setting_trim. Emulator fuzz"
+0x450490,fecb_three_8b,verified,src/game/orig_xb.c. three-way option +0x8b (texts 0x4b0234). Emulator fuzz
+0x450580,fecb_onoff_24,verified,src/game/orig_xb.c. on/off option +0x24. Emulator fuzz
+0x4505e0,fecb_onoff_28,verified,src/game/orig_xb.c. on/off option +0x28. Emulator fuzz
+0x450640,fecb_onoff_29,verified,src/game/orig_xb.c. on/off option +0x29. Emulator fuzz
+0x450760,fecb_three_2c,verified,src/game/orig_xb.c. three-way option +0x2c (texts 0x4b0324). Emulator fuzz
+0x450950,fecb_render_44,verified,"src/game/orig_xb.c. on/off render flag 0x4acc44, applied (0x428a50 with 0x4be444, 0x4acc48, 0x4acc4c, 0x4acc58) and refreshed (0x4219d0). Emulator fuzz"
+0x4509c0,fecb_render_48,verified,"src/game/orig_xb.c. on/off render flag 0x4acc48, as 0x450950. Emulator fuzz"
+0x450a30,fecb_three_33,verified,src/game/orig_xb.c. three-way option +0x33 (texts 0x4b03e8). Emulator fuzz
+0x450ae0,fecb_blend_434,verified,"src/game/orig_xb.c. option dword +0x434 (0..3), shown as a number from 1 (0x4b0230); a step runs blend_modes_choose. Emulator fuzz"
+0x450cf0,fecb_choice_3a,verified,"src/game/orig_xb.c. choice option +0x3a, 9 values (0x4afe50). Emulator fuzz"
+0x450d40,comm_parity_option,verified,"src/game/orig_xc.c. parity choice (config +0x3f, 0..4). Emulator fuzz"
+0x450d90,comm_stopbits_option,verified,"src/game/orig_xc.c. stop bits choice (config +0x3e, 0..1). Emulator fuzz"
+0x450de0,comm_flowcontrol_option,verified,"src/game/orig_xc.c. flow control choice (config +0x3d, 0..3). Emulator fuzz"
+0x450e50,setup_weapons_toggle,verified,src/game/orig_xc.c. weapons on / off (race +0xa86); returns setting == 0. Emulator fuzz
+0x450f10,setup_mirror_toggle,verified,src/game/orig_xc.c. rear view mirror on / off (config +0x25); returns setting == 0. Emulator fuzz
+0x450f70,setup_weather_choice,verified,"src/game/orig_xc.c. weather choice (race +0xa89, 0..2). Emulator fuzz"
+0x451060,setup_daytime_choice,verified,"src/game/orig_xc.c. time of day choice (config +0x27, 0..3). Emulator fuzz"
+0x451300,audio_music_volume_slider,verified,"src/game/orig_xc.c. music volume slider: _ftol(value) to 0x471b30 (twice), the slider sound's volume word 0x4af610 = race +0xa7e. Emulator fuzz"
+0x451330,audio_effects_volume_slider,verified,"src/game/orig_xc.c. effects volume slider: _ftol(value) to 0x471b80, 0x4af610 = race +0xa7c. Emulator fuzz"
+0x451360,audio_toggle_4d4548,verified,src/game/orig_xc.c. switch 0x4d4548; returns it == 0. Emulator fuzz
+0x4513a0,audio_toggle_4b1c84,verified,"src/game/orig_xc.c. switch 0x4b1c84; returns 1 if 0x470eb0 says no, 0 if 0x4b1c88 is on, else it == 0. Emulator fuzz"
+0x451400,audio_toggle_4b1c88,verified,"src/game/orig_xc.c. switch 0x4b1c88 (also marks the menu for a redraw, 0x4cb58c, when sound is up); returns 1 if 0x470e70 says no, else it == 0. Emulator fuzz"
+0x451450,audio_toggle_4d4540,verified,src/game/orig_xc.c. switch 0x4d4540; returns it == 0. Emulator fuzz
+0x451490,audio_toggle_4d4544,verified,src/game/orig_xc.c. switch 0x4d4544; returns it == 0. Emulator fuzz
+0x4514d0,audio_toggle_4b1c78,verified,src/game/orig_xc.c. switch 0x4b1c78; returns it == 0. Emulator fuzz
+0x451510,audio_toggle_4b1c7c,verified,src/game/orig_xc.c. switch 0x4b1c7c; returns it == 0. Emulator fuzz
+0x451550,audio_toggle_4b1c80,verified,src/game/orig_xc.c. switch 0x4b1c80; returns it == 0. Emulator fuzz
+0x451590,audio_channels_choice,verified,"src/game/orig_xc.c. channel count choice: 0x12 prints 0x4b1c74 clamped to 8..64 (""%d""), 0x13 prints 64 (""%dW"" sic), 0x14 / 0x15 / 0x16 step the count by 4 (EAX on, 0x4beb38) or 1 through 0x470640. Emulator fuzz"
+0x451650,audio_speaker_choice,verified,"src/game/orig_xc.c. speaker mode choice: 0x12 shows text 3 / 4 / 2 for mode 0x4d454c 1 / 2 / other, 0x13 text 1, 0x14 / 0x15 / 0x16 cycle it (0x4705f0(1 or 0, 0)). Emulator fuzz"
+0x451720,audio_cd_track_action,verified,"src/game/orig_xc.c. the CD shuffle item's action handler: on select (6) with the select key's repeat passed, 0x496c60 (next CD track); returns 1, else 0. Emulator fuzz"
+0x451750,audio_cd_shuffle_choice,verified,"src/game/orig_xc.c. CD shuffle mode choice (race word +0x61e, 0..2): 0x12 text mode + 2, 0x13 text 1, 0x14 down (to 2 when it leaves the range), 0x15 / 0x16 up (to 0), then 0x496c50(mode). Emulator fuzz"
+0x451bf0,series_cursor_arrived,verified,"src/game/orig_xc.c. the series items' cursor callback (index, value): 0x4498d0 (value), its result returned. Emulator fuzz"
+0x452350,control_toggle_1a2,verified,src/game/orig_xc.c. the player's on / off byte +0x1a2; returns it == 0. Emulator fuzz
+0x4523c0,control_toggle_1a3,verified,src/game/orig_xc.c. the player's on / off byte +0x1a3; returns it == 0. Emulator fuzz
+0x452430,control_binding_action,verified,"src/game/orig_xc.c. the controls menu's binding items' action handler. With a valid player (0x4cb7e8 0..3) and cursor item: 0x48a420(player's pad) polls for input; select (6 / 7) with the select repeat passed starts capturing (0x48a560, 0x4cb7ec = 1, item +7 = 3, a sound); 0xa while capturing stores a key (0x4af448 set: key 0x4af438 unless it is Esc 0x1b) or a pad input (0x5d6234..0x5d623c) through control_entry_set 0x452640, or, not capturing, a type key (0xe3 / 0xe4 / 0xe5 -> 1 / 0 / 2) through 0x4526f0. Returns 1 when handled. Emulator fuzz"
+0x452760,control_pad_choice,verified,"src/game/orig_xc.c. the controls menu's pad choice (config +0x1a1 + 0x90 * player, 0xff none; pad count from 0x48a010): 0x12 shows the pad's name (0x48a590; a name over 24 characters starts after its first space in the last 24, ""Unknown"" if none, PC_MENU_OPTIONS_NONE for no pad), 0x13 handled, 0x14 / 0x15 / 0x16 step through none and the pads, set by 0x452900 (redraw 0x4cb58c). Returns 1 when handled. Emulator fuzz"
+0x452950,menu_countdown_handler,verified,"src/game/orig_xc.c. a menu's action handler: on 0xa the countdown 0x4cb168 (if positive) steps down, a redraw (0x4cb58c) when it reaches 0. Returns 0. Emulator fuzz"
+0x452d30,net_host_menu_handler,verified,"src/game/orig_xc.c. the network host menu's handler: 0xb refreshes (0x452c20; a redraw if 0x4cb540 or 0x4af8a0 is set, 0x4af8a0 = 0x4cb540); 0xa polls: 0x48d490 failing goes to screen 0x46, the session poll (2) answering 3 sets flag 9 off and goes to screen 0x53 (both drop the handler). Emulator fuzz"
+0x452db0,net_join_menu_handler,verified,"src/game/orig_xc.c. the network join menu's handler: as 0x452d30 with 0x4af8a4, the session poll (0) answering 2 going to screen 0x5b. Emulator fuzz"
+0x452e30,net_sessions_found_select,verified,src/game/orig_xc.c. the session search item's select callback: 0x4cb580 = 1 (stop searching). Emulator fuzz
+0x452e40,net_sessions_handler,verified,"src/game/orig_xc.c. the session search menu's handler. 0xb: 0x452ce0 and a redraw. 0xa: the countdown 0x4cb168 reaching 0 restarts the network (0x48a840(1, 0)), stamps the times 0x4cb578 / 0x4cb57c and opens the search (0x48b610); then every 500 ms 0x48b6d0 and a session list (0x48b780); a list with sessions (serial / modem link, config +0x80 >= 2) stops it (0x4cb580). Stopped, or after 5 s (120 s for config +0x80 == 3) with no countdown, it goes to screen 0x55. Failures go back. Returns 0. Emulator fuzz"
+0x453000,menu_counter_handler,verified,src/game/orig_xc.c. a menu's action handler: on 0xa the counter 0x4af654 steps up while it is 0..0x29. Returns 0. Emulator fuzz
+0x458310,pickup_fallen_hit,verified,src/game/orig_xc.c. a fallen pickup's hit callback (+0x148): 0x458320(body). Returns 0. Emulator fuzz
+0x4596f0,homer_hit,verified,"src/game/orig_xc.c. the homing missile's hit callback (+0x148): ends it (0x459610 (body, 0)); hitting something: a car (type 3) gets the blast (0x4599c0 (car, event)) and, from another car (owner +0x18c) not in state 8 at +0x70c, the kill message (0x4600a0(car +0x64e, owner +0x64e, 0xa)); the owner's flags get 0x20000 (sic: no check for an owner). Returns 0. Emulator fuzz"
+0x48dc20,snatch_hit,verified,"src/game/orig_xc.c. the snatcher's hit callback (+0x148): 0x48ddd0(body, 1). Returns 0. Emulator fuzz"
