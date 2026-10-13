@@ -94,3 +94,16 @@ and game allocations stay in the low arena, so structures keep their
   memory is compressed.
 
 Then 64-bit SDL3 and Vulkan, and no 32-bit libraries are needed.
+
+## After the 64-bit build
+
+- Sound on OpenAL Soft (decided 2026-10-13; waits for 64-bit because Arch
+  has no 32-bit OpenAL package). native/qmixer.c's 32 channels become
+  OpenAL sources (polar position to 3D, distance model as now; Doppler and
+  HRTF come with it). The game's EAX 1.0 use (src/game/orig_po.c:
+  environment preset 0..25, reverb volume, per-voice reverb mix, the
+  support check that greys out the menu option) goes to an EFX reverb with
+  the matching EFX_REVERB_PRESET_* (what OpenAL Soft's own EAX layer maps
+  to), so it doesn't depend on that layer being built in. CD music stays
+  on SDL.
+- Far objects drawn by the renderer (REROLL_FAR_OBJECTS is off).

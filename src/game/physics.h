@@ -173,6 +173,90 @@ void GAMEAPI ai_aim_at_node(uint8_t *car, int32_t *v, uint32_t line_index, uint3
 void GAMEAPI ai_steer_to(uint8_t *car, const int32_t *target, int32_t check, int32_t reverse);
 void GAMEAPI ai_drive(uint8_t *car);
 void GAMEAPI ai_pace(uint8_t *car);
+void GAMEAPI warp_tables_build(uint32_t power); /* 0x47d400 */
+int32_t GAMEAPI warp_texture_update(int32_t fade); /* 0x47d5a0 */
+void GAMEAPI warp_texture_render(int32_t du, int32_t dv, uint32_t bits, int32_t pitch, int32_t bpp); /* 0x47d6d0 */
+void GAMEAPI ice_texture_load(void); /* 0x47d7f0 */
+void GAMEAPI ice_texture_render(uint32_t bits, int32_t pitch, int32_t bpp); /* 0x47d8f0 */
+int32_t GAMEAPI warp_init(void); /* 0x47d980 */
+void GAMEAPI warp_overlay_draw(void); /* 0x47db20 */
+void GAMEAPI ice_overlay_draw(void); /* 0x47db80 */
+void GAMEAPI light_sprite_release(int32_t index); /* 0x47dca0 */
+void GAMEAPI sprites_draw(const uint8_t *list); /* 0x47dd70 */
+void GAMEAPI sprite_line_draw(uint8_t *s); /* 0x47e020 */
+void GAMEAPI sprite_marker_draw(uint8_t *s); /* 0x47e1b0 */
+void GAMEAPI light_sprite_draw(uint8_t *s); /* 0x47e220 */
+void GAMEAPI sprite_puff_draw(uint8_t *s); /* 0x47e2a0 */
+void GAMEAPI sprite_billboard_draw(uint8_t *s); /* 0x47e340 */
+void GAMEAPI sprite_flat_insert(uint8_t *pkt); /* 0x47e4c0 */
+void GAMEAPI sprite_colour_fill(uint32_t level, uint32_t code, uint32_t *rgb, uint8_t *alpha); /* 0x47e550 */
+void GAMEAPI sprite_quad_build(const uint32_t *pos, int32_t size, uint8_t *pkt, uint32_t mode, uint32_t flags, const uint8_t *sprite); /* 0x47e5f0 */
+void GAMEAPI sprite_corners_rotate(uint32_t angle, int32_t w, int32_t h, uint32_t *a, uint32_t *b); /* 0x47e980 */
+void GAMEAPI marker_proximity_tint(const uint8_t *body); /* 0x47ea00 */
+void GAMEAPI sprites_glare_draw(void); /* 0x47eaa0 */
+void GAMEAPI view_side_axis_update(void); /* 0x47ee90 */
+void GAMEAPI sprite_streak_build(const int16_t *pos, int32_t scale, uint8_t *pkt, int32_t shift); /* 0x47ef30 */
+void GAMEAPI car_light_trails_draw(void); /* 0x4821d0 */
+void GAMEAPI texture_anims_step(void); /* 0x478df0 */
+void GAMEAPI text_messages_draw(uint32_t owner, int32_t mode); /* 0x4792a0 */
+void GAMEAPI time_warp_view_effect(const uint32_t *slot); /* 0x479940 */
+uint32_t GAMEAPI time_warp_wobble_step(uint8_t *phase, uint32_t add, uint32_t row, uint32_t col,
+                                       uint32_t shift); /* 0x479a80 */
+int32_t GAMEAPI ps_wait_none(void); /* 0x479ae0 */
+void GAMEAPI view_surface_tint(uint8_t *slot); /* 0x479b30 */
+void GAMEAPI view_depth_markers_link(void); /* 0x479f60 */
+void GAMEAPI track_runs_visible(const uint8_t *cell, uint32_t *out); /* 0x47a0d0 */
+void GAMEAPI track_run_split(uint32_t *out, uint32_t kind, uint32_t start, uint32_t n, uint32_t level); /* 0x47a1d0 */
+int32_t track_quad_in_range(uint8_t *quad); /* 0x47a440: asm, cdecl */
+void GAMEAPI track_runs_diff_texture(uint32_t *now, uint32_t *before); /* 0x47a500 */
+uint32_t GAMEAPI car_glow_packets_draw(uint8_t *g, uint32_t ot_front, uint32_t ot_back); /* 0x47b470 */
+void GAMEAPI glow_texture_cycle(uint8_t *g); /* 0x47bc80 */
+void GAMEAPI cars_glow_texture_cycle(void); /* 0x47bd20 */
+void GAMEAPI debris_burst(int32_t x, int32_t y, int32_t z, uint32_t count, uint32_t spread,
+                          uint32_t colour); /* 0x47be70 */
+int32_t GAMEAPI object_debris_break(uint8_t *obj); /* 0x47c110 */
+void GAMEAPI track_runs_light_flags(uint32_t *list); /* 0x47c420 */
+void GAMEAPI track_runs_light(uint32_t *list, int32_t mode); /* 0x47c730 */
+int32_t GAMEAPI dir_change_unquoted(const char *name); /* 0x475030 */
+int32_t GAMEAPI path_access_ok(const char *name); /* 0x475070 */
+void GAMEAPI car_flame_shape(int32_t car, uint32_t *colours); /* 0x475290 */
+void GAMEAPI car_flame_draw(int32_t car, uint32_t ot_back, uint32_t ot_front); /* 0x475580 */
+int32_t GAMEAPI arena_init(void); /* 0x476a50 */
+int32_t GAMEAPI arena_shutdown(void); /* 0x476a90 */
+uint32_t GAMEAPI global_block_alloc(uint32_t size, int32_t track); /* 0x476ae0 */
+int32_t GAMEAPI global_block_free(uint32_t block); /* 0x476b40 */
+uint32_t GAMEAPI arena_alloc_low(uint32_t size); /* 0x476b80 */
+uint32_t GAMEAPI arena_alloc_high(uint32_t size); /* 0x476bc0 */
+uint32_t GAMEAPI arena_free_high(uint32_t size); /* 0x476c00 */
+uint32_t GAMEAPI os_file_open_read(const char *name); /* 0x476c30 */
+uint32_t GAMEAPI os_file_create(const char *name); /* 0x476d10 */
+uint32_t GAMEAPI os_file_open_rw(const char *name); /* 0x476d90 */
+int32_t GAMEAPI os_handle_close(uint32_t h); /* 0x476e10 */
+int32_t GAMEAPI os_handle_read(uint32_t h, void *buf, uint32_t n); /* 0x476e20 */
+int32_t GAMEAPI os_handle_write(uint32_t h, const void *buf, uint32_t n); /* 0x476e50 */
+uint32_t GAMEAPI os_handle_size(uint32_t h); /* 0x476e80 */
+uint32_t GAMEAPI os_handle_seek_end(uint32_t h); /* 0x476ea0 */
+int32_t GAMEAPI dbg_vlog_printf(const char *fmt, ...); /* 0x476ec0 */
+int32_t GAMEAPI path_find_exists(const char *path); /* 0x476f00 */
+void GAMEAPI exit_zero(void); /* 0x476f80 */
+int32_t GAMEAPI mm_timer_start_default(uint32_t *period, uint32_t delay, uint32_t callback); /* 0x476f90 */
+int32_t GAMEAPI mm_timer_start(uint32_t *period, uint32_t delay, uint32_t callback, uint32_t *id, uint32_t own); /* 0x476fb0 */
+int32_t GAMEAPI mm_timer_stop_default(uint32_t *period); /* 0x477090 */
+int32_t GAMEAPI mm_timer_stop(uint32_t *period, uint32_t *id); /* 0x4770b0 */
+void __attribute__((stdcall)) mm_timer_tick(uint32_t id, uint32_t msg, uint32_t user, uint32_t r1, uint32_t r2); /* 0x4770f0 */
+void __attribute__((stdcall)) mm_timer_tick_none(uint32_t id, uint32_t msg, uint32_t user, uint32_t r1, uint32_t r2); /* 0x477120 */
+uint32_t GAMEAPI window_class_register(uint32_t wndproc, uint32_t icon, uint32_t brush); /* 0x477130 */
+int32_t GAMEAPI dbg_log_line(const char *text, const char *tag); /* 0x4772e0 */
+void GAMEAPI fpu_init_single(void); /* 0x477420 */
+void GAMEAPI fpu_cw_save(void); /* 0x477440 */
+void GAMEAPI fpu_cw_restore(void); /* 0x477450 */
+int32_t GAMEAPI image_palette_to_16(uint8_t *img); /* 0x477460 */
+int32_t GAMEAPI image_bmp_load(const char *name, uint8_t *img, uint32_t flags); /* 0x477530 */
+void GAMEAPI pixels_blit_convert(const uint8_t *src, uint8_t *dst, int32_t src_stride, int32_t dst_stride, int32_t bpp, int32_t width, int32_t height, const uint16_t *pal); /* 0x477860 */
+int32_t GAMEAPI temp_file_name_get(const char *path, const char *prefix, char *out); /* 0x477910 */
+int32_t GAMEAPI directory_create(const char *path); /* 0x477930 */
+void GAMEAPI track_sections_draw(const uint32_t *list); /* 0x477940 */
+void GAMEAPI track_section_draw(uint8_t *sec, uint32_t row, int32_t rows, int32_t lod, uint32_t flags); /* 0x4779f0 */
 int32_t GAMEAPI shield_texture_animate(void); /* 0x46d0c0 */
 void GAMEAPI shield_texture_ripples(int32_t n, uint32_t bits, int32_t pitch, int32_t bpp); /* 0x46d170 */
 void GAMEAPI shield_texture_brighten(uint32_t unused, uint32_t bits, uint32_t pitch, int32_t bpp); /* 0x46d1f0 */
