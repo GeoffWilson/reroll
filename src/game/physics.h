@@ -173,6 +173,128 @@ void GAMEAPI ai_aim_at_node(uint8_t *car, int32_t *v, uint32_t line_index, uint3
 void GAMEAPI ai_steer_to(uint8_t *car, const int32_t *target, int32_t check, int32_t reverse);
 void GAMEAPI ai_drive(uint8_t *car);
 void GAMEAPI ai_pace(uint8_t *car);
+int32_t GAMEAPI shield_texture_animate(void); /* 0x46d0c0 */
+void GAMEAPI shield_texture_ripples(int32_t n, uint32_t bits, int32_t pitch, int32_t bpp); /* 0x46d170 */
+void GAMEAPI shield_texture_brighten(uint32_t unused, uint32_t bits, uint32_t pitch, int32_t bpp); /* 0x46d1f0 */
+void GAMEAPI shields_draw(void); /* 0x46dc50 */
+void GAMEAPI shield_packets_build(uint8_t *rec); /* 0x46dd20 */
+void GAMEAPI shield_packets_link(const uint8_t *car, uint32_t ot_back, uint32_t ot_front); /* 0x46dff0 */
+void GAMEAPI car_trail_texture_set(uint8_t *trail, uint32_t tex); /* 0x46e450 */
+void GAMEAPI car_trail_draw(uint8_t *car, uint32_t ot); /* 0x46e4b0 */
+void car_trail_packets_build(void); /* 0x46e540: asm entry, (car, ot) + the caller's esi */
+void GAMEAPI car_trail_uv(const uint32_t *pos, uint8_t *u, uint8_t *v, const int32_t *rot); /* 0x46ea10 */
+void GAMEAPI skid_marks_draw(void); /* 0x46f230 */
+int32_t GAMEAPI snd_chan_velocity(int32_t chan, uint32_t x, uint32_t y, uint32_t z); /* 0x470160 */
+int32_t GAMEAPI snd_profile_update(void); /* 0x470790 */
+uint32_t GAMEAPI snd_channel_eax_props(uint32_t chan); /* 0x471400 */
+int32_t GAMEAPI eax_voice_reverb_set(int32_t voice, uint32_t level); /* 0x4714c0 */
+int32_t GAMEAPI eax_environment_set(uint32_t env); /* 0x4716c0 */
+int32_t GAMEAPI eax_environment_get(uint32_t *out); /* 0x471740 */
+int32_t GAMEAPI eax_volume_set(uint32_t level); /* 0x471780 */
+int32_t GAMEAPI eax_volume_get(uint32_t *out); /* 0x471810 */
+int32_t GAMEAPI sound_mix_jump(void); /* 0x472040 */
+void GAMEAPI replay_file_delete(uint8_t *name); /* 0x474360 */
+void GAMEAPI replay_files_delete_all(void); /* 0x474470 */
+int32_t GAMEAPI dir_change_sub(const uint8_t *dir); /* 0x4747b0 */
+int32_t GAMEAPI cd_find_data_path(int32_t quiet); /* 0x474840 */
+int32_t GAMEAPI process_launch(const uint8_t *app, const uint8_t *args, uint32_t dir); /* 0x474a10 */
+int32_t GAMEAPI setup_program_launch(void); /* 0x474b90 */
+int32_t GAMEAPI chain_launch_and_wait(void); /* 0x474cf0 */
+uint8_t *GAMEAPI path_dir_make(uint8_t *dst, const uint8_t *src); /* 0x474ed0 */
+uint8_t *GAMEAPI cwd_path_quoted(uint8_t *dst); /* 0x474fa0 */
+void GAMEAPI pause_menu_draw(void); /* 0x463f90 */
+void GAMEAPI pause_menu_open(uint32_t kind, uint32_t sel); /* 0x464650 */
+int32_t GAMEAPI pause_menu_item_add(uint32_t kind, uint32_t sel); /* 0x464a20 */
+void GAMEAPI pause_menu_slider_set(uint32_t item, uint32_t kind, uint32_t angle); /* 0x464c10 */
+uint32_t GAMEAPI file_load_whole(uint32_t path); /* 0x465340 */
+uint32_t GAMEAPI file_open_retry(uint32_t path, uint32_t access); /* 0x465390 */
+int32_t GAMEAPI file_read_handle(uint32_t h, uint32_t buf, uint32_t n); /* 0x465460 */
+int32_t GAMEAPI file_close_handle(uint32_t h); /* 0x465480 */
+int32_t GAMEAPI file_size_get(uint32_t h); /* 0x465490 */
+int32_t GAMEAPI file_seek_set(uint32_t h, uint32_t off, uint32_t whence); /* 0x4654d0 */
+int32_t GAMEAPI file_append_data(uint32_t path, uint32_t buf, uint32_t n); /* 0x4654f0 */
+int32_t GAMEAPI file_write_handle(uint32_t h, uint32_t buf, uint32_t n); /* 0x465530 */
+uint32_t GAMEAPI root_name_get(void); /* 0x465550 */
+void GAMEAPI camera_shake_apply(uint32_t vec, uint32_t car); /* 0x466f70 */
+void GAMEAPI pickups_draw(void); /* 0x467ec0 */
+void GAMEAPI pickup_glow_draw(uint32_t p, uint32_t colour); /* 0x467f30 */
+void GAMEAPI pickup_rings_draw(uint32_t p); /* 0x467ff0 */
+void GAMEAPI meters_colour_set(uint32_t rgb); /* 0x469d60 */
+uint32_t GAMEAPI meter_level_get(uint32_t i); /* 0x469e80 */
+void GAMEAPI meters_link(uint32_t ot, uint32_t pair); /* 0x469f80 */
+int32_t GAMEAPI reg_key_close(void); /* 0x46b200 */
+int32_t GAMEAPI reg_key_open(uint32_t sub); /* 0x46b240 */
+int32_t GAMEAPI reg_key_create(uint32_t sub); /* 0x46b290 */
+int32_t GAMEAPI reg_key_unload(uint32_t name); /* 0x46b2f0 */
+int32_t GAMEAPI reg_value_type_query(uint32_t name); /* 0x46b330 */
+int32_t GAMEAPI reg_value_read(uint32_t name, uint32_t buf, int32_t size); /* 0x46b3f0 */
+int32_t GAMEAPI reg_value_write(uint32_t name, uint32_t data, int32_t size, uint32_t type); /* 0x46b490 */
+int32_t GAMEAPI reg_value_delete(uint32_t name); /* 0x46b4e0 */
+int32_t GAMEAPI reg_string_read(uint32_t name, uint32_t buf, int32_t size); /* 0x46b550 */
+int32_t GAMEAPI reg_dword_read(uint32_t name, uint32_t out); /* 0x46b5a0 */
+int32_t GAMEAPI reg_binary_read(uint32_t name, uint32_t buf, int32_t size); /* 0x46b600 */
+int32_t GAMEAPI reg_string_get(uint32_t key, uint32_t name, uint32_t buf, int32_t size); /* 0x46b650 */
+int32_t GAMEAPI reg_dword_get(uint32_t key, uint32_t name, uint32_t out); /* 0x46b690 */
+int32_t GAMEAPI reg_binary_get(uint32_t key, uint32_t name, uint32_t buf, int32_t size); /* 0x46b6d0 */
+int32_t GAMEAPI reg_binary_write(uint32_t name, uint32_t data, int32_t size); /* 0x46b710 */
+int32_t GAMEAPI reg_binary_set(uint32_t key, uint32_t name, uint32_t data, int32_t size); /* 0x46b730 */
+int32_t GAMEAPI reg_value_remove(uint32_t key, uint32_t name); /* 0x46b770 */
+int32_t GAMEAPI win_handle_close(uint32_t h); /* 0x46b7d0 */
+int32_t GAMEAPI win_mutex_create(uint32_t out, uint32_t name); /* 0x46b800 */
+int32_t GAMEAPI app_mutex_close(void); /* 0x46b850 */
+int32_t GAMEAPI app_mutex_create(uint32_t name); /* 0x46b870 */
+int32_t GAMEAPI win_handle_close_quiet(uint32_t h); /* 0x46b890 */
+int32_t GAMEAPI win_event_create(uint32_t out, uint32_t name); /* 0x46b8b0 */
+int32_t GAMEAPI win_event_open(uint32_t out, uint32_t name); /* 0x46b900 */
+int32_t GAMEAPI win_event_set(uint32_t h); /* 0x46b940 */
+int32_t GAMEAPI win_event_reset(uint32_t h); /* 0x46b950 */
+int32_t GAMEAPI env_var_get(uint32_t name, uint32_t buf, int32_t size); /* 0x46b960 */
+int32_t GAMEAPI env_var_length(uint32_t name); /* 0x46b9c0 */
+int32_t GAMEAPI env_var_exists(uint32_t name); /* 0x46b9e0 */
+void GAMEAPI shadows_draw(void); /* 0x46c840 */
+int32_t GAMEAPI shadow_project(uint32_t s, uint32_t view); /* 0x46c890 */
+void GAMEAPI shadow_add(uint32_t car, uint32_t ot); /* 0x46c9d0 */
+void GAMEAPI shadow_subdivide(uint32_t s, uint32_t tpage); /* 0x46caa0 */
+int32_t GAMEAPI net_pickup_send(int32_t slot, int32_t which, uint32_t kind, uint32_t data, uint32_t size); /* 0x45e6f0 */
+int32_t GAMEAPI net_weapon_kind_send(int32_t slot, int32_t which, uint32_t kind); /* 0x45e800 */
+int32_t GAMEAPI net_controls_store(uint32_t a, uint32_t b); /* 0x45ea60 */
+int32_t GAMEAPI net_controls_ready(void); /* 0x45eb60 */
+int32_t GAMEAPI net_race_over(void); /* 0x45eba0 */
+int32_t GAMEAPI net_controls_wait(void); /* 0x45ebc0 */
+int32_t GAMEAPI net_controls_changed(uint32_t i); /* 0x45ee10 */
+void GAMEAPI net_controls_history_set(uint32_t i, uint32_t a, uint32_t b, uint32_t t); /* 0x45ee60 */
+int32_t GAMEAPI net_player_free(uint32_t i); /* 0x45eeb0 */
+int32_t GAMEAPI net_time(void); /* 0x45eee0 */
+void GAMEAPI net_sequence_advance(void); /* 0x45ef40 */
+int32_t GAMEAPI net_wait_players_ready(void); /* 0x45ef90 */
+int32_t GAMEAPI net_race_started(void); /* 0x45f030 */
+int32_t GAMEAPI net_wait_race_start(void); /* 0x45f040 */
+int32_t GAMEAPI net_settings_sent(void); /* 0x45f0b0 */
+int32_t GAMEAPI net_cars_collect(void); /* 0x45f0c0 */
+void GAMEAPI net_states_count(uint8_t *out); /* 0x45f270 */
+int32_t GAMEAPI net_states_changed(void); /* 0x45f2c0 */
+int32_t GAMEAPI net_states_send(void); /* 0x45f310 */
+int32_t GAMEAPI net_menu_mode_unset(void); /* 0x45f390 */
+int32_t GAMEAPI net_menu_mode_send(void); /* 0x45f3a0 */
+int32_t GAMEAPI net_all_finished(void); /* 0x45f530 */
+void GAMEAPI net_chat_lines(int32_t *count, uint32_t *lines); /* 0x45f5b0 */
+void GAMEAPI net_player_list(int32_t *count, uint32_t *ids, uint32_t *names); /* 0x45f650 */
+int32_t GAMEAPI net_name_send(uint32_t flag); /* 0x45f7b0 */
+int32_t GAMEAPI net_results_allowed(void); /* 0x45f970 */
+int32_t GAMEAPI net_results_send(uint32_t value); /* 0x45f990 */
+int32_t GAMEAPI net_pause_request(uint32_t player); /* 0x45fa60 */
+int32_t GAMEAPI net_player_cheated(uint32_t from); /* 0x45fb90 */
+int32_t GAMEAPI net_finish_send(void); /* 0x45fc40 */
+int32_t GAMEAPI net_race_results_send(int32_t to); /* 0x45fca0 */
+int32_t GAMEAPI net_results_check(void); /* 0x45fde0 */
+int32_t GAMEAPI net_pause_due(uint32_t *player); /* 0x45fe70 */
+void GAMEAPI net_message_format(int32_t idx, uint32_t s1, uint32_t s2, char *out, uint32_t size); /* 0x45ff00 */
+void GAMEAPI net_kill_message(uint32_t victim, uint32_t attacker, uint32_t kind); /* 0x4600a0 */
+void GAMEAPI net_players_compact(void); /* 0x4609b0 */
+void GAMEAPI net_all_paused(void); /* 0x460a20 */
+int32_t GAMEAPI net_snatched_send(void); /* 0x460a90 */
+void GAMEAPI sparks_spawn(uint32_t n, uint32_t x, uint32_t y); /* 0x462ae0 */
+void GAMEAPI sparks_draw(uint32_t depth); /* 0x462bb0 */
 int32_t GAMEAPI netplay_chat_reset(void); /* 0x45c340 */
 void GAMEAPI netplay_body_pack(uint32_t body, uint32_t out); /* 0x45c350 */
 void GAMEAPI netplay_record_copy(const uint32_t *src, uint32_t *dst); /* 0x45c3c0 */

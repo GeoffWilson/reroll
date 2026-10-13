@@ -12,7 +12,7 @@ address,name,status,notes
 0x476e10,os_file_close,inferred,closes handle via import 0x4a3100
 0x476e20,os_file_read,understood,"(handle, buffer, size) -> ReadFile, returns success"
 0x476ea0,os_file_seek_end,inferred,"SetFilePointer(handle, 0, 0, FILE_END)"
-0x474840,cd_find_data_path,inferred,"checks drive type (GetDriveTypeA == 5, CD-ROM) and builds the Rollcage\\IDXData\\ path"
+0x474840,cd_find_data_path,verified,src/game/orig_po.c. the original's instructions ---- Emulator fuzz
 0x461700,vehicle_physics_region,inferred,start of vehicle update code seen by accident (fixed-point vector scaling 0x4618f4-0x461a35); not mapped yet
 0x489600,input_poll,verified,"src/game/input.c. Per frame: joysticks (DIJOYSTATE2) and keyboard (256 DIK_*). Deliberate fix: accepts DI_NOEFFECT from Poll (original required DI_OK, so USB pads were never read)"
 0x488d90,input_init,understood,"DirectInputCreateA(0x500), EnumDevices(joystick, attached only, callback 0x488e80), acquire joystick 0, then keyboard via 0x489910"
@@ -1828,3 +1828,124 @@ address,name,status,notes
 0x45e4a0,netplay_look_send,verified,"src/game/orig_pl.c. * strlen + 1 bytes, dwords first, forwards. Emulator fuzz"
 0x45e5b0,netplay_bad_message_reply,verified,"src/game/orig_pl.c. * strlen + 1 bytes, dwords first, forwards. Emulator fuzz"
 0x45e600,netplay_car_state_post,verified,"src/game/orig_pl.c. * strlen + 1 bytes, dwords first, forwards. Emulator fuzz"
+0x45e6f0,net_pickup_send,verified,src/game/orig_pm.c. the original's inline string code ---- Emulator fuzz
+0x45e800,net_weapon_kind_send,verified,src/game/orig_pm.c. the original's inline string code ---- Emulator fuzz
+0x45ea60,net_controls_store,verified,src/game/orig_pm.c. the original's inline string code ---- Emulator fuzz
+0x45eb60,net_controls_ready,verified,src/game/orig_pm.c. the original's inline string code ---- Emulator fuzz
+0x45eba0,net_race_over,verified,src/game/orig_pm.c. the original's inline string code ---- Emulator fuzz
+0x45ebc0,net_controls_wait,verified,src/game/orig_pm.c. the original's inline string code ---- Emulator fuzz
+0x45ee10,net_controls_changed,verified,src/game/orig_pm.c. the original's inline string code ---- Emulator fuzz
+0x45ee60,net_controls_history_set,verified,src/game/orig_pm.c. the original's inline string code ---- Emulator fuzz
+0x45eeb0,net_player_free,verified,src/game/orig_pm.c. the original's inline string code ---- Emulator fuzz
+0x45eee0,net_time,verified,src/game/orig_pm.c. the original's inline string code ---- Emulator fuzz
+0x45ef40,net_sequence_advance,verified,src/game/orig_pm.c. the original's inline string code ---- Emulator fuzz
+0x45ef90,net_wait_players_ready,verified,src/game/orig_pm.c. the original's inline string code ---- Emulator fuzz
+0x45f030,net_race_started,verified,src/game/orig_pm.c. the original's inline string code ---- Emulator fuzz
+0x45f040,net_wait_race_start,verified,src/game/orig_pm.c. the original's inline string code ---- Emulator fuzz
+0x45f0b0,net_settings_sent,verified,src/game/orig_pm.c. the original's inline string code ---- Emulator fuzz
+0x45f0c0,net_cars_collect,verified,src/game/orig_pm.c. the original's inline string code ---- Emulator fuzz
+0x45f270,net_states_count,verified,src/game/orig_pm.c. the original's inline string code ---- Emulator fuzz
+0x45f2c0,net_states_changed,verified,src/game/orig_pm.c. the original's inline string code ---- Emulator fuzz
+0x45f310,net_states_send,verified,src/game/orig_pm.c. the original's inline string code ---- Emulator fuzz
+0x45f390,net_menu_mode_unset,verified,src/game/orig_pm.c. the original's inline string code ---- Emulator fuzz
+0x45f3a0,net_menu_mode_send,verified,src/game/orig_pm.c. the original's inline string code ---- Emulator fuzz
+0x45f530,net_all_finished,verified,src/game/orig_pm.c. the original's inline string code ---- Emulator fuzz
+0x45f5b0,net_chat_lines,verified,src/game/orig_pm.c. the original's inline string code ---- Emulator fuzz
+0x45f650,net_player_list,verified,src/game/orig_pm.c. the original's inline string code ---- Emulator fuzz
+0x45f7b0,net_name_send,verified,src/game/orig_pm.c. the original's inline string code ---- Emulator fuzz
+0x45f970,net_results_allowed,verified,src/game/orig_pm.c. the original's inline string code ---- Emulator fuzz
+0x45f990,net_results_send,verified,src/game/orig_pm.c. the original's inline string code ---- Emulator fuzz
+0x45fa60,net_pause_request,verified,src/game/orig_pm.c. the original's inline string code ---- Emulator fuzz
+0x45fb90,net_player_cheated,verified,src/game/orig_pm.c. the original's inline string code ---- Emulator fuzz
+0x45fc40,net_finish_send,verified,src/game/orig_pm.c. the original's inline string code ---- Emulator fuzz
+0x45fca0,net_race_results_send,verified,src/game/orig_pm.c. the original's inline string code ---- Emulator fuzz
+0x45fde0,net_results_check,verified,src/game/orig_pm.c. the original's inline string code ---- Emulator fuzz
+0x45fe70,net_pause_due,verified,src/game/orig_pm.c. the original's inline string code ---- Emulator fuzz
+0x45ff00,net_message_format,verified,src/game/orig_pm.c. the original's inline string code ---- Emulator fuzz
+0x4600a0,net_kill_message,verified,src/game/orig_pm.c. the original's inline string code ---- Emulator fuzz
+0x4609b0,net_players_compact,verified,src/game/orig_pm.c. the original's inline string code ---- Emulator fuzz
+0x460a20,net_all_paused,verified,src/game/orig_pm.c. the original's inline string code ---- Emulator fuzz
+0x460a90,net_snatched_send,verified,src/game/orig_pm.c. the original's inline string code ---- Emulator fuzz
+0x462ae0,sparks_spawn,verified,src/game/orig_pm.c. the original's inline string code ---- Emulator fuzz
+0x462bb0,sparks_draw,verified,src/game/orig_pm.c. the original's inline string code ---- Emulator fuzz
+0x463f90,pause_menu_draw,verified,src/game/orig_pn.c. the original's instructions ---- Emulator fuzz
+0x464650,pause_menu_open,verified,src/game/orig_pn.c. the original's instructions ---- Emulator fuzz
+0x464a20,pause_menu_item_add,verified,src/game/orig_pn.c. the original's instructions ---- Emulator fuzz
+0x464c10,pause_menu_slider_set,verified,src/game/orig_pn.c. the original's instructions ---- Emulator fuzz
+0x465340,file_load_whole,verified,src/game/orig_pn.c. the original's instructions ---- Emulator fuzz
+0x465390,file_open_retry,verified,src/game/orig_pn.c. the original's instructions ---- Emulator fuzz
+0x465460,file_read_handle,verified,src/game/orig_pn.c. the original's instructions ---- Emulator fuzz
+0x465480,file_close_handle,verified,src/game/orig_pn.c. the original's instructions ---- Emulator fuzz
+0x465490,file_size_get,verified,src/game/orig_pn.c. the original's instructions ---- Emulator fuzz
+0x4654d0,file_seek_set,verified,src/game/orig_pn.c. the original's instructions ---- Emulator fuzz
+0x4654f0,file_append_data,verified,src/game/orig_pn.c. the original's instructions ---- Emulator fuzz
+0x465530,file_write_handle,verified,src/game/orig_pn.c. the original's instructions ---- Emulator fuzz
+0x465550,root_name_get,verified,src/game/orig_pn.c. the original's instructions ---- Emulator fuzz
+0x466f70,camera_shake_apply,verified,src/game/orig_pn.c. the original's instructions ---- Emulator fuzz
+0x467ec0,pickups_draw,verified,src/game/orig_pn.c. the original's instructions ---- Emulator fuzz
+0x467f30,pickup_glow_draw,verified,src/game/orig_pn.c. the original's instructions ---- Emulator fuzz
+0x467ff0,pickup_rings_draw,verified,src/game/orig_pn.c. the original's instructions ---- Emulator fuzz
+0x469d60,meters_colour_set,verified,src/game/orig_pn.c. the original's instructions ---- Emulator fuzz
+0x469e80,meter_level_get,verified,src/game/orig_pn.c. the original's instructions ---- Emulator fuzz
+0x469f80,meters_link,verified,src/game/orig_pn.c. the original's instructions ---- Emulator fuzz
+0x46b200,reg_key_close,verified,src/game/orig_pn.c. the original's instructions ---- Emulator fuzz
+0x46b240,reg_key_open,verified,src/game/orig_pn.c. the original's instructions ---- Emulator fuzz
+0x46b290,reg_key_create,verified,src/game/orig_pn.c. the original's instructions ---- Emulator fuzz
+0x46b2f0,reg_key_unload,verified,src/game/orig_pn.c. the original's instructions ---- Emulator fuzz
+0x46b330,reg_value_type_query,verified,src/game/orig_pn.c. the original's instructions ---- Emulator fuzz
+0x46b3f0,reg_value_read,verified,src/game/orig_pn.c. the original's instructions ---- Emulator fuzz
+0x46b490,reg_value_write,verified,src/game/orig_pn.c. the original's instructions ---- Emulator fuzz
+0x46b4e0,reg_value_delete,verified,src/game/orig_pn.c. the original's instructions ---- Emulator fuzz
+0x46b550,reg_string_read,verified,src/game/orig_pn.c. the original's instructions ---- Emulator fuzz
+0x46b5a0,reg_dword_read,verified,src/game/orig_pn.c. the original's instructions ---- Emulator fuzz
+0x46b600,reg_binary_read,verified,src/game/orig_pn.c. the original's instructions ---- Emulator fuzz
+0x46b650,reg_string_get,verified,src/game/orig_pn.c. the original's instructions ---- Emulator fuzz
+0x46b690,reg_dword_get,verified,src/game/orig_pn.c. the original's instructions ---- Emulator fuzz
+0x46b6d0,reg_binary_get,verified,src/game/orig_pn.c. the original's instructions ---- Emulator fuzz
+0x46b710,reg_binary_write,verified,src/game/orig_pn.c. the original's instructions ---- Emulator fuzz
+0x46b730,reg_binary_set,verified,src/game/orig_pn.c. the original's instructions ---- Emulator fuzz
+0x46b770,reg_value_remove,verified,src/game/orig_pn.c. the original's instructions ---- Emulator fuzz
+0x46b7d0,win_handle_close,verified,src/game/orig_pn.c. the original's instructions ---- Emulator fuzz
+0x46b800,win_mutex_create,verified,src/game/orig_pn.c. the original's instructions ---- Emulator fuzz
+0x46b850,app_mutex_close,verified,src/game/orig_pn.c. the original's instructions ---- Emulator fuzz
+0x46b870,app_mutex_create,verified,src/game/orig_pn.c. the original's instructions ---- Emulator fuzz
+0x46b890,win_handle_close_quiet,verified,src/game/orig_pn.c. the original's instructions ---- Emulator fuzz
+0x46b8b0,win_event_create,verified,src/game/orig_pn.c. the original's instructions ---- Emulator fuzz
+0x46b900,win_event_open,verified,src/game/orig_pn.c. the original's instructions ---- Emulator fuzz
+0x46b940,win_event_set,verified,src/game/orig_pn.c. the original's instructions ---- Emulator fuzz
+0x46b950,win_event_reset,verified,src/game/orig_pn.c. the original's instructions ---- Emulator fuzz
+0x46b960,env_var_get,verified,src/game/orig_pn.c. the original's instructions ---- Emulator fuzz
+0x46b9c0,env_var_length,verified,src/game/orig_pn.c. the original's instructions ---- Emulator fuzz
+0x46b9e0,env_var_exists,verified,src/game/orig_pn.c. the original's instructions ---- Emulator fuzz
+0x46c840,shadows_draw,verified,src/game/orig_pn.c. the original's instructions ---- Emulator fuzz
+0x46c890,shadow_project,verified,src/game/orig_pn.c. the original's instructions ---- Emulator fuzz
+0x46c9d0,shadow_add,verified,src/game/orig_pn.c. the original's instructions ---- Emulator fuzz
+0x46caa0,shadow_subdivide,verified,src/game/orig_pn.c. the original's instructions ---- Emulator fuzz
+0x46d0c0,shield_texture_animate,verified,"src/game/orig_po.c. asm entry, (car, ot) + the caller's esi Emulator fuzz"
+0x46d170,shield_texture_ripples,verified,"src/game/orig_po.c. asm entry, (car, ot) + the caller's esi Emulator fuzz"
+0x46d1f0,shield_texture_brighten,verified,"src/game/orig_po.c. asm entry, (car, ot) + the caller's esi Emulator fuzz"
+0x46dc50,shields_draw,verified,"src/game/orig_po.c. asm entry, (car, ot) + the caller's esi Emulator fuzz"
+0x46dd20,shield_packets_build,verified,"src/game/orig_po.c. asm entry, (car, ot) + the caller's esi Emulator fuzz"
+0x46dff0,shield_packets_link,verified,"src/game/orig_po.c. asm entry, (car, ot) + the caller's esi Emulator fuzz"
+0x46e450,car_trail_texture_set,verified,"src/game/orig_po.c. asm entry, (car, ot) + the caller's esi Emulator fuzz"
+0x46e4b0,car_trail_draw,verified,"src/game/orig_po.c. asm entry, (car, ot) + the caller's esi Emulator fuzz"
+0x46e540,car_trail_packets_build,verified,"src/game/orig_po.c. asm entry, (car, ot) + the caller's esi Emulator fuzz"
+0x46ea10,car_trail_uv,verified,src/game/orig_po.c. the original's instructions ---- Emulator fuzz
+0x46f230,skid_marks_draw,verified,src/game/orig_po.c. the original's instructions ---- Emulator fuzz
+0x470160,snd_chan_velocity,verified,src/game/orig_po.c. the original's instructions ---- Emulator fuzz
+0x470790,snd_profile_update,verified,src/game/orig_po.c. the original's instructions ---- Emulator fuzz
+0x471400,snd_channel_eax_props,verified,src/game/orig_po.c. the original's instructions ---- Emulator fuzz
+0x4714c0,eax_voice_reverb_set,verified,src/game/orig_po.c. the original's instructions ---- Emulator fuzz
+0x4716c0,eax_environment_set,verified,src/game/orig_po.c. the original's instructions ---- Emulator fuzz
+0x471740,eax_environment_get,verified,src/game/orig_po.c. the original's instructions ---- Emulator fuzz
+0x471780,eax_volume_set,verified,src/game/orig_po.c. the original's instructions ---- Emulator fuzz
+0x471810,eax_volume_get,verified,src/game/orig_po.c. the original's instructions ---- Emulator fuzz
+0x472040,sound_mix_jump,verified,src/game/orig_po.c. the original's instructions ---- Emulator fuzz
+0x474360,replay_file_delete,verified,src/game/orig_po.c. the original's instructions ---- Emulator fuzz
+0x474470,replay_files_delete_all,verified,src/game/orig_po.c. the original's instructions ---- Emulator fuzz
+0x4747b0,dir_change_sub,verified,src/game/orig_po.c. the original's instructions ---- Emulator fuzz
+0x474a10,process_launch,verified,src/game/orig_po.c. the original's instructions ---- Emulator fuzz
+0x474b90,setup_program_launch,verified,src/game/orig_po.c. the original's instructions ---- Emulator fuzz
+0x474cf0,chain_launch_and_wait,verified,src/game/orig_po.c. the original's instructions ---- Emulator fuzz
+0x474ed0,path_dir_make,verified,src/game/orig_po.c. the original's instructions ---- Emulator fuzz
+0x474fa0,cwd_path_quoted,verified,src/game/orig_po.c. the original's instructions ---- Emulator fuzz
