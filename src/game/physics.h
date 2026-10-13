@@ -173,6 +173,106 @@ void GAMEAPI ai_aim_at_node(uint8_t *car, int32_t *v, uint32_t line_index, uint3
 void GAMEAPI ai_steer_to(uint8_t *car, const int32_t *target, int32_t check, int32_t reverse);
 void GAMEAPI ai_drive(uint8_t *car);
 void GAMEAPI ai_pace(uint8_t *car);
+void GAMEAPI ff_effect_a_stop(int32_t dev); /* 0x489de0 */
+void GAMEAPI ff_periodic_play(int32_t dev, int32_t period, int32_t magnitude, int32_t duration); /* 0x489e10 */
+void GAMEAPI ff_effect_b_stop(int32_t dev); /* 0x489f40 */
+void GAMEAPI ff_device_stop_all(int32_t dev); /* 0x489f70 */
+int32_t GAMEAPI joy_device_count(void); /* 0x489fe0 */
+int32_t GAMEAPI joy_device_count_thunk(void); /* 0x48a010 */
+int32_t GAMEAPI dplay_init(void); /* 0x48a600 */
+void GAMEAPI dplay_pending_cancel(void); /* 0x48a670 */
+void GAMEAPI dplay_close(void); /* 0x48a6b0 */
+void GAMEAPI dplay_shutdown(void); /* 0x48a8b0 */
+int32_t GAMEAPI dplay_connections_probe(void); /* 0x48a9f0 */
+int32_t GAMEAPI dplay_connection_init(uint32_t address, uint32_t phone, uint32_t modem); /* 0x48ace0 */
+int32_t __attribute__((stdcall)) dplay_provider_dialog_proc(uint32_t hwnd, uint32_t msg, uint32_t wparam, uint32_t lparam); /* 0x48b320 */
+int32_t __attribute__((stdcall)) dplay_connection_enum_cb(uint32_t guid, uint32_t conn, uint32_t size, uint32_t name, uint32_t flags, uint32_t context); /* 0x48b3e0 */
+int32_t GAMEAPI dplay_session_join(int32_t index, uint32_t name); /* 0x48b7e0 */
+int32_t GAMEAPI dplay_session_host(uint32_t name, uint32_t session_name); /* 0x48b940 */
+int32_t GAMEAPI dplay_thread_start(void); /* 0x48bc40 */
+int32_t GAMEAPI net_player_slot_free(void); /* 0x48bd10 */
+int32_t GAMEAPI net_player_slot_of(uint32_t id); /* 0x48bd40 */
+int32_t GAMEAPI dplay_player_create(uint32_t name, int32_t host); /* 0x48bd70 */
+int32_t GAMEAPI net_player_remove(int32_t slot); /* 0x48bed0 */
+int32_t GAMEAPI net_message_checksum_ok(uint8_t *msg, uint32_t size); /* 0x48bfb0 */
+void GAMEAPI dplay_system_message(uint32_t msg, uint32_t size, uint32_t from, uint32_t to); /* 0x48bff0 */
+int32_t GAMEAPI net_inbox_push(uint32_t from, uint32_t to, uint32_t data, uint32_t size); /* 0x48c310 */
+int32_t GAMEAPI net_inbox_pop(uint32_t *from, uint32_t *to, uint32_t buf, uint32_t *size); /* 0x48c380 */
+uint32_t GAMEAPI net_lock(int32_t wait); /* 0x48c3f0 */
+int32_t GAMEAPI net_unlock(uint32_t h); /* 0x48c440 */
+int32_t GAMEAPI net_inbox_dispatch(void); /* 0x48c460 */
+int32_t GAMEAPI net_ack_track(uint32_t seq, uint32_t msgid, uint32_t to, uint32_t count, uint32_t flags); /* 0x48c530 */
+int32_t GAMEAPI net_player_check(uint32_t id); /* 0x48c5a0 */
+int32_t GAMEAPI net_game_message(uint32_t buf, uint32_t size, uint32_t from, uint32_t to); /* 0x48c5f0 */
+int32_t GAMEAPI dplay_receive_all(void); /* 0x48c630 */
+int32_t GAMEAPI net_ack_wait(uint32_t seq); /* 0x48c790 */
+int32_t GAMEAPI net_acks_wait_first(void); /* 0x48c830 */
+void GAMEAPI net_acks_clear(void); /* 0x48c900 */
+int32_t GAMEAPI net_player_lost_check(uint32_t id); /* 0x48c930 */
+void GAMEAPI net_send_buffer_forget(void); /* 0x48c9f0 */
+void GAMEAPI net_send_log(uint32_t from, uint32_t to, uint32_t flags, uint32_t data, uint32_t size, uint32_t count); /* 0x48ca00 */
+int32_t GAMEAPI net_resend(uint32_t to, uint32_t seq); /* 0x48cae0 */
+int32_t GAMEAPI net_message_send(uint32_t to, uint32_t msg, uint32_t size, uint32_t flags); /* 0x48cc30 */
+void GAMEAPI dplay_receive_thread(uint32_t arg); /* 0x48ce90 */
+void GAMEAPI dd_surfaces_clear(void); /* 0x487000 */
+int32_t GAMEAPI dd_create(int32_t dev); /* 0x487020 */
+int32_t GAMEAPI dd_mode_find(int32_t w, int32_t h, int32_t bpp); /* 0x4870d0 */
+int32_t GAMEAPI dd_modes_enum(void); /* 0x487160 */
+int32_t __attribute__((stdcall)) dd_mode_enum_cb(uint32_t desc, uint32_t ctx); /* 0x487190 */
+void GAMEAPI dd_shutdown(void); /* 0x487210 */
+int32_t GAMEAPI dd_mask_loss(uint32_t mask); /* 0x487300 */
+void GAMEAPI dd_pixel_format_get(uint32_t desc, uint32_t out); /* 0x487480 */
+int32_t GAMEAPI dd_surfaces_release(void); /* 0x487570 */
+int32_t GAMEAPI dd_surface_lock(uint32_t rect, uint32_t surf, uint32_t desc); /* 0x4875a0 */
+int32_t GAMEAPI dd_surface_unlock(uint32_t surf); /* 0x487610 */
+int32_t GAMEAPI dd_surface_desc_get(uint32_t desc, uint32_t surf); /* 0x487660 */
+int32_t GAMEAPI dd_surface_create(uint32_t desc, uint32_t out, int32_t sysmem); /* 0x4876a0 */
+int32_t GAMEAPI dd_window_origin(uint32_t hwnd, int32_t w, int32_t h); /* 0x4877d0 */
+int32_t GAMEAPI dd_primary_clear(void); /* 0x487830 */
+int32_t GAMEAPI dd_blit(uint32_t src, uint32_t dst, int32_t l, int32_t t, int32_t r, int32_t b, int32_t x, int32_t y); /* 0x4878d0 */
+int32_t __attribute__((stdcall)) dd_driver_enum_cb(uint32_t guid, uint32_t desc, uint32_t name, uint32_t ctx); /* 0x487a80 */
+int32_t GAMEAPI dd_drivers_enum(void); /* 0x487d50 */
+int32_t GAMEAPI dd_probe(void); /* 0x487d70 */
+int32_t GAMEAPI dd_start_3d(int32_t full, int32_t flip, int32_t w, int32_t h, int32_t d3d, int32_t no3d_hw, int32_t bpp); /* 0x487e10 */
+void GAMEAPI dd_driver_list_fill(uint32_t dlg, uint32_t id); /* 0x4883c0 */
+int32_t GAMEAPI dd_start_2d(int32_t full, int32_t flip, int32_t w, int32_t h, int32_t d3d, int32_t half, int32_t bpp); /* 0x4885d0 */
+int32_t GAMEAPI input_init(void); /* 0x488d90 */
+int32_t GAMEAPI di_device_create(uint32_t di, uint32_t guid, uint32_t out, uint32_t outer); /* 0x488e20 */
+int32_t __attribute__((stdcall)) input_enum_joystick(uint32_t inst, uint32_t ctx); /* 0x488e80 */
+void GAMEAPI joy_deadzone_set(int32_t joy, int32_t value, uint32_t obj); /* 0x489180 */
+void GAMEAPI joy_range_set(int32_t joy, uint32_t obj); /* 0x4891f0 */
+void GAMEAPI ff_effect_defaults(uint32_t e); /* 0x489250 */
+void GAMEAPI input_create_ff_effects(int32_t joy); /* 0x4892b0 */
+int32_t GAMEAPI joy_property_get(int32_t joy, uint32_t buf, uint32_t prop, uint32_t obj); /* 0x489500 */
+void GAMEAPI input_shutdown(void); /* 0x489560 */
+int32_t GAMEAPI input_init_keyboard(void); /* 0x489910 */
+void GAMEAPI ff_road_set(uint32_t joy, int32_t angle, int32_t mag); /* 0x489980 */
+void GAMEAPI ff_road_stop(int32_t joy); /* 0x489a80 */
+void GAMEAPI ff_spring_a_set(uint32_t joy, int32_t v); /* 0x489ab0 */
+void GAMEAPI ff_spring_a_stop(int32_t joy); /* 0x489b90 */
+void GAMEAPI ff_spring_b_set(uint32_t joy, int32_t v); /* 0x489bc0 */
+void GAMEAPI ff_spring_b_stop(int32_t joy); /* 0x489ca0 */
+void GAMEAPI ff_engine_set(uint32_t joy, int32_t period, int32_t mag); /* 0x489cd0 */
+void GAMEAPI projectile_trails_draw(void); /* 0x483210 */
+void GAMEAPI projectile_trail_draw(uint8_t *p); /* 0x483240 */
+void GAMEAPI lock_marker_quads(uint8_t *p, int32_t sx, int32_t sy); /* 0x483a80 */
+void GAMEAPI lock_marker_draw(uint8_t *rec); /* 0x483d20 */
+void GAMEAPI weather_draw(uint8_t *slot); /* 0x484980 */
+void GAMEAPI rain_drops_draw(int32_t i); /* 0x484a10 */
+void GAMEAPI snow_drops_draw(int32_t i); /* 0x484c20 */
+int32_t GAMEAPI net_tint_level_get(int32_t *out); /* 0x485050 */
+int32_t GAMEAPI flake_free_find(void); /* 0x485680 */
+void GAMEAPI screen_flakes_update(int32_t outdoors); /* 0x4857f0 */
+void GAMEAPI screen_flakes_draw(void); /* 0x485d00 */
+int32_t GAMEAPI weather_brightness(void); /* 0x486240 */
+int32_t GAMEAPI weather_level_lower(void); /* 0x486270 */
+int32_t GAMEAPI weather_sky_offset(void); /* 0x486310 */
+uint32_t GAMEAPI weather_palette_get(void); /* 0x486350 */
+int32_t GAMEAPI snatch_palette_build(void); /* 0x486450 */
+int32_t GAMEAPI snatch_texture_animate(void); /* 0x486540 */
+void GAMEAPI snatch_texture_blit(int32_t step, uint32_t dst, uint32_t pitch, uint32_t bpp); /* 0x486600 */
+int32_t GAMEAPI snatch_texture_setup(void); /* 0x486780 */
+void snatch_plasma_build(void); /* 0x4867a0: asm */
 void GAMEAPI warp_tables_build(uint32_t power); /* 0x47d400 */
 int32_t GAMEAPI warp_texture_update(int32_t fade); /* 0x47d5a0 */
 void GAMEAPI warp_texture_render(int32_t du, int32_t dv, uint32_t bits, int32_t pitch, int32_t bpp); /* 0x47d6d0 */
@@ -482,6 +582,7 @@ int32_t GAMEAPI car_screen_point(uint8_t *slot, int32_t *x, int32_t *y); /* 0x43
 void GAMEAPI hud_gap_bars(uint32_t level, uint8_t *slot); /* 0x43a4a0 */
 int32_t GAMEAPI archive_load_by_name(const char *name); /* 0x43b660 */
 int32_t GAMEAPI cpu_is_intel(void); /* 0x43c370 */
+int32_t GAMEAPI cpu_is_amd(void); /* 0x401050 */
 int32_t GAMEAPI cpu_feature_none(void); /* 0x43c3e0 */
 int32_t GAMEAPI leader_hit(uint8_t *body, uint8_t *hit, uint32_t a); /* 0x43f040 */
 void GAMEAPI light_cells_remove(uint32_t n); /* 0x4410f0 */

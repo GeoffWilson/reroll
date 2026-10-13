@@ -1,4 +1,5 @@
 address,name,status,notes
+0x401050,cpu_is_amd,ported,"src/game/st_sa.c. cpuid vendor vs ""AuthenticAMD"" (0x4a7038), as cpu_is_intel 0x43c370. Run in game (AMD CPU)"
 0x497860,gt20_decompress,verified,src/game/gt20.c. In-place LZ77 decoder for ROLLCAGE.IMG entries. Native test vs all 344 entries; in game since 2026-10-08
 0x496590,archive_entry_load,verified,"src/game/crt_ca.c. read entry `index` into `buf` (allocated when 0: unpacked size + record +0xc + 7). An entry can be stored more than once, the copies chained by record +0xe (0 ends); the copy closest to the current file position is read. A packed entry (stored size +4 != unpacked +8) is read to the end of the buffer (4-aligned) and unpacked in place. Emulator fuzz"
 0x496570,archive_get_record,verified,src/game/crt_ca.c. the index record of entry `index` (a word). Emulator fuzz
@@ -15,10 +16,10 @@ address,name,status,notes
 0x474840,cd_find_data_path,verified,src/game/orig_po.c. the original's instructions ---- Emulator fuzz
 0x461700,vehicle_physics_region,inferred,start of vehicle update code seen by accident (fixed-point vector scaling 0x4618f4-0x461a35); not mapped yet
 0x489600,input_poll,verified,"src/game/input.c. Per frame: joysticks (DIJOYSTATE2) and keyboard (256 DIK_*). Deliberate fix: accepts DI_NOEFFECT from Poll (original required DI_OK, so USB pads were never read)"
-0x488d90,input_init,understood,"DirectInputCreateA(0x500), EnumDevices(joystick, attached only, callback 0x488e80), acquire joystick 0, then keyboard via 0x489910"
-0x488e80,input_enum_joystick,understood,"EnumDevices callback: fills joystick record (0x4d7374 + n*0x43c), SetCooperativeLevel(exclusive|background), SetDataFormat(joystick2), EnumObjects(0x4890b0), FF effects if DIDC_FORCEFEEDBACK"
-0x489910,input_init_keyboard,understood,"CreateDevice(SysKeyboard) -> 0x4d6f34, SetCooperativeLevel(nonexclusive|foreground), SetDataFormat(keyboard), Acquire"
-0x4892b0,input_create_ff_effects,understood,"creates force-feedback effects for joystick n (CreateEffect x5, effect pointers at record +0x314..+0x328)"
+0x488d90,input_init,verified,src/game/orig_pt.c. the five texture surface slots 0x4d5f28..0x4d5f38 = 0. Emulator fuzz
+0x488e80,input_enum_joystick,verified,src/game/orig_pt.c. the five texture surface slots 0x4d5f28..0x4d5f38 = 0. Emulator fuzz
+0x489910,input_init_keyboard,verified,src/game/orig_pt.c. the five texture surface slots 0x4d5f28..0x4d5f38 = 0. Emulator fuzz
+0x4892b0,input_create_ff_effects,verified,src/game/orig_pt.c. the five texture surface slots 0x4d5f28..0x4d5f38 = 0. Emulator fuzz
 0x4890b0,input_enum_joystick_object,verified,"src/game/gl_gd.c. DirectInput EnumObjects callback (stdcall, 2 args, returns 1); axis objects. Emulator fuzz"
 0x489770,joy_button_down,verified,"src/game/st_sc.c. (joy, button): button < count at record +0x274 and state.buttons[button] != 0. Emulator fuzz"
 0x4897c0,joy_pov_dir,verified,"src/game/st_sc.c. (joy, code): code&0xf = POV index (< count at +0x280), code>>4 = 0 up/1 right/2 down/3 left by angle bands. Emulator fuzz"
@@ -2026,3 +2027,99 @@ address,name,status,notes
 0x47ee90,view_side_axis_update,verified,src/game/orig_pr.c. the original's instructions ---- Emulator fuzz
 0x47ef30,sprite_streak_build,verified,src/game/orig_pr.c. the original's instructions ---- Emulator fuzz
 0x4821d0,car_light_trails_draw,verified,src/game/orig_pr.c. the original's instructions ---- Emulator fuzz
+0x483210,projectile_trails_draw,verified,src/game/orig_ps.c. asm Emulator fuzz
+0x483240,projectile_trail_draw,verified,src/game/orig_ps.c. asm Emulator fuzz
+0x483a80,lock_marker_quads,verified,src/game/orig_ps.c. asm Emulator fuzz
+0x483d20,lock_marker_draw,verified,src/game/orig_ps.c. asm Emulator fuzz
+0x484980,weather_draw,verified,src/game/orig_ps.c. asm Emulator fuzz
+0x484a10,rain_drops_draw,verified,src/game/orig_ps.c. asm Emulator fuzz
+0x484c20,snow_drops_draw,verified,src/game/orig_ps.c. asm Emulator fuzz
+0x485050,net_tint_level_get,verified,src/game/orig_ps.c. asm Emulator fuzz
+0x485680,flake_free_find,verified,src/game/orig_ps.c. asm Emulator fuzz
+0x4857f0,screen_flakes_update,verified,src/game/orig_ps.c. asm Emulator fuzz
+0x485d00,screen_flakes_draw,verified,src/game/orig_ps.c. asm Emulator fuzz
+0x486240,weather_brightness,verified,src/game/orig_ps.c. asm Emulator fuzz
+0x486270,weather_level_lower,verified,src/game/orig_ps.c. asm Emulator fuzz
+0x486310,weather_sky_offset,verified,src/game/orig_ps.c. asm Emulator fuzz
+0x486350,weather_palette_get,verified,src/game/orig_ps.c. asm Emulator fuzz
+0x486450,snatch_palette_build,verified,src/game/orig_ps.c. asm Emulator fuzz
+0x486540,snatch_texture_animate,verified,src/game/orig_ps.c. asm Emulator fuzz
+0x486600,snatch_texture_blit,verified,src/game/orig_ps.c. asm Emulator fuzz
+0x486780,snatch_texture_setup,verified,src/game/orig_ps.c. asm Emulator fuzz
+0x4867a0,snatch_plasma_build,verified,src/game/orig_ps.c. asm Emulator fuzz
+0x487000,dd_surfaces_clear,verified,src/game/orig_pt.c. the five texture surface slots 0x4d5f28..0x4d5f38 = 0. Emulator fuzz
+0x487020,dd_create,verified,src/game/orig_pt.c. the five texture surface slots 0x4d5f28..0x4d5f38 = 0. Emulator fuzz
+0x4870d0,dd_mode_find,verified,src/game/orig_pt.c. the five texture surface slots 0x4d5f28..0x4d5f38 = 0. Emulator fuzz
+0x487160,dd_modes_enum,verified,src/game/orig_pt.c. the five texture surface slots 0x4d5f28..0x4d5f38 = 0. Emulator fuzz
+0x487190,dd_mode_enum_cb,verified,src/game/orig_pt.c. the five texture surface slots 0x4d5f28..0x4d5f38 = 0. Emulator fuzz
+0x487210,dd_shutdown,verified,src/game/orig_pt.c. the five texture surface slots 0x4d5f28..0x4d5f38 = 0. Emulator fuzz
+0x487300,dd_mask_loss,verified,src/game/orig_pt.c. the five texture surface slots 0x4d5f28..0x4d5f38 = 0. Emulator fuzz
+0x487480,dd_pixel_format_get,verified,src/game/orig_pt.c. the five texture surface slots 0x4d5f28..0x4d5f38 = 0. Emulator fuzz
+0x487570,dd_surfaces_release,verified,src/game/orig_pt.c. the five texture surface slots 0x4d5f28..0x4d5f38 = 0. Emulator fuzz
+0x4875a0,dd_surface_lock,verified,src/game/orig_pt.c. the five texture surface slots 0x4d5f28..0x4d5f38 = 0. Emulator fuzz
+0x487610,dd_surface_unlock,verified,src/game/orig_pt.c. the five texture surface slots 0x4d5f28..0x4d5f38 = 0. Emulator fuzz
+0x487660,dd_surface_desc_get,verified,src/game/orig_pt.c. the five texture surface slots 0x4d5f28..0x4d5f38 = 0. Emulator fuzz
+0x4876a0,dd_surface_create,verified,src/game/orig_pt.c. the five texture surface slots 0x4d5f28..0x4d5f38 = 0. Emulator fuzz
+0x4877d0,dd_window_origin,verified,src/game/orig_pt.c. the five texture surface slots 0x4d5f28..0x4d5f38 = 0. Emulator fuzz
+0x487830,dd_primary_clear,verified,src/game/orig_pt.c. the five texture surface slots 0x4d5f28..0x4d5f38 = 0. Emulator fuzz
+0x4878d0,dd_blit,verified,src/game/orig_pt.c. the five texture surface slots 0x4d5f28..0x4d5f38 = 0. Emulator fuzz
+0x487a80,dd_driver_enum_cb,verified,src/game/orig_pt.c. the five texture surface slots 0x4d5f28..0x4d5f38 = 0. Emulator fuzz
+0x487d50,dd_drivers_enum,verified,src/game/orig_pt.c. the five texture surface slots 0x4d5f28..0x4d5f38 = 0. Emulator fuzz
+0x487d70,dd_probe,verified,src/game/orig_pt.c. the five texture surface slots 0x4d5f28..0x4d5f38 = 0. Emulator fuzz
+0x487e10,dd_start_3d,verified,src/game/orig_pt.c. the five texture surface slots 0x4d5f28..0x4d5f38 = 0. Emulator fuzz
+0x4883c0,dd_driver_list_fill,verified,src/game/orig_pt.c. the five texture surface slots 0x4d5f28..0x4d5f38 = 0. Emulator fuzz
+0x4885d0,dd_start_2d,verified,src/game/orig_pt.c. the five texture surface slots 0x4d5f28..0x4d5f38 = 0. Emulator fuzz
+0x488e20,di_device_create,verified,src/game/orig_pt.c. the five texture surface slots 0x4d5f28..0x4d5f38 = 0. Emulator fuzz
+0x489180,joy_deadzone_set,verified,src/game/orig_pt.c. the five texture surface slots 0x4d5f28..0x4d5f38 = 0. Emulator fuzz
+0x4891f0,joy_range_set,verified,src/game/orig_pt.c. the five texture surface slots 0x4d5f28..0x4d5f38 = 0. Emulator fuzz
+0x489250,ff_effect_defaults,verified,src/game/orig_pt.c. the five texture surface slots 0x4d5f28..0x4d5f38 = 0. Emulator fuzz
+0x489500,joy_property_get,verified,src/game/orig_pt.c. the five texture surface slots 0x4d5f28..0x4d5f38 = 0. Emulator fuzz
+0x489560,input_shutdown,verified,src/game/orig_pt.c. the five texture surface slots 0x4d5f28..0x4d5f38 = 0. Emulator fuzz
+0x489980,ff_road_set,verified,src/game/orig_pt.c. the five texture surface slots 0x4d5f28..0x4d5f38 = 0. Emulator fuzz
+0x489a80,ff_road_stop,verified,src/game/orig_pt.c. the five texture surface slots 0x4d5f28..0x4d5f38 = 0. Emulator fuzz
+0x489ab0,ff_spring_a_set,verified,src/game/orig_pt.c. the five texture surface slots 0x4d5f28..0x4d5f38 = 0. Emulator fuzz
+0x489b90,ff_spring_a_stop,verified,src/game/orig_pt.c. the five texture surface slots 0x4d5f28..0x4d5f38 = 0. Emulator fuzz
+0x489bc0,ff_spring_b_set,verified,src/game/orig_pt.c. the five texture surface slots 0x4d5f28..0x4d5f38 = 0. Emulator fuzz
+0x489ca0,ff_spring_b_stop,verified,src/game/orig_pt.c. the five texture surface slots 0x4d5f28..0x4d5f38 = 0. Emulator fuzz
+0x489cd0,ff_engine_set,verified,src/game/orig_pt.c. the five texture surface slots 0x4d5f28..0x4d5f38 = 0. Emulator fuzz
+0x489de0,ff_effect_a_stop,verified,"src/game/orig_pu.c. the length first, then a forward copy (dwords then bytes: the same bytes as a forward byte copy, also when the strings overlap at least 4 bytes apart). Emulator fuzz"
+0x489e10,ff_periodic_play,verified,"src/game/orig_pu.c. the length first, then a forward copy (dwords then bytes: the same bytes as a forward byte copy, also when the strings overlap at least 4 bytes apart). Emulator fuzz"
+0x489f40,ff_effect_b_stop,verified,"src/game/orig_pu.c. the length first, then a forward copy (dwords then bytes: the same bytes as a forward byte copy, also when the strings overlap at least 4 bytes apart). Emulator fuzz"
+0x489f70,ff_device_stop_all,verified,"src/game/orig_pu.c. the length first, then a forward copy (dwords then bytes: the same bytes as a forward byte copy, also when the strings overlap at least 4 bytes apart). Emulator fuzz"
+0x489fe0,joy_device_count,verified,"src/game/orig_pu.c. the length first, then a forward copy (dwords then bytes: the same bytes as a forward byte copy, also when the strings overlap at least 4 bytes apart). Emulator fuzz"
+0x48a010,joy_device_count_thunk,verified,"src/game/orig_pu.c. the length first, then a forward copy (dwords then bytes: the same bytes as a forward byte copy, also when the strings overlap at least 4 bytes apart). Emulator fuzz"
+0x48a600,dplay_init,verified,"src/game/orig_pu.c. the length first, then a forward copy (dwords then bytes: the same bytes as a forward byte copy, also when the strings overlap at least 4 bytes apart). Emulator fuzz"
+0x48a670,dplay_pending_cancel,verified,"src/game/orig_pu.c. the length first, then a forward copy (dwords then bytes: the same bytes as a forward byte copy, also when the strings overlap at least 4 bytes apart). Emulator fuzz"
+0x48a6b0,dplay_close,verified,"src/game/orig_pu.c. the length first, then a forward copy (dwords then bytes: the same bytes as a forward byte copy, also when the strings overlap at least 4 bytes apart). Emulator fuzz"
+0x48a8b0,dplay_shutdown,verified,"src/game/orig_pu.c. the length first, then a forward copy (dwords then bytes: the same bytes as a forward byte copy, also when the strings overlap at least 4 bytes apart). Emulator fuzz"
+0x48a9f0,dplay_connections_probe,verified,"src/game/orig_pu.c. the length first, then a forward copy (dwords then bytes: the same bytes as a forward byte copy, also when the strings overlap at least 4 bytes apart). Emulator fuzz"
+0x48ace0,dplay_connection_init,verified,"src/game/orig_pu.c. the length first, then a forward copy (dwords then bytes: the same bytes as a forward byte copy, also when the strings overlap at least 4 bytes apart). Emulator fuzz"
+0x48b320,dplay_provider_dialog_proc,verified,"src/game/orig_pu.c. the length first, then a forward copy (dwords then bytes: the same bytes as a forward byte copy, also when the strings overlap at least 4 bytes apart). Emulator fuzz"
+0x48b3e0,dplay_connection_enum_cb,verified,"src/game/orig_pu.c. the length first, then a forward copy (dwords then bytes: the same bytes as a forward byte copy, also when the strings overlap at least 4 bytes apart). Emulator fuzz"
+0x48b7e0,dplay_session_join,verified,"src/game/orig_pu.c. the length first, then a forward copy (dwords then bytes: the same bytes as a forward byte copy, also when the strings overlap at least 4 bytes apart). Emulator fuzz"
+0x48b940,dplay_session_host,verified,"src/game/orig_pu.c. the length first, then a forward copy (dwords then bytes: the same bytes as a forward byte copy, also when the strings overlap at least 4 bytes apart). Emulator fuzz"
+0x48bc40,dplay_thread_start,verified,"src/game/orig_pu.c. the length first, then a forward copy (dwords then bytes: the same bytes as a forward byte copy, also when the strings overlap at least 4 bytes apart). Emulator fuzz"
+0x48bd10,net_player_slot_free,verified,"src/game/orig_pu.c. the length first, then a forward copy (dwords then bytes: the same bytes as a forward byte copy, also when the strings overlap at least 4 bytes apart). Emulator fuzz"
+0x48bd40,net_player_slot_of,verified,"src/game/orig_pu.c. the length first, then a forward copy (dwords then bytes: the same bytes as a forward byte copy, also when the strings overlap at least 4 bytes apart). Emulator fuzz"
+0x48bd70,dplay_player_create,verified,"src/game/orig_pu.c. the length first, then a forward copy (dwords then bytes: the same bytes as a forward byte copy, also when the strings overlap at least 4 bytes apart). Emulator fuzz"
+0x48bed0,net_player_remove,verified,"src/game/orig_pu.c. the length first, then a forward copy (dwords then bytes: the same bytes as a forward byte copy, also when the strings overlap at least 4 bytes apart). Emulator fuzz"
+0x48bfb0,net_message_checksum_ok,verified,"src/game/orig_pu.c. the length first, then a forward copy (dwords then bytes: the same bytes as a forward byte copy, also when the strings overlap at least 4 bytes apart). Emulator fuzz"
+0x48bff0,dplay_system_message,verified,"src/game/orig_pu.c. the length first, then a forward copy (dwords then bytes: the same bytes as a forward byte copy, also when the strings overlap at least 4 bytes apart). Emulator fuzz"
+0x48c310,net_inbox_push,verified,"src/game/orig_pu.c. the length first, then a forward copy (dwords then bytes: the same bytes as a forward byte copy, also when the strings overlap at least 4 bytes apart). Emulator fuzz"
+0x48c380,net_inbox_pop,verified,"src/game/orig_pu.c. the length first, then a forward copy (dwords then bytes: the same bytes as a forward byte copy, also when the strings overlap at least 4 bytes apart). Emulator fuzz"
+0x48c3f0,net_lock,verified,"src/game/orig_pu.c. the length first, then a forward copy (dwords then bytes: the same bytes as a forward byte copy, also when the strings overlap at least 4 bytes apart). Emulator fuzz"
+0x48c440,net_unlock,verified,"src/game/orig_pu.c. the length first, then a forward copy (dwords then bytes: the same bytes as a forward byte copy, also when the strings overlap at least 4 bytes apart). Emulator fuzz"
+0x48c460,net_inbox_dispatch,verified,"src/game/orig_pu.c. the length first, then a forward copy (dwords then bytes: the same bytes as a forward byte copy, also when the strings overlap at least 4 bytes apart). Emulator fuzz"
+0x48c530,net_ack_track,verified,"src/game/orig_pu.c. the length first, then a forward copy (dwords then bytes: the same bytes as a forward byte copy, also when the strings overlap at least 4 bytes apart). Emulator fuzz"
+0x48c5a0,net_player_check,verified,"src/game/orig_pu.c. the length first, then a forward copy (dwords then bytes: the same bytes as a forward byte copy, also when the strings overlap at least 4 bytes apart). Emulator fuzz"
+0x48c5f0,net_game_message,verified,"src/game/orig_pu.c. the length first, then a forward copy (dwords then bytes: the same bytes as a forward byte copy, also when the strings overlap at least 4 bytes apart). Emulator fuzz"
+0x48c630,dplay_receive_all,verified,"src/game/orig_pu.c. the length first, then a forward copy (dwords then bytes: the same bytes as a forward byte copy, also when the strings overlap at least 4 bytes apart). Emulator fuzz"
+0x48c790,net_ack_wait,verified,"src/game/orig_pu.c. the length first, then a forward copy (dwords then bytes: the same bytes as a forward byte copy, also when the strings overlap at least 4 bytes apart). Emulator fuzz"
+0x48c830,net_acks_wait_first,verified,"src/game/orig_pu.c. the length first, then a forward copy (dwords then bytes: the same bytes as a forward byte copy, also when the strings overlap at least 4 bytes apart). Emulator fuzz"
+0x48c900,net_acks_clear,verified,"src/game/orig_pu.c. the length first, then a forward copy (dwords then bytes: the same bytes as a forward byte copy, also when the strings overlap at least 4 bytes apart). Emulator fuzz"
+0x48c930,net_player_lost_check,verified,"src/game/orig_pu.c. the length first, then a forward copy (dwords then bytes: the same bytes as a forward byte copy, also when the strings overlap at least 4 bytes apart). Emulator fuzz"
+0x48c9f0,net_send_buffer_forget,verified,"src/game/orig_pu.c. the length first, then a forward copy (dwords then bytes: the same bytes as a forward byte copy, also when the strings overlap at least 4 bytes apart). Emulator fuzz"
+0x48ca00,net_send_log,verified,"src/game/orig_pu.c. the length first, then a forward copy (dwords then bytes: the same bytes as a forward byte copy, also when the strings overlap at least 4 bytes apart). Emulator fuzz"
+0x48cae0,net_resend,verified,"src/game/orig_pu.c. the length first, then a forward copy (dwords then bytes: the same bytes as a forward byte copy, also when the strings overlap at least 4 bytes apart). Emulator fuzz"
+0x48cc30,net_message_send,verified,"src/game/orig_pu.c. the length first, then a forward copy (dwords then bytes: the same bytes as a forward byte copy, also when the strings overlap at least 4 bytes apart). Emulator fuzz"
+0x48ce90,dplay_receive_thread,verified,"src/game/orig_pu.c. the length first, then a forward copy (dwords then bytes: the same bytes as a forward byte copy, also when the strings overlap at least 4 bytes apart). Emulator fuzz"

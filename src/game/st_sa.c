@@ -849,12 +849,32 @@ void GAMEAPI network_average(int32_t *out)
     *out = 0;
 }
 
-/* 0x401000: the AMD 3DNow! check (cpuid helpers stay original). */
+/* 0x401050: cpuid 0's vendor compared with "AuthenticAMD" (0x4a7038);
+ * 1 if equal (as cpu_is_intel 0x43c370). */
+int32_t GAMEAPI cpu_is_amd(void)
+{
+    uint32_t v[4], a = 0, b, c, d;
+    const uint8_t *p = (const uint8_t *)v, *q = PTR(0x4a7038);
+
+    __asm__ volatile("cpuid" : "+a"(a), "=b"(b), "=c"(c), "=d"(d));
+    v[0] = b;
+    v[1] = d;
+    v[2] = c;
+    v[3] = 0;
+    for (;; p++, q++) {
+        if (*p != *q)
+            return 0;
+        if (*p == 0)
+            return 1;
+    }
+}
+
+/* 0x401000: the AMD 3DNow! check. */
 int32_t GAMEAPI cpu_detect_amd(void)
 {
     G32(0x4b5e44) = 0;
     G32(0x4b5e48) = 0;
-    if (CALL0(0x41c8c0) && CALL0(0x401050) && CALL0(0x4010c0)) {
+    if (CALL0(0x41c8c0) && cpu_is_amd() && CALL0(0x4010c0)) {
         G32(0x4b5e44) = 1;
         G32(0x4b5e48) = CALL0(0x4010f0);
     }
