@@ -173,6 +173,56 @@ void GAMEAPI ai_aim_at_node(uint8_t *car, int32_t *v, uint32_t line_index, uint3
 void GAMEAPI ai_steer_to(uint8_t *car, const int32_t *target, int32_t check, int32_t reverse);
 void GAMEAPI ai_drive(uint8_t *car);
 void GAMEAPI ai_pace(uint8_t *car);
+int32_t GAMEAPI texture_upload_body(int32_t page, int32_t w, int32_t h, uint32_t pixels, uint32_t palette, uint32_t flags); /* 0x41e710 */
+void GAMEAPI vk_probe_body(void); /* 0x41f720 */
+uint32_t GAMEAPI create_window_body(uint32_t unused, int32_t x, int32_t y, int32_t w, int32_t h, int32_t fullscreen); /* 0x4771c0 */
+int32_t GAMEAPI flip_body(void); /* 0x4876f0 */
+void GAMEAPI race_draw_body(void); /* 0x443b50 */
+uint32_t GAMEAPI sound_play_body(uint32_t sound, uint32_t kind, uint32_t pitch, uint32_t vol, uint32_t world); /* 0x471c90 */
+uint32_t GAMEAPI sound_moving_body(uint32_t unused, uint32_t sound, uint32_t kind, uint32_t pitch, uint32_t vol, uint32_t world, uint32_t velocity); /* 0x471da0 */
+void GAMEAPI crt_fpmt_nop(void); /* 0x4979b7 */
+void crt_fpmt_patch(void); /* points _FPmtinit / _FPmtterm 0x4b4ab0 / 0x4b4ab4 at crt_fpmt_nop */
+int32_t __attribute__((fastcall)) fmv_audio_close(uint8_t *player); /* 0x493a10 */
+uint32_t __attribute__((fastcall)) fmv_colour_tables_build(int32_t bpp, uint32_t alpha, uint32_t no_dither); /* 0x493aa0 */
+uint32_t __attribute__((fastcall)) fmv_colour_pack(int32_t bpp, int32_t r, int32_t g, int32_t b, uint32_t alpha, uint32_t no_dither); /* 0x493bd0 */
+void __attribute__((fastcall)) fmv_block_fill(uint32_t y0, uint32_t y1, uint32_t y2, uint32_t y3, uint32_t cb, uint32_t cr, uint32_t dst, uint32_t pitch); /* 0x493e80 */
+void __attribute__((fastcall)) fmv_present_16(uint8_t *player); /* 0x494040 */
+void __attribute__((fastcall)) fmv_blit_16(uint8_t *player, uint32_t dst, uint32_t pitch); /* 0x4940e0 */
+void __attribute__((fastcall)) fmv_present_24(uint8_t *player); /* 0x4943b0 */
+void __attribute__((fastcall)) fmv_blit_24(uint8_t *player, uint32_t dst, uint32_t pitch); /* 0x494450 */
+void __attribute__((fastcall)) fmv_present_32(uint8_t *player); /* 0x494740 */
+void __attribute__((fastcall)) fmv_blit_32(uint8_t *player, uint32_t dst, uint32_t pitch); /* 0x4947e0 */
+void __attribute__((fastcall)) fmv_frame_decode(uint8_t *player, const uint8_t *src, uint32_t cur, uint32_t prev); /* 0x494b20 */
+uint32_t __attribute__((fastcall)) fmv_frames_swap(uint8_t *player); /* 0x494d30 */
+void __attribute__((fastcall)) fmv_video_init(uint8_t *player); /* 0x494d40 */
+void __attribute__((fastcall)) fmv_video_free(uint8_t *player); /* 0x494ed0 */
+void __attribute__((fastcall)) fmv_video_frame(uint8_t *player, const uint32_t *rec); /* 0x494f10 */
+void fmv_adpcm_mono(void); /* 0x495000: asm entry, cdecl, keeps every register */
+void GAMEAPI fmv_adpcm_mono_c(int32_t start, const uint8_t *src, uint16_t *dst, int32_t n, uint32_t *pred, uint32_t *index); /* 0x495000 body */
+void fmv_adpcm_stereo(void); /* 0x4950a3: asm entry, cdecl, keeps every register */
+void GAMEAPI fmv_adpcm_stereo_c(uint32_t unused, const uint8_t *src, uint16_t *dst, int32_t n, uint32_t *pred, uint32_t *index); /* 0x4950a3 body */
+uint32_t __attribute__((fastcall)) fmv_rle_unpack(const uint8_t *src, uint8_t *dst, int32_t n); /* 0x495220 */
+void GAMEAPI fmv_block_coeffs(void); /* 0x4952c0 */
+void fmv_idct_rows(void); /* 0x49545b: asm entry, register argument esi (8 coefficients) */
+void GAMEAPI fmv_idct_rows_c(const int32_t *s); /* 0x49545b body */
+void fmv_idct_cols(void); /* 0x4955be: asm entry, register argument esi (8 values) */
+void GAMEAPI fmv_idct_cols_c(const int32_t *s); /* 0x4955be body */
+void fmv_row_to_pixels(void); /* 0x4956d2: asm entry, register arguments esi (Y), ebx (Cb, Cr +0x100), edi (out) */
+void GAMEAPI fmv_row_to_pixels_c(const uint32_t *y, const uint32_t *c, uint32_t *out); /* 0x4956d2 body */
+void fmv_macroblock_decode(void); /* 0x495958: asm entry, cdecl, keeps all but eax */
+void GAMEAPI fmv_macroblock_decode_c(const uint8_t *src, uint32_t dst, uint32_t pitch); /* 0x495958 body */
+void GAMEAPI frustum_body(float x, float y, float w, float h, float focal); /* 0x417ed0 */
+void GAMEAPI viewport_body(int32_t x, int32_t y, int32_t w, int32_t h); /* 0x41f2d0 */
+void GAMEAPI objects_body(void); /* 0x459b20 */
+void GAMEAPI countdown_body(void); /* 0x46a9e0 */
+uint32_t *GAMEAPI visibility_body(uint8_t *cell); /* 0x47a030 */
+void GAMEAPI flake_spawn_body(int32_t i); /* 0x485140 */
+void GAMEAPI sparkle_body(uint8_t *camera); /* 0x490430 */
+void GAMEAPI camera_matrix_body(void); /* 0x423d30 */
+void subunit_transform_body(void); /* 0x426a20: asm, (record); leaves st(0) for *0x6ccd80, eax = z bits, ecx = record, edx = code */
+void subunit_transform_only_body(void); /* 0x426be0: asm, (record); st(0) as 0x426a20 when z >= 0, else empty stack */
+void GAMEAPI hud_body(uint8_t *view); /* 0x438310 */
+void GAMEAPI draw_view_body(uint8_t *view); /* 0x479be0 */
 void GAMEAPI ff_effect_a_stop(int32_t dev); /* 0x489de0 */
 void GAMEAPI ff_periodic_play(int32_t dev, int32_t period, int32_t magnitude, int32_t duration); /* 0x489e10 */
 void GAMEAPI ff_effect_b_stop(int32_t dev); /* 0x489f40 */
@@ -809,7 +859,8 @@ int32_t GAMEAPI d3d_shutdown(void); /* 0x41d130 */
 int32_t GAMEAPI d3d_device_create(void); /* 0x41d1f0 */
 int32_t GAMEAPI d3d_devices_enumerate(void); /* 0x41d250 */
 int32_t GAMEAPI d3d_device_pick(void); /* 0x41d6d0 */
-int32_t GAMEAPI d3d_texture_format_pick(void); /* 0x41d730 */
+int32_t GAMEAPI d3d_texture_format_pick(void);
+int32_t __attribute__((stdcall)) d3d_texture_format_cb(const uint8_t *desc, void *context); /* 0x41d790 */ /* 0x41d730 */
 int32_t GAMEAPI texture_slot_release(int32_t i); /* 0x41d890 */
 int32_t GAMEAPI texture_slots_release(void); /* 0x41d910 */
 int32_t GAMEAPI texture_slot_handle(int32_t i); /* 0x41d940 */

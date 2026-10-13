@@ -105,8 +105,8 @@ struct sound_call {
 static enum phase phase;
 static struct sound_call sounds[MAX_SOUNDS];
 static int sound_count, sound_next, sound_mismatch;
-static sound_fn sound_play_original;
-static sound_moving_fn sound_moving_original;
+uint32_t GAMEAPI sound_play_body(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t); /* 0x471c90, src/game/orig_wc.c */
+uint32_t GAMEAPI sound_moving_body(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t); /* 0x471da0 */
 
 /* Replay: the recorded voice for this call, or 0x7f ("no channel"). */
 static uint32_t sound_replay(uint32_t kind, const uint32_t *args)
@@ -136,7 +136,7 @@ static uint32_t GAMEAPI sound_play_hook(uint32_t a, uint32_t b, uint32_t c, uint
 
     if (phase == PHASE_REPLAY)
         return sound_replay(0, args);
-    result = sound_play_original(a, b, c, d, e);
+    result = sound_play_body(a, b, c, d, e);
     sound_record(0, args, result);
     return result;
 }
@@ -151,7 +151,7 @@ static uint32_t GAMEAPI sound_moving_hook(uint32_t a, uint32_t b, uint32_t c, ui
 
     if (phase == PHASE_REPLAY)
         return sound_replay(1, args);
-    result = sound_moving_original(a, b, c, d, e, f, g);
+    result = sound_moving_body(a, b, c, d, e, f, g);
     sound_record(1, args, result);
     return result;
 }
@@ -160,7 +160,6 @@ static const struct hook sound_hook = {
     "sound_play (verify)", 0x471c90, sound_play_hook, {0xa1, 0x9c, 0x45, 0x4d, 0x00, 0x53, 0x8b, 0x5c}};
 static const struct hook sound_moving_hook_def = {
     "sound_moving (verify)", 0x471da0, sound_moving_hook, {0xa1, 0x9c, 0x45, 0x4d, 0x00, 0x53, 0x55, 0x56}};
-#define SOUND_COPY_LEN 5 /* mov eax, [0x4d459c], in both */
 
 /* --- memory snapshots --- */
 
@@ -237,14 +236,16 @@ void verify_init(const struct hook *hooks, int count)
 {
     char buf[8];
 
+    /* sound_play and the moving-sound start: always ours (their bodies are C);
+     * the hooks also record / replay them for verification */
+    int sound_ok = hook_install(&sound_hook) & hook_install(&sound_moving_hook_def);
+
     if (!GetEnvironmentVariableA("REROLL_VERIFY", buf, sizeof(buf)) || buf[0] == '0')
         return;
     survey_mode = buf[0] == 's';
     replacements = hooks;
     replacement_count = count;
-    sound_play_original = (sound_fn)hook_install_trampoline(&sound_hook, SOUND_COPY_LEN);
-    sound_moving_original = (sound_moving_fn)hook_install_trampoline(&sound_moving_hook_def, SOUND_COPY_LEN);
-    if (!sound_play_original || !sound_moving_original) {
+    if (!sound_ok) {
         log_printf("verify: sound hook failed, verification off");
         return;
     }

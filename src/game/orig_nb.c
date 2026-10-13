@@ -932,6 +932,37 @@ int32_t GAMEAPI d3d_device_pick(void)
     return 0;
 }
 
+/* ===== 0x41d790: EnumTextureFormats callback (stdcall: surface
+ * description, context): record n (count 0x4baffc) of the 0x94-byte
+ * records at 0x4bb000 cleared, the 0x6c-byte description copied in; +0x6c
+ * paletted, +0x90 its bits (8 for flag 0x20, 4 for flag 0x08 of the pixel
+ * format flags +0x4c), else 0 / 0 and 0x487480(desc, record + 0x70) reads
+ * the masks; count up; returns 1 (go on). No bound on the count (sic). ===== */
+int32_t __attribute__((stdcall)) d3d_texture_format_cb(const uint8_t *desc, void *context)
+{
+    uint32_t rec = 0x4bb000 + G32(0x4baffc) * 0x94;
+    uint32_t flags = *(const uint32_t *)(desc + 0x4c);
+
+    (void)context;
+    for (uint32_t k = 0; k < 0x25; k++)
+        G32(rec + k * 4) = 0;
+    for (uint32_t k = 0; k < 0x1b; k++)
+        G32(rec + k * 4) = ((const uint32_t *)desc)[k];
+    if (flags & 0x20) {
+        G32(rec + 0x6c) = 1;
+        G32(rec + 0x90) = 8;
+    } else if (flags & 0x08) {
+        G32(rec + 0x6c) = 1;
+        G32(rec + 0x90) = 4;
+    } else {
+        G32(rec + 0x6c) = 0;
+        G32(rec + 0x90) = 0;
+        CALL2(0x487480, (uint32_t)desc, rec + 0x70);
+    }
+    G32(0x4baffc)++;
+    return 1;
+}
+
 /* ===== 0x41d730: enumerate the texture formats (callback 0x41d790),
  * then the chosen one (0x41f060(0, 0)) of the 0x94-byte records at
  * 0x4bb000 copied to 0x4bcce8. ===== */

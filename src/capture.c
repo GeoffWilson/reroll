@@ -614,8 +614,9 @@ void capture_present(int drawn)
     }
 }
 
-/* The flip 0x4876f0, through a trampoline: live frames end here. */
-static uint32_t (*flip_original)(void);
+/* The flip 0x4876f0: live frames end here; the original's body is
+ * flip_body (src/game/orig_wc.c). */
+int32_t GAMEAPI flip_body(void); /* 0x4876f0, src/game/orig_wc.c (capture.c does not include game/physics.h) */
 
 static uint32_t GAMEAPI capture_flip(void)
 {
@@ -628,12 +629,12 @@ static uint32_t GAMEAPI capture_flip(void)
         live_present(1);
     if (vkgame_flip())
         return 0; /* DD_OK: presented with Vulkan */
-    return flip_original();
+    return (uint32_t)flip_body();
 }
 
 static const struct hook flip_hook = {"flip", 0x4876f0, capture_flip, {0xa1, 0x80, 0x5f, 0x4d, 0x00, 0x83, 0xec, 0x10}};
 
 void capture_install(void)
 {
-    flip_original = (uint32_t(*)(void))hook_install_trampoline(&flip_hook, 8);
+    hook_install(&flip_hook);
 }

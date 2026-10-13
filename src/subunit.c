@@ -14,7 +14,9 @@
  * TR is put back exactly. Everything else (physics, the front end, the
  * HUD) sees no change.
  *
- * On with REROLL_VULKAN=1; REROLL_SUBUNIT=0 / 1 overrides. */
+ * On with REROLL_VULKAN=1; REROLL_SUBUNIT=0 / 1 overrides. The hooks are
+ * installed either way: the original bodies are C (src/game/orig_wb.c),
+ * and off, the wrappers only pass through to them. */
 #include "subunit.h"
 
 #include "hook.h"
@@ -24,14 +26,20 @@
 #define CAMERA_TRANSLATION ((int32_t *)0x6ce5c0)
 #define CAMERA_MATRIX ((const int16_t *)0x6ce5d0) /* 3 x 3, 4.12, rows of 3 */
 
+/* The original bodies (src/game/orig_wb.c; declared here until physics.h has them). */
+void GAMEAPI camera_matrix_body(void); /* 0x423d30 */
+void subunit_transform_body(void); /* 0x426a20: asm, (record) */
+void subunit_transform_only_body(void); /* 0x426be0: asm, (record) */
+void GAMEAPI hud_body(uint8_t *view); /* 0x438310 */
+void GAMEAPI draw_view_body(uint8_t *view); /* 0x479be0 */
+
 /* read by the assembly below */
 int subunit_active;
 float subunit_offset[3];
 uint32_t subunit_saved[3];
-void *subunit_transform_original, *subunit_transform_only_original;
 
 static float fraction[3];
-static int in_view;
+static int in_view, enabled;
 
 /* 0x423ce0(pos): the camera translation, as the original, keeping the fraction. */
 static void GAMEAPI camera_translation(const int32_t *pos)
@@ -45,12 +53,10 @@ static void GAMEAPI camera_translation(const int32_t *pos)
 }
 
 /* 0x423d30: the camera matrix (scale, rotation, translation), then loaded. */
-static void(GAMEAPI *camera_matrix_original)(void);
-
 static void GAMEAPI camera_matrix(void)
 {
     int r;
-    camera_matrix_original();
+    camera_matrix_body();
     if (!in_view)
         return;
     for (r = 0; r < 3; r++)
@@ -61,25 +67,21 @@ static void GAMEAPI camera_matrix(void)
 }
 
 /* draw_view 0x479be0(slot) */
-static void(GAMEAPI *draw_view_original)(uint32_t slot);
-
-static void GAMEAPI draw_view(uint32_t slot)
+static void GAMEAPI draw_view(uint8_t *slot)
 {
-    in_view = 1;
+    in_view = enabled;
     subunit_active = 0;
-    draw_view_original(slot);
+    draw_view_body(slot);
     in_view = 0;
     subunit_active = 0;
 }
 
 /* 0x438310(slot): the view's HUD */
-static void(GAMEAPI *hud_original)(uint32_t slot);
-
-static void GAMEAPI hud(uint32_t slot)
+static void GAMEAPI hud(uint8_t *slot)
 {
     int active = subunit_active;
     subunit_active = 0;
-    hud_original(slot);
+    hud_body(slot);
     subunit_active = active;
 }
 
@@ -93,7 +95,7 @@ void subunit_transform_only(void);
             ASM_SYM(name) ":\n"                                                                                           \
             "    cmpl $0, " ASM_SYM("subunit_active") "\n"                                                                         \
             "    jne 1f\n"                                                                                           \
-            "    jmp *" ASM_SYM(original) "\n"                                                                               \
+            "    jmp " ASM_SYM(original) "\n"                                                                               \
             "1:  movl 0x6ccd0c, %eax\n"                                                                              \
             "    movl %eax, " ASM_SYM("subunit_saved") "\n"                                                                        \
             "    movl 0x6ccd10, %eax\n"                                                                              \
@@ -110,7 +112,7 @@ void subunit_transform_only(void);
             "    addss " ASM_SYM("subunit_offset") "+8, %xmm0\n"                                                                   \
             "    movss %xmm0, 0x6ccd14\n"                                                                            \
             "    pushl 4(%esp)\n"                                                                                    \
-            "    call *" ASM_SYM(original) "\n"                                                                              \
+            "    call " ASM_SYM(original) "\n"                                                                              \
             "    addl $4, %esp\n"                                                                                    \
             "    pushl %eax\n"                                                                                       \
             "    movl " ASM_SYM("subunit_saved") ", %eax\n"                                                                        \
@@ -121,8 +123,8 @@ void subunit_transform_only(void);
             "    movl %eax, 0x6ccd14\n"                                                                              \
             "    popl %eax\n"                                                                                        \
             "    ret\n")
-TRANSFORM_WRAPPER("subunit_transform", "subunit_transform_original");
-TRANSFORM_WRAPPER("subunit_transform_only", "subunit_transform_only_original");
+TRANSFORM_WRAPPER("subunit_transform", "subunit_transform_body");
+TRANSFORM_WRAPPER("subunit_transform_only", "subunit_transform_only_body");
 
 static const struct hook translation_hook = {"subunit_translation", 0x423ce0, camera_translation,
                                              {0x8b, 0x44, 0x24, 0x04, 0x8b, 0x08, 0xf7, 0xd9}};
@@ -143,21 +145,14 @@ void subunit_install(int vulkan)
 
     if (GetEnvironmentVariableA("REROLL_SUBUNIT", value, sizeof value))
         on = value[0] == '1';
-    if (!on)
-        return;
-    /* the transforms first: nothing else is useful without them */
-    subunit_transform_original = hook_install_trampoline(&transform_hook, 7);
-    subunit_transform_only_original = hook_install_trampoline(&transform_only_hook, 8);
-    if (!subunit_transform_original || !subunit_transform_only_original) {
-        log_printf("subunit: transform hooks failed, off");
+    /* off, draw_view never sets in_view, so subunit_active stays 0 and every
+     * wrapper only runs the original body */
+    if (!hook_install(&transform_hook) || !hook_install(&transform_only_hook) || !hook_install(&matrix_hook) ||
+        !hook_install(&draw_view_hook) || !hook_install(&hud_hook) || !hook_install(&translation_hook)) {
+        log_printf("subunit: hooks failed");
         return;
     }
-    camera_matrix_original = (void(GAMEAPI *)(void))hook_install_trampoline(&matrix_hook, 5);
-    draw_view_original = (void(GAMEAPI *)(uint32_t))hook_install_trampoline(&draw_view_hook, 6);
-    hud_original = (void(GAMEAPI *)(uint32_t))hook_install_trampoline(&hud_hook, 6);
-    if (!camera_matrix_original || !draw_view_original || !hud_original || !hook_install(&translation_hook)) {
-        log_printf("subunit: camera hooks failed");
-        return;
-    }
-    log_printf("subunit: the camera keeps its 16.16 position");
+    enabled = on;
+    if (on)
+        log_printf("subunit: the camera keeps its 16.16 position");
 }

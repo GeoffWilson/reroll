@@ -319,14 +319,19 @@ static void textures_update(void)
     stat_textures += now() - t0;
 }
 
-/* texture_upload 0x41e710(page, w, h, pixels, palette, flags), through a trampoline. */
-typedef int32_t(GAMEAPI *upload_fn)(int32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
-static upload_fn upload_original;
+/* The original bodies behind this file's wrappers, in src/game/orig_wc.c
+ * (until build/groups/wc_protos.txt is merged into physics.h). */
+int32_t GAMEAPI texture_upload_body(int32_t page, int32_t w, int32_t h, uint32_t pixels, uint32_t palette,
+                                    uint32_t flags);                 /* 0x41e710 */
+void GAMEAPI vk_probe_body(void);                                    /* 0x41f720 */
+uint32_t GAMEAPI create_window_body(uint32_t unused, int32_t x, int32_t y, int32_t w, int32_t h,
+                                    int32_t fullscreen);             /* 0x4771c0 */
 
+/* texture_upload 0x41e710(page, w, h, pixels, palette, flags). */
 static int32_t GAMEAPI texture_upload(int32_t page, uint32_t w, uint32_t h, uint32_t pixels, uint32_t palette,
                                       uint32_t flags)
 {
-    int32_t result = upload_original(page, w, h, pixels, palette, flags);
+    int32_t result = texture_upload_body(page, (int32_t)w, (int32_t)h, pixels, palette, flags);
     tex_rescan = 1;
     return result;
 }
@@ -601,22 +606,16 @@ int vkgame_prim(uint32_t packet)
     return 1;
 }
 
-/* The Direct3D capability probe 0x41f720 draws test quads, flips and reads
- * the pixels back: its flips stay the original's. Arguments unknown, so the
- * wrapper keeps the caller's stack as it is. */
+/* The Direct3D capability probe 0x41f720 (no arguments) draws test quads,
+ * flips and reads the pixels back: its flips stay the original's. */
 int vk_probing;
-uint32_t vk_probe_return;
-void *vk_probe_original;
-void vk_probe(void);
-__asm__(".text\n"
-        ".globl " ASM_SYM("vk_probe") "\n"
-        ASM_SYM("vk_probe") ":\n"
-        "    incl " ASM_SYM("vk_probing") "\n"
-        "    popl " ASM_SYM("vk_probe_return") "\n"
-        "    call *" ASM_SYM("vk_probe_original") "\n"
-        "    pushl " ASM_SYM("vk_probe_return") "\n"
-        "    decl " ASM_SYM("vk_probing") "\n"
-        "    ret\n");
+
+static void GAMEAPI vk_probe(void)
+{
+    vk_probing++;
+    vk_probe_body();
+    vk_probing--;
+}
 
 int vkgame_flip(void)
 {
@@ -713,16 +712,13 @@ static void patch_image_tile_call(void)
     *(int32_t *)(call + 1) = (int32_t)((uint32_t)image_tile - 0x420587);
 }
 
-/* 0x4771c0(class, x, y, w, h, fullscreen): the game's window, created the
+/* 0x4771c0(unused, x, y, w, h, fullscreen): the game's window, created the
  * fullscreen way (a popup) while DirectDraw runs windowed; native/user32.c
  * puts it on the SDL window either way. */
-typedef uint32_t(GAMEAPI *window_fn)(uint32_t, int32_t, int32_t, int32_t, int32_t, int32_t);
-static window_fn window_original;
-
-static uint32_t GAMEAPI create_window(uint32_t class_id, int32_t x, int32_t y, int32_t w, int32_t h, int32_t fullscreen)
+static uint32_t GAMEAPI create_window(uint32_t unused, int32_t x, int32_t y, int32_t w, int32_t h, int32_t fullscreen)
 {
     (void)fullscreen;
-    return window_original(class_id, x, y, w, h, 1);
+    return create_window_body(unused, x, y, w, h, 1);
 }
 
 static const struct hook window_hook = {"vk_window", 0x4771c0, create_window,
@@ -780,11 +776,11 @@ float vkgame_install(void)
     /* DirectDraw windowed, as the /W switch does: no display mode change */
     G32(0x4acc5c) = 0;
     G32(0x4acc60) = 0;
-    upload_original = (upload_fn)hook_install_trampoline(&upload_hook, 9);
+    hook_install(&upload_hook);
     hook_install(&queue_hook);
-    vk_probe_original = hook_install_trampoline(&probe_hook, 7);
+    hook_install(&probe_hook);
     patch_image_tile_call();
-    window_original = (window_fn)hook_install_trampoline(&window_hook, 7);
+    hook_install(&window_hook);
     state = 1;
     log_printf("vulkan: the game window will be %dx%d", target_w, target_h);
     return (float)target_w / (float)target_h;

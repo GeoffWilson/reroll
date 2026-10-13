@@ -102,6 +102,7 @@ STUBS = {
     0x41F720: S("f41f720", ""),
     0x41F2D0: S("f41f2d0", "vvvv"),
     0x41F060: S("format_choose", "vv"),
+    0x487480: S("pixel_format_get", "pv"),
     0x41E0D0: S("f41e0d0", "v"),
     0x4291F0: S("dx_error", "v"),
     0x487660: S("surface_desc", "dv"),
@@ -511,6 +512,17 @@ def g_format_pick(st, rng, m):
     return [], 0xFFFFFFFF
 
 
+def g_format_cb(st, rng, m):
+    # 0x41d790 (lead, after nb): the EnumTextureFormats callback
+    st.put(0x4BAFFC, "<I", rng.randrange(50))
+    desc = bytearray(rng.getrandbits(8) for _ in range(0x6C))
+    desc[0x4C:0x50] = struct.pack("<I", pick(rng, 0x20, 0x08, 0x28, 0x40, 0, rng.getrandbits(32)))
+    st.sputb(ARG, bytes(desc))
+    st.regs = {UC_X86_REG_EBX: rng.getrandbits(32), UC_X86_REG_ESI: rng.getrandbits(32),
+               UC_X86_REG_EDI: rng.getrandbits(32), UC_X86_REG_EBP: rng.getrandbits(32)}
+    return [ARG, rng.getrandbits(32)], 0xFFFFFFFF
+
+
 def g_device_create(st, rng, m):
     set_d3d_objects(st, rng)
     st.put(0x4B8380, "<I", obj_addr("d3d"))
@@ -660,6 +672,7 @@ TESTS = {
     "d3d_devices_enumerate": (0x41D250, g_enum),
     "d3d_device_pick": (0x41D6D0, g_pick),
     "d3d_texture_format_pick": (0x41D730, g_format_pick),
+    "d3d_texture_format_cb": (0x41D790, g_format_cb),
     "texture_slot_release": (0x41D890, g_slot_release),
     "texture_slots_release": (0x41D910, g_slots_release),
     "texture_slot_handle": (0x41D940, g_slot_handle),

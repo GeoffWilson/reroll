@@ -20,7 +20,7 @@ int32_t GAMEAPI race_frame(void);
 /* 0x436a52 */
 int32_t GAMEAPI present_frame(void);
 
-/* 0x443b50; the original stays callable through race_draw_original */
+/* 0x443b50; the original's body (race_draw_body) is called through race_draw_original */
 void GAMEAPI race_draw(void);
 extern void(GAMEAPI *race_draw_original)(void);
 

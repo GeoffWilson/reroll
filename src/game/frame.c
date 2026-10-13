@@ -53,7 +53,7 @@ typedef void(GAMEAPI *int_arg_fn)(int32_t arg);
 #define g_present_time_total (*(uint32_t *)0x4be494)
 #define g_present_count (*(uint32_t *)0x4be498)
 
-/* The original race_draw, reached through a trampoline (set up in main.c). */
+/* The original race_draw's body in C (race_draw_body, src/game/orig_wc.c); set in main.c. */
 void(GAMEAPI *race_draw_original)(void);
 
 /* What race_frame did, for the present_frame call that follows it. */

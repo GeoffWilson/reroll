@@ -874,7 +874,7 @@ int32_t GAMEAPI cpu_detect_amd(void)
 {
     G32(0x4b5e44) = 0;
     G32(0x4b5e48) = 0;
-    if (CALL0(0x41c8c0) && cpu_is_amd() && CALL0(0x4010c0)) {
+    if (CALL0(0x41c8c0) && CALL0(0x401050) && CALL0(0x4010c0)) {
         G32(0x4b5e44) = 1;
         G32(0x4b5e48) = CALL0(0x4010f0);
     }

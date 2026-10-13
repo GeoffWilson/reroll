@@ -63,10 +63,17 @@ static float aspect; /* 0: off */
 static int follow_window; /* aspect follows the Vulkan window's */
 static float real_left, real_right; /* the current view's clip bounds before widening */
 
-typedef void (*frustum_fn)(float x, float y, float w, float h, float focal);
-typedef void (*viewport_fn)(int32_t x, int32_t y, int32_t w, int32_t h);
-static frustum_fn frustum_original;
-static viewport_fn viewport_original;
+/* The wrapped originals' bodies, ported to C in src/game/orig_wa.c (group
+ * WA; prototypes in build/groups/wa_protos.txt, declared here until they are
+ * in physics.h). The wrappers below stay hooked at the original addresses
+ * and call these where they called the original through a trampoline. */
+void GAMEAPI frustum_body(float x, float y, float w, float h, float focal); /* 0x417ed0 */
+void GAMEAPI viewport_body(int32_t x, int32_t y, int32_t w, int32_t h); /* 0x41f2d0 */
+void GAMEAPI objects_body(void); /* 0x459b20 */
+void GAMEAPI countdown_body(void); /* 0x46a9e0 */
+uint32_t *GAMEAPI visibility_body(uint8_t *cell); /* 0x47a030 */
+void GAMEAPI flake_spawn_body(int32_t i); /* 0x485140 */
+void GAMEAPI sparkle_body(uint8_t *camera); /* 0x490430 */
 
 /* Pixels the virtual screen adds on each side of the real one. */
 static float extra_width(void)
@@ -81,11 +88,11 @@ static void frustum(float x, float y, float w, float h, float focal)
     float extra = extra_width();
     uint32_t offscreen;
 
-    frustum_original(x, y, w, h, focal);
+    frustum_body(x, y, w, h, focal);
     if (extra <= 0.0f)
         return;
     offscreen = G_OFFSCREEN;
-    frustum_original(x - extra, y, w + 2.0f * extra, h, focal);
+    frustum_body(x - extra, y, w + 2.0f * extra, h, focal);
     G_OFFSCREEN = offscreen;
 }
 
@@ -95,7 +102,7 @@ static void viewport(int32_t x, int32_t y, int32_t w, int32_t h)
 {
     float extra;
 
-    viewport_original(x, y, w, h);
+    viewport_body(x, y, w, h);
     real_left = G_CLIP_LEFT;
     real_right = G_CLIP_RIGHT;
     extra = extra_width();
@@ -115,7 +122,6 @@ static void viewport(int32_t x, int32_t y, int32_t w, int32_t h)
 #define CHUNK_RUNS 32   /* 0x47a500 keeps ~50 runs on its stack; 0x5d91c0 has 64 entries */
 #define CHUNK_ROWS 400  /* 0x5d7540: 552 rows across a list */
 
-typedef uint32_t *(*manager_fn)(void *cell);
 typedef void (*run_fn)(uint32_t *list, uint32_t section, uint32_t first_row, uint32_t length, uint32_t lod);
 typedef void (*list2_fn)(uint32_t *list, uint32_t *previous);
 typedef void (*list1_fn)(uint32_t *list);
@@ -128,8 +134,6 @@ typedef void *(*cell_fn)(int32_t x, int32_t y, int32_t z, int32_t *off_track);
 #define track_draw ((list1_fn)0x477940)
 #define track_cell ((cell_fn)0x419420)
 #define G_VIEW (*(uint32_t *)0x6ce60c)
-
-static manager_fn manager_original;
 
 /* Run lists: u32 count, then 8 bytes per run (u16 section, first row, rows,
  * detail level), as the game's. */
@@ -794,7 +798,7 @@ static uint32_t *visibility(void *cell)
             log_printf("widescreen: %u views, %u extra runs drawn, %u pool overflows, %u loops", extra_lists, extra_runs_total,
                        detach_overflow, detach_loops);
     }
-    return manager_original(cell);
+    return visibility_body((uint8_t *)cell);
 }
 
 static const struct hook visibility_hook = {"wide_visibility", 0x47a030, visibility,
@@ -818,8 +822,6 @@ static const struct hook visibility_hook = {"wide_visibility", 0x47a030, visibil
 #define STATIC_LIGHTS ((uint32_t *)0x5d6ac0)
 #define STATIC_MAX 300 /* 0x5d6ac0 holds 352 */
 
-typedef void (*objects_fn)(void);
-static objects_fn objects_original;
 static int far_objects;
 static uint16_t saved_static[STATIC_MAX + 1];
 static uint32_t saved_lights[STATIC_MAX + 1];
@@ -992,7 +994,7 @@ static void objects(void)
     if (leak_debug)
         leak_counts[0] += list_leaks();
     if (!far_objects || !extra_ready || !extra[0]) {
-        objects_original();
+        objects_body();
         if (leak_debug) {
             leak_counts[2] += list_leaks();
             if (++leak_counts[3] % 2000 == 0)
@@ -1053,7 +1055,7 @@ static void objects(void)
                 log_printf("leak: hidden %u objects (limit %u), %u far chains, %u own", most, HIDDEN_MAX, n, own);
             }
         }
-        objects_original();
+        objects_body();
         far_buffer_end = *(uint32_t *)0x6c1e18;
         /* objects share packet buffers between objects never seen together
          * (as the track's records): the far ones' packets are copied out */
@@ -1073,7 +1075,7 @@ static void objects(void)
         if (leak_debug)
             leak_counts[1] += list_leaks();
     }
-    objects_original();
+    objects_body();
     if (leak_debug) {
         if (list_leaks()) {
             leak_counts[2]++;
@@ -1195,15 +1197,16 @@ static const struct hook outcodes_hook = {"wide_outcodes", 0x426b80, wide_outcod
 
 /* 0x46a9e0: the countdown numerals, which use the clip rectangle's left and
  * top as their screen origin: drawn with the view's real bounds. */
-typedef void (*void_fn)(void);
-static void_fn countdown_original;
-
 static void countdown(void)
 {
     float left = G_CLIP_LEFT, right = G_CLIP_RIGHT;
+    if (extra_width() <= 0.0f) { /* widescreen off: the bounds are the real ones */
+        countdown_body();
+        return;
+    }
     G_CLIP_LEFT = real_left;
     G_CLIP_RIGHT = real_right;
-    countdown_original();
+    countdown_body();
     G_CLIP_LEFT = left;
     G_CLIP_RIGHT = right;
 }
@@ -1225,14 +1228,11 @@ static const struct hook viewport_hook = {"wide_viewport", 0x41f2d0, viewport,
 /* 0x485140(i): (re)spawns screen flake / lens drop i inside the 4:3 width;
  * its x is spread over the wide screen (the mover only drifts it outwards
  * from the middle and respawns it when its life ends). */
-typedef void(GAMEAPI *flake_fn)(int32_t i);
-static flake_fn flake_original;
-
 static void GAMEAPI flake_spawn(int32_t i)
 {
     float extra = extra_width(), w, *x;
 
-    flake_original(i);
+    flake_spawn_body(i);
     if (extra <= 0.0f || !G_RACE || !*(uint8_t **)0x4d5898 || i < 0 || i >= 32)
         return;
     w = (float)RACE_WIDTH(G_RACE);
@@ -1245,9 +1245,6 @@ static void GAMEAPI flake_spawn(int32_t i)
 /* 0x490430(camera): the respawn / snatch sparkle, random squares on a grid
  * of the width from the view's left clip edge: drawn with the widened width
  * so they cover the wide view instead of bunching at its left. */
-typedef void(GAMEAPI *sparkle_fn)(uint32_t camera);
-static sparkle_fn sparkle_original;
-
 static void GAMEAPI sparkle(uint32_t camera)
 {
     uint8_t *race = G_RACE;
@@ -1255,12 +1252,12 @@ static void GAMEAPI sparkle(uint32_t camera)
     float wide = G_CLIP_RIGHT - G_CLIP_LEFT;
 
     if (!race || extra_width() <= 0.0f || wide <= (float)RACE_WIDTH(race) || wide > 8192.0f) {
-        sparkle_original(camera);
+        sparkle_body((uint8_t *)camera);
         return;
     }
     width = RACE_WIDTH(race);
     RACE_WIDTH(race) = (uint16_t)wide;
-    sparkle_original(camera);
+    sparkle_body((uint8_t *)camera);
     RACE_WIDTH(race) = width;
 }
 
@@ -1322,6 +1319,7 @@ void widescreen_set_aspect(float output_aspect)
 void widescreen_install(float output_aspect)
 {
     char value[32] = "the window's";
+    int frustum_ok, viewport_ok;
 
     draw_distance_install(output_aspect > 0.0f);
     if (GetEnvironmentVariableA("REROLL_ASPECT", value, sizeof value)) {
@@ -1337,25 +1335,25 @@ void widescreen_install(float output_aspect)
             log_printf("widescreen: aspect (%s) is not wider than 4:3, off", value);
         aspect = 0.0f;
     }
-    if (far_distance > 0.0f || aspect > 0.0f) {
-        manager_original = (manager_fn)hook_install_trampoline(&visibility_hook, 6);
-        far_objects = far_distance > 0.0f &&
-                      GetEnvironmentVariableA("REROLL_FAR_OBJECTS", value, sizeof value) && value[0] == '1';
-        if (far_objects)
-            objects_original = (objects_fn)hook_install_trampoline(&objects_hook, 8);
-    }
+    /* The wrappers are installed whatever the settings: with widescreen and
+     * the draw distance off they just run the original's body (orig_wa.c),
+     * so no original code is left at these addresses (REROLL_NO_EXE). */
+    far_objects = far_distance > 0.0f &&
+                  GetEnvironmentVariableA("REROLL_FAR_OBJECTS", value, sizeof value) && value[0] == '1';
+    hook_install(&visibility_hook);
+    hook_install(&objects_hook);
+    hook_install(&countdown_hook);
+    hook_install(&flake_hook);
+    hook_install(&sparkle_hook);
+    frustum_ok = hook_install(&frustum_hook);
+    viewport_ok = hook_install(&viewport_hook);
     if (aspect == 0.0f)
         return;
-    frustum_original = (frustum_fn)hook_install_trampoline(&frustum_hook, 9);
-    viewport_original = (viewport_fn)hook_install_trampoline(&viewport_hook, 7);
-    if (!frustum_original || !viewport_original) {
+    if (!frustum_ok || !viewport_ok) {
         aspect = 0.0f;
         return;
     }
-    countdown_original = (void_fn)hook_install_trampoline(&countdown_hook, 6);
     hook_install(&project_hook);
     hook_install(&outcodes_hook);
-    flake_original = (flake_fn)hook_install_trampoline(&flake_hook, 6);
-    sparkle_original = (sparkle_fn)hook_install_trampoline(&sparkle_hook, 6);
     log_printf("widescreen: culling for aspect %d/1000", (int32_t)(aspect * 1000.0f));
 }
