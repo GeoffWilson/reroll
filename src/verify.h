@@ -22,12 +22,27 @@ struct verify_point {
 #define VERIFY_POINT(name, sample, report_every) {name, sample, report_every, 0, 0, 0, 0, 0, 0}
 #define VERIFY_POINT_VOID(name, sample, report_every) {name, sample, report_every, 0, 0, 0, 0, 1, 0}
 
+#if defined(__i386__)
 /* Reads REROLL_VERIFY and, if set, prepares the buffers and the sound hook.
  * `hooks`: the replacement hooks switched off while the original runs. */
 void verify_init(const struct hook *hooks, int count);
 int verify_enabled(void);
 /* Logs every point checked so far (calls and mismatches); called at exit. */
 void verify_summary(void);
+#else /* a 64-bit build has no original code to check against */
+static inline void verify_init(const struct hook *hooks, int count)
+{
+    (void)hooks;
+    (void)count;
+}
+static inline int verify_enabled(void)
+{
+    return 0;
+}
+static inline void verify_summary(void)
+{
+}
+#endif
 
 /* Runs `original` (with the hooks off) and `ours` from the same game state,
  * logs every difference in game memory and in the result, then keeps the

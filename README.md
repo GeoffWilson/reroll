@@ -39,10 +39,11 @@ Not done yet: movies (skipped), network play.
 
 ## Requirements
 
-- Linux on x86-64 with 32-bit libraries: the program is still i386 (the game's
-  memory layout and 32-bit pointers; the 64-bit build is the next step). On Arch: `lib32-sdl3`, `lib32-vulkan-icd-loader`
-  (and your GPU's 32-bit Vulkan driver), `lib32-libdecor` for window title bars
-  on Wayland.
+- Linux on x86-64. Two builds: `build/rollcage64` (x86-64, being tested: SDL3,
+  the Vulkan loader and libdecor, nothing 32-bit) and `build/rollcage` (i386,
+  needs `lib32-sdl3`, `lib32-vulkan-icd-loader` and your GPU's 32-bit Vulkan
+  driver, `lib32-libdecor` for window title bars on Wayland; the emulator tests
+  use this one).
 - To build: clang, `glslc` (shaderc), Python 3.
 - The game: an installed copy of Rollcage. The expected executable is
   `Direct3D/Rollcage.exe`, sha256
@@ -53,7 +54,8 @@ Not done yet: movies (skipped), network play.
 
 ## Build and run
 
-    make                      # build/rollcage
+    make                      # build/rollcage (i386)
+    make native64             # build/rollcage64 (x86-64)
     cd "<game folder>/Direct3D"
     /path/to/reroll/build/rollcage
 

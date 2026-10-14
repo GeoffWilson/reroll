@@ -13,20 +13,20 @@
 #include "../runtime.h"
 #include "body.h"
 #include "physics.h"
+#include "gamefn.h"
 
 typedef void(GAMEAPI *car_fn)(uint8_t *car);
-typedef uint32_t(GAMEAPI *curve_fn)(int32_t value, int32_t player, int32_t axis);
-#define analogue_curve ((curve_fn)0x428e90)    /* controls_curve, gl_ga.c (x87 kept as inline asm) */
+#define analogue_curve GCALL(0x428e90, controls_curve)    /* controls_curve, gl_ga.c (x87 kept as inline asm) */
 
 /* Per player input state, 0x66c bytes from 0x5d2cd0 */
 #define g_net_flags (*(uint32_t *)0x5d622c)   /* bit 0 network game, bit 7 buffered */
 #define g_net_local (*(int32_t *)0x5d535c)
 #define g_net_time (*(uint32_t *)0x5d599c)
 #define g_sim_steps (*(uint32_t *)0x4c2458)
-#define g_options (*(uint8_t **)0x4b2198)
+#define g_options (GP(0x4b2198))
 #define PLAYER_INPUT(p) ((uint8_t *)0x5d2cd0 + (p) * 0x66c)
 
-#define g_race (*(uint8_t **)0x4b1960)
+#define g_race (GP(0x4b1960))
 #define g_car_slots ((uint8_t *)0x6bfb80)
 #define CAR_SLOT_SIZE 0x274
 #define g_steer_ramp ((const uint8_t *)0x4a7e78)
@@ -181,7 +181,7 @@ void GAMEAPI controls_decode(int32_t player, const uint8_t *raw, uint8_t *packet
  * 0x5d2f14), or in a network game the received one (the newest not after
  * the network clock when buffered); decoded into the player's packet at
  * +0x658. Nothing before the first steps. */
-void GAMEAPI controls_fetch_packet(int32_t player, uint8_t *raw, uint8_t **packet)
+void GAMEAPI controls_fetch_packet(int32_t player, uint8_t *raw, uint32_t *packet)
 {
     uint32_t now = g_net_time, first = (g_net_flags & 1) && !g_options[0x37] ? 2 : 1;
     uint8_t *input = PLAYER_INPUT(player), *decoded = input + 0x658;
@@ -219,7 +219,7 @@ void GAMEAPI controls_fetch_packet(int32_t player, uint8_t *raw, uint8_t **packe
     controls_decode(player, raw, decoded);
     if ((g_net_flags & 1) && (g_net_flags & 0x80) && player != net_local_player())
         decoded[3] |= 0xf;
-    *packet = decoded;
+    *packet = (uint32_t)(uintptr_t)decoded; /* a 32-bit slot in game memory */
 }
 
 /* 0x428fe0: analogue steering, brake and throttle through the response
@@ -227,8 +227,8 @@ void GAMEAPI controls_fetch_packet(int32_t player, uint8_t *raw, uint8_t **packe
 void GAMEAPI controls_analogue(int32_t player)
 {
     const uint8_t *slot = g_car_slots + player * CAR_SLOT_SIZE;
-    uint8_t *record = *(uint8_t **)slot + CONTROLS;
-    const uint8_t *packet = *(uint8_t **)(record + 0x24);
+    uint8_t *record = GP(slot) + CONTROLS;
+    const uint8_t *packet = GP(record + 0x24);
 
     if (slot[0x26e] & 4)
         record[0] = (uint8_t)analogue_curve(packet[8], player, 0);
@@ -247,8 +247,8 @@ int32_t GAMEAPI car_controls_read(uint8_t *car, int32_t player)
     int32_t driver;
 
     if (record[0x14] == 9) {
-        controls_fetch_packet(player, scratch, (uint8_t **)(record + 0x24));
-        packet = *(uint8_t **)(record + 0x24);
+        controls_fetch_packet(player, scratch, (uint32_t *)(record + 0x24));
+        packet = GP(record + 0x24);
         record[0x15] = packet[1] != 'A';
         U32(record, 8) = ~((uint32_t)packet[2] * 0x100 + packet[3]);
         return 0;
@@ -256,8 +256,8 @@ int32_t GAMEAPI car_controls_read(uint8_t *car, int32_t player)
     if (record[0x14] == 10) {
         uint32_t buttons;
 
-        controls_fetch_packet(player, scratch, (uint8_t **)(record + 0x24));
-        packet = *(uint8_t **)(record + 0x24);
+        controls_fetch_packet(player, scratch, (uint32_t *)(record + 0x24));
+        packet = GP(record + 0x24);
         record[0x15] = packet[1] != 'A';
         U32(record, 8) = (~((uint32_t)packet[2] * 0x100 + packet[3]) & 0xffff) |
                          (uint32_t)*(const uint16_t *)(packet + 4) << 16;
@@ -272,11 +272,11 @@ int32_t GAMEAPI car_controls_read(uint8_t *car, int32_t player)
                 U32(record, 8) |= BUTTON_LEFT;
         }
     }
-    driver = I32(*(uint8_t **)(car + 0x650), 0x1e880);
+    driver = I32(GP(car + 0x650), 0x1e880);
     if (driver == 5 || driver == 6) {
         replay_step(car);
     } else {
-        packet = *(uint8_t **)(record + 0x24);
+        packet = GP(record + 0x24);
         if ((packet && packet[1] != '#') || record[0x14] == 8)
             controls_digital(g_car_slots + player * CAR_SLOT_SIZE, record);
         if (I32(g_race, 0x57c) == 2) {
@@ -284,7 +284,7 @@ int32_t GAMEAPI car_controls_read(uint8_t *car, int32_t player)
             record[2] = g_brake_ramp[0xf];
         }
     }
-    driver = I32(*(uint8_t **)(car + 0x650), 0x1e880);
+    driver = I32(GP(car + 0x650), 0x1e880);
     if (driver == 2 || driver == 3 || driver == 7)
         replay_step(car);
     U32(record, 0xc) = ~(~U32(record, 8) | U32(record, 4));

@@ -23,16 +23,17 @@
  * are called by address. */
 #include "../runtime.h"
 #include "physics.h"
+#include "gamefn.h"
 
 #define U8(p, off) (*(uint8_t *)((p) + (off)))
 #define S8(p, off) (*(int8_t *)((p) + (off)))
 #define I32(p, off) (*(int32_t *)((p) + (off)))
 
-#define g_options (*(uint8_t **)0x4b2198)
-#define g_race (*(uint8_t **)0x4b1960)
+#define g_options GP(0x4b2198)
+#define g_race GP(0x4b1960)
 
 /* The menu page. */
-#define g_rows (*(uint8_t **)0x4cb4b8)
+#define g_rows GP(0x4cb4b8)
 #define g_row_count (*(int32_t *)0x4cb49c)
 #define g_cursor (*(int8_t *)0x4cb588)
 #define g_first_row (*(int8_t *)0x4cb589)
@@ -51,58 +52,64 @@
 #define g_row_h (*(int32_t *)0x4cb4c0)
 #define g_horizontal (*(int32_t *)0x4cb4fc)
 
-typedef int32_t(GAMEAPI *int_fn)(void);
-typedef int32_t(GAMEAPI *arg1_fn)(int32_t a);
-typedef int32_t(GAMEAPI *arg2_fn)(int32_t a, int32_t b);
-typedef int32_t(GAMEAPI *arg3_fn)(int32_t a, int32_t b, int32_t c);
-typedef int32_t(GAMEAPI *arg4_fn)(int32_t a, int32_t b, int32_t c, int32_t d);
-typedef int32_t(GAMEAPI *arg5_fn)(int32_t a, int32_t b, int32_t c, int32_t d, int32_t e);
-typedef int32_t(GAMEAPI *arg6_fn)(int32_t a, int32_t b, int32_t c, int32_t d, int32_t e, int32_t f);
-typedef int32_t(GAMEAPI *arg9_fn)(int32_t a, int32_t b, int32_t c, int32_t d, int32_t e, int32_t f, int32_t g,
-                                  int32_t h, int32_t i);
+/* The menu items' option callback (fe_z.c). */
+typedef int32_t(GAMEAPI *menu_callback)(int32_t command, char *text);
+int32_t GAMEAPI menu_add_slider(const char *section1, int32_t index1, const char *section2, int32_t index2,
+                                menu_callback callback, uint32_t a6); /* 0x44c9d0 */
 
 /* Drawing (text strings), still original. */
-#define string_hide ((arg1_fn)0x42eab0)
-#define string_show ((arg5_fn)0x42ea40)
-#define string_bounds ((arg5_fn)0x42ed10)
-#define string_place ((arg5_fn)0x42ed40)
-#define string_justify ((arg3_fn)0x42eed0)
-#define string_colours ((arg5_fn)0x42f0f0)
-#define string_colour ((arg3_fn)0x42f2b0)
-#define colour_pulse ((arg4_fn)0x4328c0)
+#define string_hide GCALL(0x42eab0, string_off)
+#define string_show GCALL(0x42ea40, string_on)
+#define string_bounds GCALL(0x42ed10, string_limits_all)
+#define string_place GCALL(0x42ed40, string_set_position)
+#define string_justify GCALL(0x42eed0, string_set_position_j)
+#define string_colours GCALL(0x42f0f0, string_colour_range)
+#define string_colour GCALL(0x42f2b0, string_colour_set)
+#define colour_pulse GCALL(0x4328c0, colour_pulse_scale)
 
 /* Text and menu building, still original. */
-#define time_split ((arg4_fn)0x405480)
-#define time_text ((arg2_fn)0x405a80)
-#define time_best_text ((arg2_fn)0x405ba0)
-#define text_lookup ((arg4_fn)0x42e6d0)
-#define c_sprintf ((arg3_fn)0x4979f0)
-#define mode_start ((arg4_fn)0x432cd0)
-#define player_count_text ((arg1_fn)0x430ae0)
-#define menu_open ((arg1_fn)0x447650)
-#define menu_add ((arg5_fn)0x448140)
-#define menu_text ((arg4_fn)0x4481a0)
-#define car_name_text ((arg2_fn)0x4484a0)
-#define world_name ((arg1_fn)0x4486f0)
-#define menu_title ((arg2_fn)0x448a00)
-#define menu_label ((arg9_fn)0x448a50)
-#define menu_buttons ((arg4_fn)0x448af0)
-#define menu_select ((arg1_fn)0x448b50)
-#define menu_option ((arg6_fn)0x44c9d0)
-#define menu_list ((arg2_fn)0x44ffd0)
+#define time_split GCALL(0x405480, time_entry_fill)
+#define time_text GCALL(0x405a80, bcd_time_text)
+#define time_best_text GCALL(0x405ba0, slot_lap_time_text)
+#define text_lookup GCALL(0x42e6d0, text_line_get)
+#define c_sprintf GCALL(0x4979f0, msvc_sprintf)
+#if defined(__i386__)
+/* the original pushes a fourth argument (a name table) the callee never reads */
+#define mode_start(m, k, c, t) ((int32_t(GAMEAPI *)(int32_t, uint32_t, uint32_t, uint32_t))(uintptr_t)0x432cd0)(m, k, c, t)
+#else
+#define mode_start(m, k, c, t) GCALL(0x432cd0, front_mode_race_setup)(m, k, c)
+#endif
+#define player_count_text GCALL(0x430ae0, rand_next)
+#define menu_open GCALL(0x447650, fe_menu_action)
+#define menu_add GCALL(0x448140, menu_add_item)
+#define menu_text GCALL(0x4481a0, menu_text_get)
+#define car_name_text GCALL(0x4484a0, driver_name)
+#define world_name GCALL(0x4486f0, world_track_names)
+#define menu_title GCALL(0x448a00, menu_set_title)
+#define menu_label GCALL(0x448a50, menu_text_add)
+#define menu_buttons GCALL(0x448af0, menu_back_footer)
+#define menu_select GCALL(0x448b50, menu_entry_select)
+#define menu_option GCALL(0x44c9d0, menu_add_slider)
+#define menu_list GCALL(0x44ffd0, laps_menu)
 
 /* Network, still original. */
-#define net_close ((int_fn)0x48a6b0)
-#define net_open ((arg3_fn)0x48ace0)
-#define net_start ((int_fn)0x48bc40)
-#define heap_take ((arg1_fn)0x476b80)
-#define mem_fill ((arg3_fn)0x476f50)
+#define net_close GCALL(0x48a6b0, dplay_close)
+#define net_open GCALL(0x48ace0, dplay_connection_init)
+#define net_start GCALL(0x48bc40, dplay_thread_start)
+#define heap_take GCALL(0x476b80, arena_alloc_low)
+#define mem_fill GCALL(0x476f50, mem_fill)
 
 /* 0x405590: a time split into its display parts (0x405480 with the
  * "hundredths" flag set). */
 int32_t GAMEAPI time_parts(uint8_t *out, int32_t a, int32_t b)
 {
-    return time_split((int32_t)out, a, b, 1);
+#if defined(__i386__)
+    /* 0x405480 is void: the original returns what it leaves in eax */
+    return ((int32_t(GAMEAPI *)(uint8_t *, int32_t, int32_t, int32_t))(uintptr_t)0x405480)(out, a, b, 1);
+#else
+    time_split(out, a, b, 1);
+    return 0;
+#endif
 }
 
 /* 0x405bc0: a time's text. */
@@ -111,7 +118,13 @@ int32_t GAMEAPI time_parts_text(char *out, int32_t a, int32_t b)
     uint8_t parts[16];
 
     time_parts(parts, a, b);
-    return time_text((int32_t)out, (int32_t)parts);
+#if defined(__i386__)
+    /* 0x405a80 is void: the original returns what it leaves in eax */
+    return ((int32_t(GAMEAPI *)(char *, const uint8_t *))(uintptr_t)0x405a80)(out, parts);
+#else
+    time_text(out, parts);
+    return 0;
+#endif
 }
 
 /* 0x4329b0: start a front-end choice: `mode` 0 counts a demo run; 1..10
@@ -318,16 +331,16 @@ int32_t GAMEAPI menu_item_place(uint8_t *item, int32_t x, int32_t y, int32_t hju
     if (flags & 0x10000000)
         slot = -2 - (int32_t)((uint32_t)flags >> 16 & 0xff);
     if ((uint32_t)flags & 0x80000000) {
-        colour_pulse((int32_t)buf, colour, 4, 1);
-        string_colours(id, -1, slot, -1, (int32_t)buf);
+        colour_pulse(buf, (const uint8_t *)GMEM(colour), 4, 1);
+        string_colours(id, -1, slot, -1, buf);
     }
     if (I32(item, 0x44) & 0x20000000) {
-        colour_pulse((int32_t)buf, colour, 4, 4);
-        string_colours(id, -1, slot, -1, (int32_t)buf);
+        colour_pulse(buf, (const uint8_t *)GMEM(colour), 4, 4);
+        string_colours(id, -1, slot, -1, buf);
     }
     if (I32(item, 0x44) & 0x40000000) {
-        colour_pulse((int32_t)buf, colour, 4, 2);
-        string_colours(id, -1, slot, -1, (int32_t)buf);
+        colour_pulse(buf, (const uint8_t *)GMEM(colour), 4, 2);
+        string_colours(id, -1, slot, -1, buf);
     }
     h = S8(item, 0x18);
     if (h == -2)
@@ -624,11 +637,11 @@ shown:
         I32(item, 0x40) = 2;
         id = menu_item_place(item, item_x, item_y, across, 0);
         if (!I32(item, 0x190))
-            string_colour(id, -1, U8(ROW(i), 5) ? 0x4aca2c : 0x4aca0c);
+            string_colour(id, -1, (const uint8_t *)GMEM(U8(ROW(i), 5) ? 0x4aca2c : 0x4aca0c));
         if (i == g_cursor) {
             *(int32_t *)0x4cb50c = 1;
             *(int32_t *)0x4cb510 = g_row_h / 2 + item_y;
-            string_bounds(id, 0x4cb514, 0x4cb518, 0x4cb51c, 0x4cb520);
+            string_bounds(id, (int32_t *)0x4cb514, (int32_t *)0x4cb518, (int32_t *)0x4cb51c, (int32_t *)0x4cb520);
         }
         row_x += step_x;
         item_x += step_x;
@@ -649,8 +662,8 @@ int32_t GAMEAPI lap_title_text(char *out, int32_t lap)
 {
     char format[0x200];
 
-    text_lookup((int32_t)format, 0x200, 0x4afa10, 0);
-    return c_sprintf((int32_t)out, (int32_t)format, lap + 1);
+    text_lookup((uint8_t *)format, 0x200, (const char *)0x4afa10, 0);
+    return c_sprintf(out, format, lap + 1);
 }
 
 /* 0x448730: a world's number from its menu entry (1..4 -> 0..3). */
@@ -676,7 +689,8 @@ int32_t GAMEAPI world_number(int32_t world)
 int32_t GAMEAPI track_title_text(char *out, int32_t world, int32_t track)
 {
     char text[0x200];
-    int32_t name, n, i;
+    uint32_t name;
+    int32_t n, i;
 
     if (world == 5 || world == 6) {
         track = (world != 5) + 2;
@@ -688,12 +702,12 @@ int32_t GAMEAPI track_title_text(char *out, int32_t world, int32_t track)
         name = 0x4afa9c;
         track = world_number(world);
     } else {
-        name = world_name(world);
+        name = (uint32_t)(uintptr_t)world_name(world);
     }
     out[0] = 0;
     if (!name || track == -1)
         return track;
-    text_lookup((int32_t)text, 0x200, name, track);
+    text_lookup((uint8_t *)text, 0x200, (const char *)GMEM(name), track);
     for (n = 0; text[n]; n++)
         ;
     n++;
@@ -709,17 +723,17 @@ int32_t GAMEAPI time_attack_report(int32_t unused, int32_t times, int32_t a, int
     int32_t y = 200, lap, colour;
 
     (void)unused;
-    menu_title(0x4afb28, 0);
-    menu_text((int32_t)text, 0x200, 0, -1);
-    menu_label((int32_t)text, 0, 2, *(int32_t *)0x4af72c, 0xa0, 0, 1, 0x4ac9cc, -1);
-    time_best_text((int32_t)text, times);
-    menu_label((int32_t)text, 8, 2, *(int32_t *)0x4af730, 0xa0, 0, 1, 0x4ac99c, -1);
+    menu_title((const char *)0x4afb28, 0);
+    menu_text(text, 0x200, 0, -1);
+    menu_label(text, 0, 2, *(int32_t *)0x4af72c, 0xa0, 0, 1, 0x4ac9cc, -1);
+    time_best_text(text, times);
+    menu_label(text, 8, 2, *(int32_t *)0x4af730, 0xa0, 0, 1, 0x4ac99c, -1);
     for (lap = 0; lap < 5; lap++) {
         colour = (lap & 1) + 1;
         lap_title_text(text, lap);
-        menu_label((int32_t)text, 0, colour, *(int32_t *)0x4af72c, y, 0, 1, 0x4ac9ec, -1);
+        menu_label(text, 0, colour, *(int32_t *)0x4af72c, y, 0, 1, 0x4ac9ec, -1);
         time_parts_text(text, times, lap);
-        menu_label((int32_t)text, 8, colour, *(int32_t *)0x4af730, y, 0, 1, 0x4ac99c, -1);
+        menu_label(text, 8, colour, *(int32_t *)0x4af730, y, 0, 1, 0x4ac99c, -1);
         y += 0x1e;
     }
     colour = menu_buttons(1, a, b, 0x37);
@@ -763,11 +777,11 @@ int32_t GAMEAPI driver_menu(uint32_t player, int32_t a, int32_t b)
     *(uint8_t *)0x4af790 = (uint8_t)player;
     if (car < 0 || car > 6)
         driver_choose(0, *(int32_t *)0x4af658 & 0xff);
-    menu_title(0x4b01b4, (int32_t)player);
+    menu_title((const char *)0x4b01b4, (int32_t)player);
     *(int32_t *)0x4cb4e0 = 0x19a;
     *(int32_t *)0x4af600 = 0;
     for (i = 0, slot = (const int32_t *)0x4af614; slot < (const int32_t *)0x4af630; slot++, i++) {
-        int32_t choice = *(uint8_t *)(0x4af658 + i);
+        int32_t choice = *(uint8_t *)(uintptr_t)(0x4af658 + i);
 
         if (choice == 6 && !(g_race[0x720] & 0x10))
             *(uint8_t *)0x4c9dfc = 1;
@@ -776,8 +790,8 @@ int32_t GAMEAPI driver_menu(uint32_t player, int32_t a, int32_t b)
         *(int32_t *)0x4ca2f0 = choice;
         *(int32_t *)0x4c9e0c = -100;
         *(uint8_t *)0x4c9e1c = 1;
-        car_name_text((int32_t)text, choice);
-        id = menu_add((int32_t)text, -3, a, b, *slot);
+        car_name_text(text, choice);
+        id = menu_add(text, -3, a, b, *slot);
         if (choice == car)
             menu_select(id);
     }
@@ -787,8 +801,8 @@ int32_t GAMEAPI driver_menu(uint32_t player, int32_t a, int32_t b)
     *(int32_t *)0x4cb4f8 = 1;
     *(int32_t *)0x4cb508 = 1;
     for (i = 0, y = 0x14b; i < 4; i++, y += 0x20) {
-        menu_text((int32_t)text, 0x200, 0x4b019c, i);
-        result = menu_label((int32_t)text, 0, 1, 0x23, y, 0, 1, 0x4aca3c, *(int32_t *)0x4ac84c);
+        menu_text(text, 0x200, (const char *)0x4b019c, i);
+        result = menu_label(text, 0, 1, 0x23, y, 0, 1, 0x4aca3c, *(int32_t *)0x4ac84c);
     }
     return result;
 }
@@ -823,7 +837,7 @@ int32_t GAMEAPI list_menu_open(void)
 /* 0x450460: the difficulty option. */
 int32_t GAMEAPI difficulty_option(int32_t a)
 {
-    return menu_option(0x4b0234, 0, 0x4b0234, 1, 0x450490, a);
+    return menu_option((const char *)0x4b0234, 0, (const char *)0x4b0234, 1, (menu_callback)(uintptr_t)0x450490, (uint32_t)a);
 }
 
 /* 0x452940: 30 frames before the next menu input. */
@@ -849,7 +863,7 @@ int32_t GAMEAPI network_buffer_reset(void)
         *(int32_t *)0x5d611c = heap_take(0x8000);
     *(int32_t *)0x5d6120 = *(int32_t *)0x5d611c + 0x8000;
     *(int32_t *)0x5d6124 = *(int32_t *)0x5d611c;
-    return mem_fill(0x5d5e18, 0, 0x300);
+    return mem_fill((uint8_t *)0x5d5e18, 0, 0x300);
 }
 
 /* 0x48a840: the network restarted: closed, opened and started (0 if
@@ -867,12 +881,12 @@ int32_t GAMEAPI network_restart(void)
     if (!result)
         return result;
     for (a = 0x5d5368; a < 0x5d5968; a += 0x18)
-        *(uint32_t *)a = 0;
+        *(uint32_t *)(uintptr_t)a = 0;
     network_buffer_reset();
     *(uint32_t *)0x5d622c |= 1;
     *(uint32_t *)0x5d622c |= 4;
     for (a = 0x5d6128; a < 0x5d622c; a += 0x41)
-        *(uint8_t *)a = 0;
+        *(uint8_t *)(uintptr_t)a = 0;
     return 1;
 }
 

@@ -15,11 +15,12 @@
 #include "fixed.h"
 #include "physics.h"
 #include "../coverage.h"
+#include "gamefn.h"
 
 #define SLOT_SIZE 0x48
-#define g_slots (*(uint8_t **)0x6ce740)
+#define g_slots GP(0x6ce740)
 #define g_slow_motion (*(int32_t *)0x5d9b20)
-#define g_slow_motion_body (*(uint8_t **)0x5d9b24)
+#define g_slow_motion_body GP(0x5d9b24)
 #define g_slow_motion_scale (*(int32_t *)0x5d9b2c)
 #define g_parity (*(uint32_t *)0x6c0a50)
 #define g_pair_group ((struct group *)0x6b9850)
@@ -34,9 +35,11 @@
 #define TRACK_CONTACT_COUNT 0x15c
 
 struct group {
-    uint8_t **bodies;
+    uint32_t bodies; /* the list: 32-bit body pointers */
     uint16_t count;
 };
+#define BODY(p) ((uint8_t *)(uintptr_t)(p))
+#define GROUP_BODIES(g) ((const uint32_t *)GMEM((g)->bodies))
 
 
 static uint8_t *slot_of(const uint8_t *body, int i)
@@ -129,9 +132,9 @@ int32_t GAMEAPI bodies_related(const uint8_t *a, const uint8_t *b)
     switch (kind_of(a)) {
     case 3:
         if (kb == 0xc)
-            return U32(b, 0x18c) == (uint32_t)a;
+            return U32(b, 0x18c) == (uint32_t)(uintptr_t)a;
         if (kb == 0x11)
-            return U32(b, 0x180) == (uint32_t)a;
+            return U32(b, 0x180) == (uint32_t)(uintptr_t)a;
         return 0;
     case 4:
         return 1;
@@ -149,7 +152,7 @@ int32_t GAMEAPI bodies_related(const uint8_t *a, const uint8_t *b)
         return 0;
     case 0x16:
         if (kb == 3)
-            return U32(a, 0x194) == (uint32_t)b || U32(a, 0x198) == (uint32_t)b;
+            return U32(a, 0x194) == (uint32_t)(uintptr_t)b || U32(a, 0x198) == (uint32_t)(uintptr_t)b;
         return kb == 0x16;
     }
     return 0;
@@ -166,9 +169,9 @@ void GAMEAPI event_add(uint8_t *a, uint8_t *b, const uint8_t *contact, uint32_t 
 
     *type = raw & 0xff;
     handle = event_queue_push(g_event_queue, (uint32_t)((I32(a, TIME) + t) * 2 + (b == 0)));
-    event = g_event_queue->events + (handle >> 20) * EVENT_SIZE;
-    U32(event, 0x04) = (uint32_t)a;
-    U32(event, 0x08) = (uint32_t)b;
+    event = EVQ_EVENTS(g_event_queue) + (handle >> 20) * EVENT_SIZE;
+    U32(event, 0x04) = (uint32_t)(uintptr_t)a;
+    U32(event, 0x08) = (uint32_t)(uintptr_t)b;
     memcpy(event + 0x38, contact + 0x2c, 12);
     memcpy(event + 0x2c, contact + 0x20, 12);
     U32(event, 0x48) = U32(contact, 0x3c);
@@ -247,8 +250,10 @@ void GAMEAPI body_track_sweep(uint8_t *body, int32_t dt)
 /* 0x415c90 */
 void GAMEAPI bodies_track_sweep(uint8_t **bodies, int32_t count, int32_t t)
 {
-    for (; count > 0; count--, bodies++) {
-        uint8_t *body = *bodies;
+    const uint32_t *list = (const uint32_t *)bodies; /* game memory: 32-bit body pointers */
+
+    for (; count > 0; count--, list++) {
+        uint8_t *body = BODY(*list);
 
         U32(body, HIT_SLOTS) &= 0x80000000;
         I32(body, HIT_TIME) = t - I32(body, TIME);
@@ -353,12 +358,12 @@ int32_t GAMEAPI body_track_contact(uint8_t *body, uint8_t *contact, int32_t *cou
 int32_t GAMEAPI group_contacts(void *list, int32_t t)
 {
     struct group *group = list;
-    uint8_t **bodies = group->bodies;
+    const uint32_t *bodies = GROUP_BODIES(group);
     uint32_t parity = g_parity;
     int32_t n, found = 0;
 
     for (n = group->count; n > 0; n--, bodies++) {
-        uint8_t *body = *bodies;
+        uint8_t *body = BODY(*bodies);
         uint32_t flags = U32(body, FLAGS);
 
         if (!(flags & 0x800) || (flags & 0x8200))
@@ -377,13 +382,13 @@ int32_t GAMEAPI group_contacts(void *list, int32_t t)
         }
     }
 
-    bodies_track_sweep(group->bodies, group->count, t);
-    for (n = group->count, bodies = group->bodies; n > 0; n--, bodies++)
-        if ((U32(*bodies, FLAGS) & 0x10000) && *(uint16_t *)(*bodies + 0x15e))
-            body_object_hits(*bodies);
+    bodies_track_sweep((uint8_t **)GROUP_BODIES(group), group->count, t);
+    for (n = group->count, bodies = GROUP_BODIES(group); n > 0; n--, bodies++)
+        if ((U32(BODY(*bodies), FLAGS) & 0x10000) && *(uint16_t *)(BODY(*bodies) + 0x15e))
+            body_object_hits(BODY(*bodies));
 
-    for (n = group->count, bodies = group->bodies; n > 0; n--, bodies++) {
-        uint8_t *body = *bodies;
+    for (n = group->count, bodies = GROUP_BODIES(group); n > 0; n--, bodies++) {
+        uint8_t *body = BODY(*bodies);
         uint8_t contact[0x48];
         int32_t resting;
 
@@ -404,10 +409,10 @@ int32_t GAMEAPI group_contacts(void *list, int32_t t)
         U32(body, HIT_SLOTS) |= 0x10000000;
     }
 
-    for (n = group->count, bodies = group->bodies; n > 0; n--, bodies++)
-        if (kind_of(*bodies) == 0x11) {
-            I32(slot_of(*bodies, 0), 0x40) = 32000;
-            I32(slot_of(*bodies, 1), 0x40) = 32000;
+    for (n = group->count, bodies = GROUP_BODIES(group); n > 0; n--, bodies++)
+        if (kind_of(BODY(*bodies)) == 0x11) {
+            I32(slot_of(BODY(*bodies), 0), 0x40) = 32000;
+            I32(slot_of(BODY(*bodies), 1), 0x40) = 32000;
         }
     return found;
 }
@@ -423,11 +428,11 @@ static int far_apart(int32_t a, int32_t b)
 int32_t GAMEAPI group_pair_contacts(void *list, void *other_list, int32_t t)
 {
     struct group *group = list, *other = other_list;
-    uint8_t **outer = group->bodies;
+    const uint32_t *outer = GROUP_BODIES(group);
     int32_t left, found = 0;
 
     if (other) {
-        const uint8_t *a = group->bodies[0], *b = other->bodies[0];
+        const uint8_t *a = BODY(GROUP_BODIES(group)[0]), *b = BODY(GROUP_BODIES(other)[0]);
 
         if (far_apart(I32(a, POSITION), I32(b, POSITION)) ||
             far_apart(I32(a, POSITION + 4), I32(b, POSITION + 4)) ||
@@ -435,7 +440,8 @@ int32_t GAMEAPI group_pair_contacts(void *list, void *other_list, int32_t t)
             return 0;
     }
     for (left = group->count; left > 0; left--, outer++) {
-        uint8_t *a = *outer, **inner;
+        uint8_t *a = BODY(*outer);
+        const uint32_t *inner;
         int32_t time, dt, n;
         uint32_t hits;
 
@@ -448,20 +454,20 @@ int32_t GAMEAPI group_pair_contacts(void *list, void *other_list, int32_t t)
         if (dt <= 0)
             continue;
         if (other) {
-            inner = other->bodies;
+            inner = GROUP_BODIES(other);
             n = other->count;
         } else {
             inner = outer + 1;
             n = left - 1;
         }
         for (; n > 0; n--, inner++) {
-            uint8_t *b = *inner, contact[0x48];
+            uint8_t *b = BODY(*inner), contact[0x48];
             int32_t velocity[3], when;
             uint32_t type;
 
             if (!b || a == b || I32(b, TIME) == t || bodies_related(a, b) || bodies_related(b, a))
                 continue;
-            if (group == g_pair_group && a == g_pair_group->bodies[1] && b == g_pair_group->bodies[0])
+            if (group == g_pair_group && a == BODY(GROUP_BODIES(g_pair_group)[1]) && b == BODY(GROUP_BODIES(g_pair_group)[0]))
                 continue;
             if ((hits & 0x80000000) && (U32(b, HIT_SLOTS) & 0x80000000))
                 continue;

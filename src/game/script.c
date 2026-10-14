@@ -17,15 +17,13 @@
 #include "fixed.h"
 #include "physics.h"
 #include "../coverage.h"
+#include "gamefn.h"
 
-typedef void(GAMEAPI *body_done_fn)(uint8_t *body, int32_t a, int32_t b);
-typedef void(GAMEAPI *body_effect_fn)(uint8_t *body, int32_t kind);
-typedef void(GAMEAPI *body_trigger_fn)(uint8_t *body, int32_t a, int32_t b);
-#define body_script_done ((body_done_fn)0x45bbf0)
-#define body_script_effect ((body_effect_fn)0x45bd30)
-#define body_script_trigger ((body_trigger_fn)0x41ac20)
+#define body_script_done(body) GCALL(0x45bbf0, k5_object_trigger)(body)
+#define body_script_effect GCALL(0x45bd30, body_sparks)
+#define body_script_trigger GCALL(0x41ac20, object_trigger_1a)
 
-#define g_track (*(uint8_t **)0x6c1eb0)
+#define g_track GP(0x6c1eb0)
 #define g_spline_a ((const int16_t *)0x4b11ec) /* pairs per step of 1/256 */
 #define g_spline_b ((const int16_t *)0x4b15ec) /* the same, read backwards */
 
@@ -68,7 +66,7 @@ void GAMEAPI body_script_step(uint8_t *body)
     int32_t facing[3] = {0, 0, 0};
 
     for (;;) {
-        const int16_t *op = (const int16_t *)(*(uint8_t **)(body + SCRIPT) + *(uint16_t *)(body + SCRIPT_AT));
+        const int16_t *op = (const int16_t *)(GP(body + SCRIPT) + *(uint16_t *)(body + SCRIPT_AT));
         const int16_t *arg = op + 1;
         int32_t code = op[0], advance = 0, again = 0;
 
@@ -128,7 +126,7 @@ void GAMEAPI body_script_step(uint8_t *body)
                         break;
                     }
                 } else if (kind == 2) {
-                    body_script_done(body, 0, 0);
+                    body_script_done(body);
                     return;
                 } else if (kind == 3 && *(int16_t *)(body + SCRIPT_COUNT) == 0) {
                     body_script_effect(body, 7);
@@ -206,7 +204,7 @@ void GAMEAPI body_script_step(uint8_t *body)
             break;
         }
         case 4: {
-            const int16_t *start = (const int16_t *)(*(uint8_t **)(g_track + 0xa8) + body[SCRIPT_START] * 8);
+            const int16_t *start = (const int16_t *)(GP(g_track + 0xa8) + body[SCRIPT_START] * 8);
 
             *(uint16_t *)(body + SCRIPT_AT) = 0;
             again = 1;
@@ -220,7 +218,7 @@ void GAMEAPI body_script_step(uint8_t *body)
         }
         case 6:
             advance = 8;
-            body_script_trigger(body, arg[0], *(const int32_t *)(arg + 1));
+            body_script_trigger(body, (uint32_t)arg[0], *(const uint32_t *)(arg + 1));
             again = 1;
             break;
         default:

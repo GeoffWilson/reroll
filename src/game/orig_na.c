@@ -21,6 +21,7 @@
 #include "../runtime.h"
 #include "physics.h"
 #include "winapi.h"
+#include "gamefn.h"
 
 #define U8(p, off) (*(uint8_t *)((uint8_t *)(p) + (off)))
 #define S16(p, off) (*(int16_t *)((uint8_t *)(p) + (off)))
@@ -28,44 +29,43 @@
 #define I32(p, off) (*(int32_t *)((uint8_t *)(p) + (off)))
 #define U32(p, off) (*(uint32_t *)((uint8_t *)(p) + (off)))
 #define F32(p, off) (*(float *)((uint8_t *)(p) + (off)))
-#define PTR(p, off) (*(uint8_t **)((uint8_t *)(p) + (off)))
+#define PTR(p, off) ((uint8_t *)(uintptr_t)U32(p, off))
 #define G8(a) (*(uint8_t *)(uintptr_t)(a))
 #define G16(a) (*(uint16_t *)(uintptr_t)(a))
 #define G32(a) (*(uint32_t *)(uintptr_t)(a))
 #define GI32(a) (*(int32_t *)(uintptr_t)(a))
 #define GF(a) (*(float *)(uintptr_t)(a))
-#define GPTR(a) (*(uint8_t **)(uintptr_t)(a))
+#define GPTR(a) GP(a)
 
 #define g_race GPTR(0x4b1960)
+#define CAMERA PTR(camera_slot, 0) /* the view's camera object (game slot) */
+#define REC(i) PTR(rec, (i)*4) /* a car record's pointer words (game memory) */
 #define g_camera_flags G32(0x6cce40)
 #define g_car_slots ((uint8_t *)0x6bfb80)
 #define CAR_SLOT_SIZE 0x274
 #define g_gte_vector_lo G32(0x6ccc64)
 #define g_gte_vector_hi G32(0x6ccc68)
 
-typedef void(GAMEAPI *na_void_fn)(void);
-typedef int32_t(GAMEAPI *na_int_fn)(void);
-typedef int32_t(GAMEAPI *na_fn1)(uint32_t a);
-typedef int32_t(GAMEAPI *na_fn2)(uint32_t a, uint32_t b);
-typedef int32_t(GAMEAPI *na_fn3)(uint32_t a, uint32_t b, uint32_t c);
-typedef int32_t(GAMEAPI *na_fn4)(uint32_t a, uint32_t b, uint32_t c, uint32_t d);
-typedef int32_t(GAMEAPI *na_fn6)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f);
-typedef int32_t(GAMEAPI *na_fn8)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f,
-                                 uint32_t g, uint32_t h);
-
-#define CALL0(a) (((na_int_fn)(a))())
-#define CALL1(a, x) (((na_fn1)(a))((uint32_t)(x)))
-#define CALL2(a, x, y) (((na_fn2)(a))((uint32_t)(x), (uint32_t)(y)))
-#define CALL3(a, x, y, z) (((na_fn3)(a))((uint32_t)(x), (uint32_t)(y), (uint32_t)(z)))
-#define CALL4(a, x, y, z, w) (((na_fn4)(a))((uint32_t)(x), (uint32_t)(y), (uint32_t)(z), (uint32_t)(w)))
 #define PTRARG(p) ((uint32_t)(uintptr_t)(p))
 
-#define grid_unlink(b) CALL1(0x4611d0, PTRARG(b))
-#define grid_link(b) CALL1(0x460fb0, PTRARG(b))
-#define crumble_start(o) CALL1(0x4427a0, PTRARG(o))
-#define view_fov_set(w) CALL1(0x423f00, (w)) /* reads the low word only */
-#define gte_project(out) CALL1(G32(0x6ccd78), PTRARG(out))
-#define gte_finish() CALL0(G32(0x6ccd80))
+#define grid_unlink(b) GCALL(0x4611d0, object_grid_unlink)(b)
+#define grid_link(b) GCALL(0x460fb0, object_grid_link)(b)
+#define crumble_start(o) GCALL(0x4427a0, body_triggers_apply)(o)
+#define view_fov_set(w) GCALL(0x423f00, view_zoom_set)(w) /* reads the low word only */
+
+/* The transform *0x6ccd78 (vertex record out, the GTE vector 0x6ccc64 in)
+ * then the projection *0x6ccd80, which takes the transform's st(0). */
+#if defined(__i386__)
+/* typed as returning an int so the transform's st(0) stays for the projection */
+#define gte_project(out) ((int32_t(GAMEAPI *)(uint32_t))(uintptr_t)G32(0x6ccd78))(PTRARG(out))
+#define gte_finish() ((int32_t(GAMEAPI *)(void))(uintptr_t)G32(0x6ccd80))()
+#else
+/* x86-64: the transform returns its st(0) as a float and the projection
+ * takes it (subunit_transform_c / wide_project_c); kept here in between */
+static float na_gte_h;
+#define gte_project(out) (na_gte_h = ((float(GAMEAPI *)(uint8_t *))(uintptr_t)G32(0x6ccd78))((uint8_t *)(out)))
+#define gte_finish() ((void(GAMEAPI *)(float))(uintptr_t)G32(0x6ccd80))(na_gte_h)
+#endif
 
 /* A float's bits as the original's fstp leaves them, and back. */
 static inline uint32_t fbits(float f)
@@ -120,11 +120,11 @@ int32_t GAMEAPI track_object_vanish(uint8_t *obj)
 {
     U32(obj, 0x148) = 0;
     U32(obj, 0) = (U32(obj, 0) & ~0x2200u) | 0x1000;
-    CALL1(0x419300, PTRARG(obj));
+    GCALL(0x419300, body_retire)(obj);
     U32(obj, 0x184) = 2;
     U16(obj, 0x188) = 0;
     crumble_start(obj);
-    CALL1(0x478430, PTRARG(obj));
+    GCALL(0x478430, pair_list_remove)(PTRARG(obj));
     return 0;
 }
 
@@ -178,17 +178,17 @@ void GAMEAPI camera_event_cut(uint8_t *from, int32_t *point, uint32_t kind, int1
     G16(0x6cf6d4) = (uint16_t)length;
     G16(0x6cf6d2) = 0;
     if (kind == 0xf) {
-        CALL4(0x40a570, PTRARG(point), 0xffffffffu, PTRARG(&spot), 0x5dc);
+        GCALL(0x40a570, camera_spot_nearest)(point, -1, &spot, 0x5dc);
         G32(0x6cf6a4) = U32(spot, 4);
         G32(0x6cf6a8) = U32(spot, 8);
         G32(0x6cf7e0) = PTRARG(from);
         G32(0x6cf6ac) = U32(spot, 0xc);
-        G32(0x6cf6c8) = (uint32_t)CALL4(0x40add0, 0x6cf6a4, PTRARG(point), 700, 4);
+        G32(0x6cf6c8) = (uint32_t)GCALL(0x40add0, camera_zoom_for)((const int32_t *)GMEM(0x6cf6a4), point, 700, 4);
         G16(0x6cf6d6) = 0;
         return;
     }
     if (from == 0) {
-        CALL4(0x40a570, PTRARG(point), 0xffffffffu, PTRARG(&spot), 0);
+        GCALL(0x40a570, camera_spot_nearest)(point, -1, &spot, 0);
         G32(0x6cf6a4) = U32(spot, 4);
         G32(0x6cf6a8) = U32(spot, 8);
         G32(0x6cf6ac) = U32(spot, 0xc);
@@ -259,7 +259,7 @@ int32_t GAMEAPI object_part_hit(uint8_t *obj, uint8_t *body, int32_t part, int32
     x = point[0] >> 16;
     y = point[1] >> 16;
     z = point[2] >> 16;
-    size = CALL1(0x427960, (uint32_t)(x * x + y * y + z * z));
+    size = (int32_t)GCALL(0x427960, fix_sqrt_table)(x * x + y * y + z * z);
     scale = I32(body, 0xa8);
     kind = U32(body, 0) & 0x1ff;
     if (kind == 0xc || kind == 0x11) {
@@ -277,7 +277,7 @@ int32_t GAMEAPI object_part_hit(uint8_t *obj, uint8_t *body, int32_t part, int32
     entry = (uint32_t *)(PTR(obj, 0x194) + part * 4);
     *entry = (*entry & 0xf5ffffffu) | 0x05000000;
     U16(obj, 8) |= (uint16_t)(1u << (part & 31));
-    CALL3(0x46bb50, PTRARG(obj), part, PTRARG(point));
+    GCALL(0x46bb50, object_face_blast)(obj, part, point);
     root = obj;
     while (PTR(root, 0x1b0))
         root = PTR(root, 0x1b0);
@@ -289,7 +289,7 @@ int32_t GAMEAPI object_part_hit(uint8_t *obj, uint8_t *body, int32_t part, int32
             uint32_t v = *e;
             if ((v & 0x0f000000) == 0x04000000) {
                 *e = (v & 0xf5ffffffu) | 0x05000000;
-                CALL3(0x46bb50, PTRARG(root), i, PTRARG(point));
+                GCALL(0x46bb50, object_face_blast)(root, i, point);
             }
         }
         U8(root, 0x198) = 0;
@@ -400,12 +400,12 @@ void GAMEAPI sky_dome_draw(uint8_t *view)
     vec[1] = (int16_t)(y - (int32_t)((uint32_t)t[3] << 2) - t[1]);
     vec[2] = z;
     vec[3] = 0;
-    level = (CALL0(0x486240) >> 1) + 0x80;
+    level = (GCALL(0x486240, weather_brightness)() >> 1) + 0x80;
     sky_colour = (uint32_t)(uint8_t)((int32_t)((sky & 0xff) * level) >> 8) |
                  (uint32_t)(uint8_t)((int32_t)(((sky >> 8) & 0xff) * level) >> 8) << 8 |
                  (uint32_t)(uint8_t)((int32_t)(((sky >> 16) & 0xff) * level) >> 8) << 16 | 0x98000000u;
     rules = GPTR(0x6c1eb0);
-    CALL3(0x428390, (uint8_t)((int32_t)(U8(rules, 0x30) * level) >> 7),
+    GCALL(0x428390, clear_colour_store)((uint8_t)((int32_t)(U8(rules, 0x30) * level) >> 7),
           (uint8_t)((int32_t)(U8(rules, 0x31) * level) >> 7), (uint8_t)((int32_t)(U8(rules, 0x32) * level) >> 7));
     tri_colour = (sky_colour & 0xffffff) | 0x94000000u;
     dome_vertex((const uint32_t *)vec, centre, centre_flag, bitsf(far));
@@ -421,11 +421,11 @@ void GAMEAPI sky_dome_draw(uint8_t *view)
         int16_t h;
         int32_t a = t[0x6b] * 5;
         sun[0] = (int32_t)((uint32_t)(t[0x68] + x) << 16);
-        h = (int16_t)(y - a / 2 - t[0x69] + CALL0(0x486310));
+        h = (int16_t)(y - a / 2 - t[0x69] + GCALL(0x486310, weather_sky_offset)());
         dome_scale(&h);
         sun[1] = (int32_t)((uint32_t)(uint16_t)h << 16);
         sun[2] = (int32_t)((uint32_t)(t[0x6a] + z) << 16);
-        CALL3(0x441d80, PTRARG(sun), 2, 0x6fff);
+        GCALL(0x441d80, flare_add)(sun, 2, 0x6fff);
     }
 
     for (i = 0; i < 32; i++) {
@@ -498,7 +498,7 @@ void GAMEAPI sky_quads_draw(void)
 int32_t GAMEAPI screenshot_dump(void)
 {
     int32_t w = GI32(0x4acc38), h = GI32(0x4acc3c), size = w * h * 3 + 0x28, n, row;
-    uint8_t *info = (uint8_t *)(uintptr_t)CALL2(0x476ae0, size, 0);
+    uint8_t *info = (uint8_t *)(uintptr_t)GCALL(0x476ae0, global_block_alloc)((uint32_t)size, 0);
     uint8_t file_header[14], desc[0x6c], name[0x104], line[0x1800];
     uint32_t file;
 
@@ -533,14 +533,14 @@ int32_t GAMEAPI screenshot_dump(void)
     CreateDirectoryA(GMEM(0x4a76d8), 0); /* "\RollCage\Dumps" */
     n = 1;
     do
-        CALL3(0x4979f0, PTRARG(name), 0x4a76bc, n++); /* sprintf("\RollCage\Dumps\Dump%d.bmp") */
-    while (CALL1(0x476f00, PTRARG(name)));
-    file = (uint32_t)CALL1(0x476d10, PTRARG(name));
+        GCALL(0x4979f0, msvc_sprintf)((char *)name, (const char *)GMEM(0x4a76bc), n++); /* sprintf("\RollCage\Dumps\Dump%d.bmp") */
+    while (GCALL(0x476f00, path_find_exists)((const char *)name));
+    file = GCALL(0x476d10, os_file_create)((const char *)name);
     if (file == 0)
         return 1;
-    CALL3(0x476e50, file, PTRARG(file_header), 0xe);
-    CALL3(0x476e50, file, PTRARG(info), 0x28);
-    if (CALL3(0x4875a0, 0, G32(0x4d5f4c), PTRARG(desc))) {
+    GCALL(0x476e50, os_handle_write)(file, file_header, 0xe);
+    GCALL(0x476e50, os_handle_write)(file, info, 0x28);
+    if (GCALL(0x4875a0, dd_surface_lock)(0, G32(0x4d5f4c), PTRARG(desc))) {
         for (row = GI32(0x4acc3c) - 1; row >= 0; row--) {
             const uint16_t *src = (const uint16_t *)(PTR(desc, 0x24) + I32(desc, 0x10) * row);
             int32_t width = GI32(0x4acc38), k;
@@ -554,11 +554,11 @@ int32_t GAMEAPI screenshot_dump(void)
                     *o++ = (uint8_t)((px >> ((b >> 8) & 31)) << (b & 31));
                 }
             }
-            CALL3(0x476e50, file, PTRARG(line), width * 3);
+            GCALL(0x476e50, os_handle_write)(file, line, (uint32_t)(width * 3));
         }
-        CALL1(0x487610, G32(0x4d5f4c));
+        GCALL(0x487610, dd_surface_unlock)(G32(0x4d5f4c));
     }
-    CALL1(0x43b760, file);
+    GCALL(0x43b760, file_close_any)(file);
     return 1;
 }
 
@@ -571,35 +571,36 @@ int32_t GAMEAPI screenshot_dump(void)
  * of view (+0x24), the sound listener if flag 4. */
 void GAMEAPI tv_camera_begin(int32_t view)
 {
-    uint8_t **camera = (uint8_t **)PTR(g_car_slots + view * CAR_SLOT_SIZE, 0x28);
+    uint8_t *camera_slot = PTR(g_car_slots + view * CAR_SLOT_SIZE, 0x28);
     uint8_t *tv = (uint8_t *)0x6cf6a0 + view * 0x150;
     uint32_t flags;
 
     G32(0x4b6244) = (uint32_t)(int32_t)(int64_t)GF(0x6cce6c);
-    copy_words((uint8_t *)0x4b616c, *camera + 0x34, 0x36);
+    copy_words((uint8_t *)0x4b616c, CAMERA + 0x34, 0x36);
     flags = g_camera_flags & 0xfffff83fu;
     G32(0x6cd408) = (uint32_t)view;
     flags |= (((U8(tv, 0x30) & 0xfu) << 1 | (U32(tv, 0x1c) & 1)) << 6) | 0x10;
     g_camera_flags = flags;
     view_fov_set(U16(tv, 0x24));
-    grid_unlink(*camera);
-    copy_words(*camera + 0x34, tv + 0x40, 0x36);
+    grid_unlink(CAMERA);
+    copy_words(CAMERA + 0x34, tv + 0x40, 0x36);
     if (g_camera_flags & 4) {
-        uint8_t *body = *camera;
-        CALL4(0x472050, view, PTRARG(body + 0x34), PTRARG(body + 0x68), PTRARG(body + 0xc4));
+        uint8_t *body = CAMERA;
+        GCALL(0x472050, sound_listener_set)((uint32_t)view, (const uint32_t *)(body + 0x34), (const uint32_t *)(body + 0x68),
+                                            (const uint32_t *)(body + 0xc4));
     }
-    grid_link(*camera);
+    grid_link(CAMERA);
 }
 
 /* 0x40ad60: gives the view (0x6cd408) its camera object and field of view
  * back; camera flags 0x10 and 0x40 off. */
 void GAMEAPI tv_camera_end(void)
 {
-    uint8_t **camera = (uint8_t **)PTR(g_car_slots + GI32(0x6cd408) * CAR_SLOT_SIZE, 0x28);
+    uint8_t *camera_slot = PTR(g_car_slots + GI32(0x6cd408) * CAR_SLOT_SIZE, 0x28);
 
-    grid_unlink(*camera);
-    copy_words(*camera + 0x34, (const uint8_t *)0x4b616c, 0x36);
-    grid_link(*camera);
+    grid_unlink(CAMERA);
+    copy_words(CAMERA + 0x34, (const uint8_t *)0x4b616c, 0x36);
+    grid_link(CAMERA);
     view_fov_set(G16(0x4b6244));
     g_camera_flags &= ~0x50u;
 }
@@ -623,7 +624,7 @@ void GAMEAPI vec_lerp8(const int32_t *a, const int32_t *b, int32_t *out, int32_t
  * matrix. */
 void GAMEAPI camera_blend_apply(uint8_t **rec)
 {
-    uint8_t *car = rec[0], *cam = rec[10];
+    uint8_t *car = REC(0), *cam = REC(10);
     int32_t look[3], side[3], spot[3], up[3], fwd[3], pos[3], new_up[3], new_look[3];
     uint8_t *body;
     int32_t k;
@@ -656,23 +657,23 @@ void GAMEAPI camera_blend_apply(uint8_t **rec)
         look[2] = -l0;
     }
     k = S16(cam, 0x5a);
-    body = *(uint8_t **)cam;
+    body = PTR(cam, 0);
     fwd[0] = (int32_t)((uint32_t)S16(body, 0xd0) << 4);
     fwd[1] = (int32_t)((uint32_t)S16(body, 0xd2) << 4);
     fwd[2] = (int32_t)((uint32_t)S16(body, 0xd4) << 4);
     up[0] = (int32_t)((uint32_t)-S16(body, 0xca) << 4);
     up[1] = (int32_t)((uint32_t)-S16(body, 0xcc) << 4);
     up[2] = (int32_t)((uint32_t)-S16(body, 0xce) << 4);
-    vec_lerp8(spot, (const int32_t *)(*(uint8_t **)cam + 0x34), pos, k);
+    vec_lerp8(spot, (const int32_t *)(PTR(cam, 0) + 0x34), pos, k);
     vec_lerp8(side, up, new_up, k);
     vec_lerp8(look, fwd, new_look, k);
-    body = *(uint8_t **)cam;
+    body = PTR(cam, 0);
     I32(body, 0x34) = pos[0];
     I32(body, 0x38) = pos[1];
     I32(body, 0x3c) = pos[2];
-    CALL3(0x407220, PTRARG(new_look), PTRARG(new_up), PTRARG(*(uint8_t **)cam + 0xc4));
-    grid_unlink(*(uint8_t **)cam);
-    grid_link(*(uint8_t **)cam);
+    GCALL(0x407220, matrix_look)(new_look, new_up, (int16_t *)(PTR(cam, 0) + 0xc4));
+    grid_unlink(PTR(cam, 0));
+    grid_link(PTR(cam, 0));
 }
 
 /* 0x40cbe0: unless the blend is off (rec +0x28 -> +0x5a == 0) or camera
@@ -682,7 +683,7 @@ void GAMEAPI camera_blend_apply(uint8_t **rec)
  * 0x40 and the car's +0x64e. */
 void GAMEAPI camera_blend_begin(uint8_t **rec)
 {
-    uint8_t *cam = rec[10], *body, *car;
+    uint8_t *cam = REC(10), *body, *car;
     int32_t d[3];
     uint32_t flags;
 
@@ -690,7 +691,7 @@ void GAMEAPI camera_blend_begin(uint8_t **rec)
         return;
     if ((g_camera_flags & 0x10) || (g_camera_flags & 2))
         return;
-    body = *(uint8_t **)cam;
+    body = PTR(cam, 0);
     G32(0x4b60e0) = U32(body, 0x34);
     G32(0x4b60e4) = U32(body, 0x38);
     G32(0x4b60e8) = U32(body, 0x3c);
@@ -700,13 +701,13 @@ void GAMEAPI camera_blend_begin(uint8_t **rec)
     G32(0x4b65f8) = 1;
     G32(0x4b6160) = (flags >> 6) & 1;
     G32(0x4b63bc) = (flags >> 7) & 0xf;
-    car = rec[0];
+    car = REC(0);
     d[0] = (I32(body, 0x34) - I32(car, 0x34)) >> 10;
     d[1] = (I32(body, 0x38) - I32(car, 0x38)) >> 10;
     d[2] = (I32(body, 0x3c) - I32(car, 0x3c)) >> 10;
-    if (CALL2(0x40d950, PTRARG(d), PTRARG(d)) < 0x100) {
+    if (GCALL(0x40d950, vec_dot)(d, d) < 0x100) {
         g_camera_flags |= 0x40;
-        g_camera_flags = (g_camera_flags & 0xfffff87fu) | (uint32_t)(U8(rec[0], 0x64e) & 0xf) << 7;
+        g_camera_flags = (g_camera_flags & 0xfffff87fu) | (uint32_t)(U8(REC(0), 0x64e) & 0xf) << 7;
     }
 }
 
@@ -718,7 +719,7 @@ void GAMEAPI camera_blend_end(uint8_t **rec)
 
     if (G32(0x4b65f8) == 0)
         return;
-    body = *(uint8_t **)rec[10];
+    body = PTR(REC(10), 0);
     U32(body, 0x34) = G32(0x4b60e0);
     U32(body, 0x38) = G32(0x4b60e4);
     U32(body, 0x3c) = G32(0x4b60e8);
@@ -748,7 +749,8 @@ int32_t GAMEAPI charanim_upload(uint32_t c, uint32_t f)
 
     if (c > 6 || f > 0x15)
         return 0;
-    if (((na_fn6)0x428c30)(G32(0x4b7da8), 1, PTRARG(&pitch), PTRARG(palette), PTRARG(&bits), PTRARG(&height))) {
+    if (GCALL(0x428c30, texture_surface_lock)(G32(0x4b7da8), 1, PTRARG(&pitch), PTRARG(palette), PTRARG(&bits),
+                                              PTRARG(&height))) {
         const uint8_t *src = PTR(frame, 0x10);
         for (i = 0; i < 0x100; i++) {
             palette[i * 4] = src[i * 4 + 2];
@@ -756,10 +758,10 @@ int32_t GAMEAPI charanim_upload(uint32_t c, uint32_t f)
             palette[i * 4 + 2] = src[i * 4];
             palette[i * 4 + 3] = 0;
         }
-        CALL4(0x41e1f0, PTRARG(palette), 0x100, PTRARG(converted), 1);
-        ((na_fn8)0x477860)(U32(frame, 0x14), pitch, (uint32_t)S16(frame, 4), height, bits, (uint32_t)S16(frame, 2),
-                           (uint32_t)S16(frame, 6), PTRARG(converted));
-        CALL3(0x428c60, G32(0x4b7da8), 1, PTRARG(palette));
+        GCALL(0x41e1f0, pixels_rgb_convert)(palette, 0x100, (uint16_t *)converted, 1);
+        GCALL(0x477860, pixels_blit_convert)(PTR(frame, 0x14), (uint8_t *)GMEM(pitch), S16(frame, 4), (int32_t)height,
+                                             (int32_t)bits, S16(frame, 2), S16(frame, 6), (const uint16_t *)converted);
+        GCALL(0x428c60, texture_surface_unlock)(G32(0x4b7da8), 1, PTRARG(palette));
     }
     GI32(0x4b6600) = S16(frame, 2);
     GI32(0x4b6604) = S16(frame, 6);
@@ -779,8 +781,8 @@ int32_t GAMEAPI charanim_load(uint32_t c, uint32_t f)
 
     if (c > 6 || f > 0x15)
         return 0;
-    CALL4(0x4979f0, PTRARG(name), 0x4a7c98, names[c], f + 1);
-    if (CALL3(0x477530, PTRARG(name), PTRARG(frame), 1) == 0)
+    GCALL(0x4979f0, msvc_sprintf)((char *)name, (const char *)GMEM(0x4a7c98), (const char *)GMEM(names[c]), f + 1);
+    if (GCALL(0x477530, image_bmp_load)((const char *)name, frame, 1) == 0)
         return 0;
     for (i = 0; i < 0x400; i += 4) {
         uint8_t *e = PTR(frame, 0x10) + i;
@@ -799,11 +801,11 @@ int32_t GAMEAPI charanim_load(uint32_t c, uint32_t f)
  * 0x4b7da8) and loads every frame of the 7 characters. Returns 1. */
 int32_t GAMEAPI charanim_load_all(void)
 {
-    uint32_t handle = (uint32_t)CALL0(0x428c80);
+    uint32_t handle = (uint32_t)GCALL(0x428c80, texture_handle_new)();
     int32_t c, f;
 
     G32(0x4b7da8) = handle;
-    ((na_fn6)0x428c90)(handle, 0x100, 0x8c, 0, 0, 0);
+    GCALL(0x428c90, texture_surface_upload)(handle, 0x100, 0x8c, 0, 0, 0);
     for (c = 0; c < 7; c++)
         for (f = 0; f < 0x16; f++)
             charanim_load((uint32_t)c, (uint32_t)f);

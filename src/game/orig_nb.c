@@ -27,11 +27,12 @@
 #include "../runtime.h"
 #include "com.h"
 #include "physics.h"
+#include "gamefn.h"
 
-#define U8(p, off) (*(uint8_t *)((uint8_t *)(p) + (off)))
-#define U16(p, off) (*(uint16_t *)((uint8_t *)(p) + (off)))
-#define I32(p, off) (*(int32_t *)((uint8_t *)(p) + (off)))
-#define U32(p, off) (*(uint32_t *)((uint8_t *)(p) + (off)))
+#define U8(p, off) (*(uint8_t *)((uint8_t *)(uintptr_t)(p) + (off)))
+#define U16(p, off) (*(uint16_t *)((uint8_t *)(uintptr_t)(p) + (off)))
+#define I32(p, off) (*(int32_t *)((uint8_t *)(uintptr_t)(p) + (off)))
+#define U32(p, off) (*(uint32_t *)((uint8_t *)(uintptr_t)(p) + (off)))
 #define G8(a) (*(uint8_t *)(uintptr_t)(a))
 #define G16(a) (*(uint16_t *)(uintptr_t)(a))
 #define G32(a) (*(uint32_t *)(uintptr_t)(a))
@@ -41,27 +42,18 @@
 #define g_config G32(0x4b2198)
 #define g_race G32(0x4b1960)
 
-typedef void(GAMEAPI *nb_void_fn)(void);
-typedef int32_t(GAMEAPI *nb_int_fn)(void);
-typedef int32_t(GAMEAPI *nb_fn1)(uint32_t a);
-typedef int32_t(GAMEAPI *nb_fn2)(uint32_t a, uint32_t b);
-typedef int32_t(GAMEAPI *nb_fn3)(uint32_t a, uint32_t b, uint32_t c);
-typedef int32_t(GAMEAPI *nb_fn4)(uint32_t a, uint32_t b, uint32_t c, uint32_t d);
-typedef float(GAMEAPI *nb_float3_fn)(uint32_t a, uint32_t b, uint32_t c);
-
-#define CALL0(a) ((nb_int_fn)(a))()
-#define CALL1(a, x) ((nb_fn1)(a))((uint32_t)(x))
-#define CALL2(a, x, y) ((nb_fn2)(a))((uint32_t)(x), (uint32_t)(y))
-#define CALL3(a, x, y, z) ((nb_fn3)(a))((uint32_t)(x), (uint32_t)(y), (uint32_t)(z))
-#define CALL4(a, x, y, z, w) ((nb_fn4)(a))((uint32_t)(x), (uint32_t)(y), (uint32_t)(z), (uint32_t)(w))
-
 /* COM methods com.h declares without their context argument (the
  * callback type's commas cut it off): the full DirectX signatures. */
-#define mem_fill(p, v, n) CALL3(0x476f50, p, v, n)
-#define mem_copy(d, s, n) CALL3(0x476f30, d, s, n)
-#define block_alloc(n, f) ((uint32_t)CALL2(0x476ae0, n, f))
-#define block_free(p) CALL1(0x476b40, p)
-#define dx_error(hr) CALL1(0x4291f0, hr)
+#define mem_fill(p, v, n) GCALL(0x476f50, mem_fill)(P8(p), (uint8_t)(v), n)
+#define mem_copy(d, s, n) GCALL(0x476f30, mem_copy)(P8(d), P8(s), n)
+#define block_alloc(n, f) GCALL(0x476ae0, global_block_alloc)(n, f)
+#define block_free(p) GCALL(0x476b40, global_block_free)(p)
+#if defined(__i386__)
+/* the original pushes the HRESULT, which 0x4291f0 doesn't read */
+#define dx_error(hr) ((void(GAMEAPI *)(uint32_t))(uintptr_t)0x4291f0)(hr)
+#else
+#define dx_error(hr) ((void)(hr), GCALL(0x4291f0, dx_error_ignore)())
+#endif
 #define g_hresult G32(0x4d6f18)
 
 /* ---- x87 helpers: the original's instructions ---- */
@@ -232,7 +224,9 @@ int32_t GAMEAPI clip_far_z(uint32_t *in, uint32_t *out, int32_t *next)
  * three vertices, negated when *0x6cce94; true if negative. */
 static int facing_away(uint32_t a, uint32_t b, uint32_t c)
 {
-    float f = ((nb_float3_fn)0x4278f0)(a, b, c);
+    /* (gamefn.h has vec_facing_float_c on x86-64 only; same prototype) */
+    float f = ((float(GAMEAPI *)(const uint8_t *, const uint8_t *, const uint8_t *))(uintptr_t)0x4278f0)(P8(a), P8(b),
+                                                                                                       P8(c));
     uint32_t bits;
 
     memcpy(&bits, &f, 4);
@@ -265,7 +259,8 @@ static int32_t clip_drive(uint32_t flags, uint32_t plane, uint32_t bufs, uint32_
     for (i = 0; i < 4; i++) {
         if (G32(0x4a7cf0 + i * 4) & flags) {
             uint32_t out = bufs + pp * 0x54;
-            if (!CALL4(plane, list, 0x4b7fa8 + i * 0x10, out, &next))
+            if (!((int32_t(GAMEAPI *)(const uint32_t *, const float *, uint32_t *, int32_t *))(uintptr_t)plane)(
+                    (const uint32_t *)P8(list), (const float *)P8(0x4b7fa8 + i * 0x10), (uint32_t *)P8(out), &next))
                 return 0;
             list = out;
             pp ^= 1;
@@ -273,15 +268,17 @@ static int32_t clip_drive(uint32_t flags, uint32_t plane, uint32_t bufs, uint32_
     }
     if (flags & 0x20) {
         uint32_t out = bufs + pp * 0x54;
-        if (!CALL3(extra, list, out, &next))
+        if (!((int32_t(GAMEAPI *)(const uint32_t *, uint32_t *, int32_t *))(uintptr_t)extra)(
+                (const uint32_t *)P8(list), (uint32_t *)P8(out), &next))
             return 0;
         list = out;
     }
-    if (!CALL3(last, list, CLIPPED, &next))
+    if (!((int32_t(GAMEAPI *)(const uint32_t *, uint32_t *, int32_t *))(uintptr_t)last)((const uint32_t *)P8(list),
+                                                                                    (uint32_t *)P8(CLIPPED), &next))
         return 0;
     n = G32(CLIPPED);
     for (i = 0; (int32_t)i < (int32_t)n; i++)
-        CALL1(0x428900, G32(CLIPPED + 4 + i * 4));
+        ((void(GAMEAPI *)(uint8_t *))(uintptr_t)0x428900)(P8(G32(CLIPPED + 4 + i * 4))); /* vertex_project_float */
     if (cull && facing_away(G32(0x6cd2b0), G32(0x6cd2b4), G32(0x6cd2b8)))
         return 0;
     return (int32_t)CLIPPED;
@@ -336,7 +333,9 @@ void GAMEAPI clip_vertex_add_c(uint32_t packed, uint32_t u, uint32_t v, const ui
     U32(vx, 0x20) = x87_from_int(G32(0x4b7ff0));
 }
 
-/* The register-argument entry: callers keep ebx / esi / edi / ebp. */
+/* The register-argument entry: callers keep ebx / esi / edi / ebp. i386
+ * only: on x86-64 every caller calls clip_vertex_add_c. */
+#if defined(__i386__)
 __asm__(".text\n"
         ".globl " "clip_vertex_add" "\n"
         "clip_vertex_add:\n\t"
@@ -347,6 +346,7 @@ __asm__(".text\n"
         "call " "clip_vertex_add_c" "\n\t"
         "addl $16, %esp\n\t"
         "ret\n");
+#endif
 
 /* ===== 0x418170: add a 2D vertex: xy (two int16) + the screen offset
  * 0x6ccd54 / 0x6ccd58, z 3.0, code 0x40, texture indices (bytes 0 / 1),
@@ -575,15 +575,15 @@ void GAMEAPI replay_files_save(void)
 
     for (i = 0; i < 6; i++)
         paths[i] = cfg + 0xccc + i * 0x20;
-    CALL1(0x477930, 0x4a7f8c);
-    CALL1(0x4743e0, 0);
+    GCALL(0x477930, directory_create)((const char *)P8(0x4a7f8c));
+    GCALL(0x4743e0, replays_delete)(0);
     if (U8(g_race, 0x54d) == 0)
         return;
     for (i = 0, off = 0;; i++, off += 0x1e884) {
         int32_t k;
         const uint8_t *file;
 
-        CALL3(0x477910, 0x4a7f7c, 0x4a7f88, name);
+        GCALL(0x477910, temp_file_name_get)((const char *)P8(0x4a7f7c), (const char *)P8(0x4a7f88), (char *)name);
         k = (int32_t)nb_strlen(name) - 1;
         while (k >= 0 && name[k] != '\\')
             k--;
@@ -591,7 +591,7 @@ void GAMEAPI replay_files_save(void)
         file = name + k + 1;
         nb_strcat(path, file);
         nb_strcpy(P8(paths[i]), file);
-        CALL3(0x4654f0, path, g_race + 0x12a0 + off, 0x1e884);
+        GCALL(0x4654f0, file_append_data)((uint32_t)(uintptr_t)path, g_race + 0x12a0 + off, 0x1e884);
         if (!((int32_t)(i + 1) < (int32_t)U8(g_race, 0x54d)))
             break;
     }
@@ -603,11 +603,17 @@ int32_t GAMEAPI cpuid_available(void)
 {
     uint32_t before, after;
 
+#if !defined(__i386__)
+    /* x86-64: every CPU has cpuid (the ID flag toggle doesn't matter) */
+    before = 0;
+    after = 1;
+#else
     __asm__ volatile("pushfl\n\tpopl %0\n\tmovl %0, %1\n\txorl $0x200000, %0\n\tpushl %0\n\tpopfl\n\t"
                      "pushfl\n\tpopl %0"
                      : "=&r"(after), "=&r"(before)
                      :
                      : "cc");
+#endif
     return after != before;
 }
 
@@ -712,7 +718,7 @@ uint8_t *GAMEAPI fatal_number(uint8_t *dst, uint32_t value, uint32_t conv, int32
 static int fatal_isdigit(uint8_t c)
 {
     if (GI32(0x4b4d0c) > 1)
-        return CALL2(0x498051, c, 4) != 0;
+        return GCALL(0x498051, msvc_isctype)(c, 4) != 0;
     return (U8(G32(0x4b4b00), (uint32_t)c * 2) & 4) != 0;
 }
 
@@ -740,7 +746,7 @@ uint32_t GAMEAPI fatal_format(const uint8_t *fmt, const uint32_t *args)
                 if (fatal_isdigit(*fmt)) {
                     while (*fmt == '0')
                         fmt++;
-                    width = CALL1(0x498046, fmt);
+                    width = GCALL(0x498046, msvc_atoi)((const char *)fmt);
                     while (fatal_isdigit(*fmt))
                         fmt++;
                 }
@@ -799,8 +805,8 @@ uint32_t GAMEAPI fatal_format(const uint8_t *fmt, const uint32_t *args)
                     fatal_number(out, *++ap, *fmt, 8);
                     break;
                 default:
-                    CALL2(0x497f7a, 0x4a802c, *fmt);
-                    CALL0(0x476f80);
+                    GCALL(0x497f7a, crtc_printf)((const char *)P8(0x4a802c), *fmt);
+                    GCALL(0x476f80, exit_zero)();
                     break;
                 }
                 while (*out)
@@ -819,21 +825,64 @@ uint32_t GAMEAPI fatal_format(const uint8_t *fmt, const uint32_t *args)
  * pointer kept at 0x4b8260 meanwhile), "too long" (> 0x100) is itself
  * fatal, then the debug hook, the debug output 0x428310 and exit
  * (0x476f80, a tail jump in the original). ===== */
+#if !defined(__i386__)
+/* x86-64: the variadic arguments as the 32-bit stack words fatal_format
+ * reads (words[0] is the first argument), one per conversion: pointers for
+ * %s / %p (game addresses, below 4 GB), ints for the others. */
+static void fatal_args_pack(const uint8_t *fmt, __builtin_va_list ap, uint32_t *words, uint32_t max)
+{
+    uint32_t n = 0;
+
+    while (*fmt && n < max) {
+        if (*fmt++ != '%')
+            continue;
+        while (*fmt >= '0' && *fmt <= '9')
+            fmt++;
+        switch (*fmt) {
+        case 0:
+            return;
+        case '%':
+            break;
+        case 's':
+        case 'p':
+            words[n++] = (uint32_t)(uintptr_t)__builtin_va_arg(ap, const void *);
+            break;
+        case 'c': case 'b': case 'o': case 'd': case 'i': case 'u': case 'x': case 'X':
+            words[n++] = (uint32_t)__builtin_va_arg(ap, int);
+            break;
+        default:
+            return; /* fatal_format stops the program there */
+        }
+        fmt++;
+    }
+}
+#endif
+
 void GAMEAPI fatal_error(const uint8_t *fmt, ...)
 {
     __builtin_va_list ap;
     uint32_t n;
 
     __builtin_va_start(ap, fmt);
+#if defined(__i386__)
     G32(0x4b8260) = (uint32_t)(uintptr_t)ap;
     n = fatal_format(fmt, (const uint32_t *)(void *)ap) & 0xffff;
+#else
+    {
+        uint32_t words[64];
+
+        fatal_args_pack(fmt, ap, words, 64);
+        G32(0x4b8260) = (uint32_t)(uintptr_t)words;
+        n = fatal_format(fmt, words) & 0xffff;
+    }
+#endif
     G32(0x4b8260) = 0;
     __builtin_va_end(ap);
     if (n > 0x100)
         fatal_error(P8(0x4a8004));
     debug_hook_nop();
-    CALL1(0x428310, FATAL_BUF);
-    CALL0(0x476f80);
+    GCALL(0x428310, debug_line_print)((char *)P8(FATAL_BUF));
+    GCALL(0x476f80, exit_zero)();
 }
 
 /* ===================================================================== */
@@ -946,7 +995,7 @@ int32_t __attribute__((stdcall)) d3d_texture_format_cb(const uint8_t *desc, void
     } else {
         G32(rec + 0x6c) = 0;
         G32(rec + 0x90) = 0;
-        CALL2(0x487480, (uint32_t)desc, rec + 0x70);
+        GCALL(0x487480, dd_pixel_format_get)((uint32_t)(uintptr_t)desc, rec + 0x70);
     }
     G32(0x4baffc)++;
     return 1;
@@ -963,7 +1012,7 @@ int32_t GAMEAPI d3d_texture_format_pick(void)
     g_hresult = (uint32_t)IDirect3DDevice2_EnumTextureFormats(G32(g_device), (void *)(uintptr_t)0x41d790, 0);
     if (g_hresult)
         return 0;
-    i = (uint32_t)CALL2(0x41f060, 0, 0);
+    i = (uint32_t)GCALL(0x41f060, texture_format_choose)(0, 0);
     for (uint32_t k = 0; k < 0x25; k++)
         G32(0x4bcce8 + k * 4) = G32(0x4bb000 + i * 0x94 + k * 4);
     return 1;
@@ -1084,7 +1133,7 @@ int32_t GAMEAPI zbuffer_create(uint32_t width, uint32_t height)
     g_hresult = (uint32_t)IDirectDrawSurface_AddAttachedSurface(G32(0x4d5f4c), GMEM(G32(0x4d5fa0)));
     if (g_hresult)
         return 0;
-    if (!CALL2(0x487660, desc, G32(0x4d5fa0)))
+    if (!GCALL(0x487660, dd_surface_desc_get)((uint32_t)(uintptr_t)desc, G32(0x4d5fa0)))
         return 0;
     G32(0x4d5f9c) = (desc[0x1a] >> 14) & 1;
     if (G32(0x4b86a0) != 0 && G32(0x4d5f9c) == 0)
@@ -1267,8 +1316,13 @@ int32_t GAMEAPI d3d_viewport_create(uint32_t width, uint32_t height)
  * released. Returns 1. ===== */
 int32_t GAMEAPI d3d_shutdown(void)
 {
-    CALL0(0x477450);
-    CALL1(0x41e0d0, G32(g_viewport));
+    GCALL(0x477450, fpu_cw_restore)();
+#if defined(__i386__)
+    /* the original pushes the viewport, which 0x41e0d0 doesn't read */
+    ((int32_t(GAMEAPI *)(uint32_t))(uintptr_t)0x41e0d0)(G32(g_viewport));
+#else
+    GCALL(0x41e0d0, d3d_materials_release)();
+#endif
     if (G32(0x4bcd7c)) {
         block_free(G32(0x4bcd7c));
         G32(0x4bcd7c) = 0;
@@ -1317,8 +1371,8 @@ int32_t GAMEAPI d3d_init(uint32_t unused, uint32_t zbuffer)
     G32(0x6cce5c) = 0xffffffffu;
     for (a = 0x4ba714; a < 0x4bb014; a += 0x24)
         G32(a) = 0xffffffffu;
-    CALL0(0x477440);
-    CALL0(0x477420);
+    GCALL(0x477440, fpu_cw_save)();
+    GCALL(0x477420, fpu_init_single)();
     d3d_tables_alloc();
     if (!ddraw_query_d3d())
         return 0;
@@ -1326,7 +1380,7 @@ int32_t GAMEAPI d3d_init(uint32_t unused, uint32_t zbuffer)
         return 0;
     if (!d3d_device_pick())
         return 0;
-    CALL0(0x41fda0);
+    GCALL(0x41fda0, blend_modes_choose)();
     d3d_state_defaults();
     if (zbuffer)
         zbuffer_create(G32(0x4d5f88), G32(0x4d5f8c));
@@ -1336,11 +1390,11 @@ int32_t GAMEAPI d3d_init(uint32_t unused, uint32_t zbuffer)
         return 0;
     if (!d3d_render_states())
         return 0;
-    if (!CALL0(0x41ed00))
+    if (!GCALL(0x41ed00, materials_create)())
         return 0;
-    CALL0(0x41f720);
+    GCALL(0x41f720, vk_probe_body)();
     if (!d3d_render_states())
         return 0;
-    CALL4(0x41f2d0, 0, 0, G32(0x4acc38), G32(0x4acc3c));
+    GCALL(0x41f2d0, viewport_body)(0, 0, GI32(0x4acc38), GI32(0x4acc3c));
     return 1;
 }

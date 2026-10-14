@@ -26,6 +26,7 @@
  * the group is called by address. */
 #include "../runtime.h"
 #include "physics.h"
+#include "gamefn.h"
 
 #define U8(p, off) (*(uint8_t *)((uint8_t *)(uintptr_t)(p) + (off)))
 #define S8(p, off) (*(int8_t *)((uint8_t *)(uintptr_t)(p) + (off)))
@@ -44,38 +45,41 @@
 #define g_race G32(0x4b1960)
 #define g_config G32(0x4b2198)
 
-typedef int32_t(GAMEAPI *pr_fn0)(void);
-typedef int32_t(GAMEAPI *pr_fn1)(uint32_t a);
-typedef int32_t(GAMEAPI *pr_fn2)(uint32_t a, uint32_t b);
-typedef int32_t(GAMEAPI *pr_fn3)(uint32_t a, uint32_t b, uint32_t c);
-typedef int32_t(GAMEAPI *pr_fn4)(uint32_t a, uint32_t b, uint32_t c, uint32_t d);
-typedef int32_t(GAMEAPI *pr_fn6)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f);
+#define tex_lock_at(h, n, bits, pal, bpp, pitch) \
+    GCALL(0x428c30, texture_surface_lock)(h, n, A(bits), A(pal), A(bpp), A(pitch))
+#define tex_unlock_at(h, n, pal) GCALL(0x428c60, texture_surface_unlock)(h, n, A(pal))
+#define tex_handle_new_at() GCALL(0x428c80, texture_handle_new)()
+#define tex_upload_at(h, w, ht, a, b, c) GCALL(0x428c90, texture_surface_upload)(h, w, ht, a, b, c)
+#define bmp_load_at(name, out, flag) GCALL(0x477530, image_bmp_load)((const char *)PTR(name), PTR(out), flag)
+#define pixels_rgb_convert_at(src, n, dst, alpha) \
+    GCALL(0x41e1f0, pixels_rgb_convert)(PTR(src), n, (uint16_t *)PTR(dst), alpha)
+#define mem_alloc_at(n) GCALL(0x476b80, arena_alloc_low)(n)
+#define screen_tint_add_at(c, x) GCALL(0x42bfc0, screen_tint_add)(c) /* the original pushes x too */
+#define screen_flash_set_at(a, b, c, d, e, f) \
+    GCALL(0x42c040, screen_flash_set)(a, (int32_t)(b), c, d, e, f)
+#define fade_tint_add_at(n) GCALL(0x42bf20, fade_tint_add)((int32_t)(n))
+#define grid_unlink2_at(o) GCALL(0x4612a0, object_grid_unlink2)(PTR(o))
+#define grid_record_at(i) GCALL(0x4613e0, grid_record)(i)
+#define fix_sqrt_table_at(n) GCALL(0x427960, fix_sqrt_table)(n)
+#define gte_matrix_save_at(out) GCALL(0x426480, gte_matrix_save)((uint8_t *)(out))
+#define vec_length_at(v) GCALL(0x480cd0, vec_length)(v)
+#define vec_div_at(v, d) GCALL(0x486e90, vec_div)(v, d)
+#define vec_normalise_at(v) GCALL(0x480c70, vec_normalise)(v)
+#define vec_dot_at(a, b) GCALL(0x40d950, vec_dot)(a, b)
 
-#define CALL0(a) (((pr_fn0)(a))())
-#define CALL1(a, x) (((pr_fn1)(a))(A(x)))
-#define CALL2(a, x, y) (((pr_fn2)(a))(A(x), A(y)))
-#define CALL3(a, x, y, z) (((pr_fn3)(a))(A(x), A(y), A(z)))
-#define CALL4(a, x, y, z, w) (((pr_fn4)(a))(A(x), A(y), A(z), A(w)))
-#define CALL6(a, x, y, z, w, v, u) (((pr_fn6)(a))(A(x), A(y), A(z), A(w), A(v), A(u)))
-
-#define tex_lock_at(h, n, bits, pal, bpp, pitch) CALL6(0x428c30, h, n, bits, pal, bpp, pitch)
-#define tex_unlock_at(h, n, pal) CALL3(0x428c60, h, n, pal)
-#define tex_handle_new_at() CALL0(0x428c80)
-#define tex_upload_at(h, w, ht, a, b, c) CALL6(0x428c90, h, w, ht, a, b, c)
-#define bmp_load_at(name, out, flag) CALL3(0x477530, name, out, flag)
-#define pixels_rgb_convert_at(src, n, dst, alpha) CALL4(0x41e1f0, src, n, dst, alpha)
-#define mem_alloc_at(n) CALL1(0x476b80, n)
-#define screen_tint_add_at(c, x) CALL2(0x42bfc0, c, x)
-#define screen_flash_set_at(a, b, c, d, e, f) CALL6(0x42c040, a, b, c, d, e, f)
-#define fade_tint_add_at(n) CALL1(0x42bf20, n)
-#define grid_unlink2_at(o) CALL1(0x4612a0, o)
-#define grid_record_at(i) ((uint8_t *)(uintptr_t)CALL1(0x4613e0, i))
-#define fix_sqrt_table_at(n) CALL1(0x427960, n)
-#define gte_matrix_save_at(out) CALL1(0x426480, out)
-#define vec_length_at(v) CALL1(0x480cd0, v)
-#define vec_div_at(v, d) CALL2(0x486e90, v, d)
-#define vec_normalise_at(v) CALL1(0x480c70, v)
-#define vec_dot_at(a, b) CALL2(0x40d950, a, b)
+#if !defined(__i386__)
+/* x86-64: the transform / projection pointers hand st(0) on as a float:
+ * *0x6ccd78 / *0x6ccd7c (0x426a20 / 0x426be0, src/subunit.c) return it,
+ * *0x6ccd80 (0x426b00, src/widescreen.c) takes it. The depth transform
+ * 0x426cd0 and its projection 0x426dc0 (src/game/orig_pc.c) are C bodies
+ * passing it the same way. */
+typedef float(GAMEAPI *pr_transform_fn)(uint8_t *rec);
+typedef void(GAMEAPI *pr_project_fn)(float h);
+#define PR_TRANSFORM(slot, rec) ((pr_transform_fn)(uintptr_t)G32(slot))((uint8_t *)(rec))
+#define PR_PROJECT(h) ((pr_project_fn)(uintptr_t)G32(0x6ccd80))(h)
+int32_t gte_rt_depth_c(uint8_t *rec, float *st0); /* 0x426cd0: returns z; *st0 its st(0) when z >= 0 */
+void gte_project_pending_c(float st0);              /* 0x426dc0 */
+#endif
 
 /* Every x87 register, for asm blocks that call out or use the FPU stack. */
 #define X87 "st", "st(1)", "st(2)", "st(3)", "st(4)", "st(5)", "st(6)", "st(7)"
@@ -169,16 +173,23 @@ static inline uint32_t pr_add_sub(uint32_t a, uint32_t b, uint32_t c)
  * the transform's st(0)); pop. */
 static inline void pr_transform_project(void *rec)
 {
+#if defined(__i386__)
     __asm__ volatile("pushl %0\n\tcall *0x6ccd78\n\tcall *0x6ccd80\n\taddl $4, %%esp"
                      :
                      : "S"(rec)
                      : "eax", "ecx", "edx", "cc", "memory", X87);
+#else
+    float h = PR_TRANSFORM(0x6ccd78, rec);
+
+    PR_PROJECT(h);
+#endif
 }
 
 /* push rec; call *0x6ccd7c (transform with depth); when its depth (+4) is
  * not negative, call *0x6ccd80. Returns the sign bit set (no projection). */
 static inline int pr_transform_depth_project(void *rec)
 {
+#if defined(__i386__)
     int neg;
 
     __asm__ volatile("pushl %1\n\t"
@@ -197,6 +208,14 @@ static inline int pr_transform_depth_project(void *rec)
                      : "S"(rec)
                      : "ecx", "edx", "cc", "memory", X87);
     return neg;
+#else
+    float h = PR_TRANSFORM(0x6ccd7c, rec);
+
+    if (((const uint32_t *)rec)[1] & 0x80000000u)
+        return 1;
+    PR_PROJECT(h);
+    return 0;
+#endif
 }
 
 /* The depth slot of a z (sar 5 done by the caller): halved twice above
@@ -252,6 +271,7 @@ struct pr_radius {
 
 static uint8_t pr_warp_radius(struct pr_radius *w)
 {
+#if defined(__i386__)
     uint32_t r;
 
     __asm__ volatile("fildl 0(%1)\n\t"
@@ -295,6 +315,40 @@ static uint8_t pr_warp_radius(struct pr_radius *w)
                      : "S"(w)
                      : "ecx", "edx", "cc", "memory", X87);
     return (uint8_t)r;
+#else
+    /* The same chain in C: the x87 runs at single precision, so every
+     * result is rounded to float; the runtime's sqrt / pow / sin are libm's
+     * (rounded to float), _ftol truncates. */
+    double nd = (double)w->n, power;
+    float r, p, q, s, v, k;
+
+    memcpy(w->nd, &nd, 8);
+    memcpy(&power, w->power, 8);
+    r = (float)__builtin_sqrt(nd);
+    memcpy(&w->r, &r, 4);
+    memcpy(&k, (const void *)0x4a3478, 4);
+    p = (float)__builtin_pow((double)(r * k), power);
+    memcpy(&w->p, &p, 4);
+    memcpy(&k, (const void *)0x4a33c0, 4);
+    q = p * k;
+    memcpy(&w->q, &q, 4);
+    {
+        double k1, k2;
+        float t;
+
+        memcpy(&k1, (const void *)0x4a3470, 8);
+        memcpy(&k2, (const void *)0x4a3468, 8);
+        t = (float)((double)q * k1);
+        t = (float)((double)t / k2);
+        s = (float)__builtin_sin((double)t);
+    }
+    memcpy(&w->s, &s, 4);
+    memcpy(&k, (const void *)0x4a3464, 4);
+    v = s * k;
+    v = v + q;
+    memcpy(&w->v, &v, 4);
+    return (uint8_t)(int64_t)v;
+#endif
 }
 
 /* One angle byte (0x47d400's second loop): y / x (floats, 0.0001 for 0)
@@ -306,6 +360,7 @@ struct pr_angle {
 
 static uint8_t pr_warp_angle(struct pr_angle *w)
 {
+#if defined(__i386__)
     uint32_t r;
 
     __asm__ volatile("flds 4(%1)\n\t"
@@ -326,6 +381,19 @@ static uint8_t pr_warp_angle(struct pr_angle *w)
                      : "S"(w)
                      : "ecx", "edx", "cc", "memory", X87);
     return (uint8_t)r;
+#else
+    /* as above: single precision results, libm's atan, _ftol truncation */
+    float x, y, s, t, k;
+
+    memcpy(&x, &w->x, 4);
+    memcpy(&y, &w->y, 4);
+    s = (float)__builtin_atan((double)(y / x));
+    memcpy(&w->s, &s, 4);
+    memcpy(&k, (const void *)0x4a3460, 4);
+    t = s * k;
+    memcpy(&w->t, &t, 4);
+    return (uint8_t)(int64_t)t;
+#endif
 }
 
 /* ===== 0x47d400: the warp lookup table *0x4d57ec, 128 x 128 byte pairs
@@ -1038,6 +1106,7 @@ void GAMEAPI sprites_glare_draw(void)
 
                 G32(0x6ccc64) = (uint32_t)(uint16_t)(I32(s, 0x88) >> 16) | ((uint32_t)I32(s, 0x8c) >> 16 << 16);
                 G32(0x6ccc68) = (uint16_t)(I32(s, 0x90) >> 16);
+#if defined(__i386__)
                 __asm__ volatile("pushl %1\n\t"
                                  "movl $0x426cd0, %%eax\n\t"
                                  "call *%%eax\n\t"
@@ -1051,6 +1120,15 @@ void GAMEAPI sprites_glare_draw(void)
                                  : "=D"(z)
                                  : "S"(&scr)
                                  : "eax", "ecx", "edx", "cc", "memory", X87);
+#else
+                {
+                    float h;
+
+                    z = gte_rt_depth_c((uint8_t *)&scr, &h);
+                    if (!((uint32_t)z & 0x80000000u))
+                        gte_project_pending_c(h);
+                }
+#endif
                 if (z < 0 || z <= 0x60)
                     continue;
                 sz = (int32_t)((uint32_t)U8(s, 0x95) * G32(0x6cce44)) / z;
@@ -1200,6 +1278,7 @@ void GAMEAPI sprite_streak_build(const int16_t *pos, int32_t scale, uint8_t *pkt
     w.p3[1] = (uint16_t)pos[2];
     G32(0x6ccc64) = U32(pos, 0);
     G32(0x6ccc68) = U32(pos, 4);
+#if defined(__i386__)
     __asm__ volatile("pushl %%esi\n\t"
                      "call *0x6ccd7c\n\t"
                      "addl $4, %%esp\n\t"
@@ -1232,6 +1311,24 @@ void GAMEAPI sprite_streak_build(const int16_t *pos, int32_t scale, uint8_t *pkt
                      : "=a"(neg)
                      : "S"(&w)
                      : "ecx", "edx", "cc", "memory", X87);
+#else
+    {
+        float h = PR_TRANSFORM(0x6ccd7c, w.r1);
+
+        neg = (w.r1[1] & 0x80000000u) != 0;
+        if (!neg) {
+            PR_PROJECT(h);
+            G32(0x6ccc64) = w.p2[0];
+            G32(0x6ccc68) = w.p2[1];
+            h = PR_TRANSFORM(0x6ccd7c, w.r2);
+            PR_PROJECT(h);
+            G32(0x6ccc64) = w.p3[0];
+            G32(0x6ccc68) = w.p3[1];
+            h = PR_TRANSFORM(0x6ccd7c, w.r3);
+            PR_PROJECT(h);
+        }
+    }
+#endif
     if (neg)
         return;
     depth = pr_fist(w.r1[1]);

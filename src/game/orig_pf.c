@@ -23,6 +23,7 @@
 #include "../runtime.h"
 #include "physics.h"
 #include "winapi.h"
+#include "gamefn.h"
 
 #define U8(p, off) (*(uint8_t *)((uint8_t *)(uintptr_t)(p) + (off)))
 #define U16(p, off) (*(uint16_t *)((uint8_t *)(uintptr_t)(p) + (off)))
@@ -43,30 +44,28 @@
 #define g_config G32(0x4b2198)
 #define g_race G32(0x4b1960)
 
-typedef int32_t(GAMEAPI *pf_fn0)(void);
-typedef int32_t(GAMEAPI *pf_fn1)(uint32_t a);
-typedef int32_t(GAMEAPI *pf_fn2)(uint32_t a, uint32_t b);
-typedef int32_t(GAMEAPI *pf_fn3)(uint32_t a, uint32_t b, uint32_t c);
-typedef int32_t(GAMEAPI *pf_fn4)(uint32_t a, uint32_t b, uint32_t c, uint32_t d);
-typedef int32_t(GAMEAPI *pf_fn5)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e);
-typedef int32_t(GAMEAPI *pf_fn6)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f);
-#define CALL0(a) (((pf_fn0)(a))())
-#define CALL1(a, x) (((pf_fn1)(a))(A(x)))
-#define CALL2(a, x, y) (((pf_fn2)(a))(A(x), A(y)))
-#define CALL3(a, x, y, z) (((pf_fn3)(a))(A(x), A(y), A(z)))
-#define CALL4(a, x, y, z, w) (((pf_fn4)(a))(A(x), A(y), A(z), A(w)))
-#define CALL5(a, x, y, z, w, v) (((pf_fn5)(a))(A(x), A(y), A(z), A(w), A(v)))
-#define CALL6(a, x, y, z, w, v, u) (((pf_fn6)(a))(A(x), A(y), A(z), A(w), A(v), A(u)))
-
 /* Outside the group. */
-#define vec_length_at(v) CALL1(0x480cd0, v)
-#define fix_div16_at(a, b) CALL2(0x42df70, a, b)
-#define vec_cross_at(a, b, out) CALL3(0x4806a0, a, b, out)
-#define sin_table_at(a) CALL1(0x480b10, a)
-#define particle_spawn_at(pos, vel, kind) CALL3(0x462690, pos, vel, kind)
-#define text_entry_at(buf, size, sec, idx) CALL4(0x42e6d0, buf, size, sec, idx)
-#define sprintf_at2(buf, fmt, a) CALL3(0x4979f0, buf, fmt, a)
-#define language_set_at(l) CALL1(0x42e3c0, l)
+#define vec_length_at(v) GCALL(0x480cd0, vec_length)(v)
+#define fix_div16_at(a, b) GCALL(0x42df70, fix_div16)(a, b)
+#define vec_cross_at(a, b, out) GCALL(0x4806a0, vec_cross)(a, b, out)
+#define sin_table_at(a) GCALL(0x480b10, sin_table)(a)
+#define particle_spawn_at(pos, vel, kind) GCALL(0x462690, particle_spawn)(pos, vel, kind)
+#define text_entry_at(buf, size, sec, idx) \
+    GCALL(0x42e6d0, text_line_get)((uint8_t *)(buf), size, (const char *)GMEM(sec), idx)
+#define sprintf_at2(buf, fmt, a) GCALL(0x4979f0, msvc_sprintf)(buf, (const char *)GMEM(fmt), a)
+#define language_set_at(l) GCALL(0x42e3c0, language_set)(l)
+#if defined(__i386__)
+/* The original passes these more arguments than they read (cdecl). */
+#define cheat_code_char_at(hwnd, key, press, x, y) \
+    (((void(GAMEAPI *)(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t))(uintptr_t)0x4360e1)(hwnd, key, press, x, y))
+#define video_mode_list_fill_at(dlg, item, a, b) \
+    (((void(GAMEAPI *)(uint32_t, uint32_t, uint32_t, uint32_t))(uintptr_t)0x488470)(dlg, item, a, b))
+#else
+#define cheat_code_char_at(hwnd, key, press, x, y) \
+    ((void)(x), (void)(y), GCALL(0x4360e1, cheat_code_char)(hwnd, (int32_t)(key), press))
+#define video_mode_list_fill_at(dlg, item, a, b) \
+    ((void)(a), (void)(b), GCALL(0x488470, video_mode_list_fill)((int32_t)(dlg), item))
+#endif
 
 /* This group's functions (also in build/groups/pf_protos.txt for physics.h). */
 void GAMEAPI trail_point_add(const int32_t *pos, const int16_t *ahead, const int32_t *up); /* 0x433d90 */
@@ -101,6 +100,7 @@ static inline int pf_below(uint32_t a, uint32_t b)
 /* fld dword v; call _ftol. */
 static inline int32_t pf_ftol(uint32_t v)
 {
+#if defined(__i386__)
     int32_t r;
 
     __asm__ volatile("flds %1\n\tmovl $0x497a80, %%eax\n\tcall *%%eax"
@@ -108,6 +108,14 @@ static inline int32_t pf_ftol(uint32_t v)
                      : "m"(v)
                      : "ecx", "edx", "cc", "memory", X87);
     return r;
+#else
+    /* _ftol truncates to 64 bits (0x8000000000000000 when out of range, as
+     * cvttss2si); eax is the low half */
+    float f;
+
+    memcpy(&f, &v, 4);
+    return (int32_t)(int64_t)f;
+#endif
 }
 
 /* The OT link both effects use: bucket d of 0x6cdd80 (when 0x6cce84) or
@@ -192,11 +200,19 @@ void GAMEAPI trail_point_add(const int32_t *pos, const int16_t *ahead, const int
         G32(0x6c80fc) = 0;
 }
 
+#if !defined(__i386__)
+/* x86-64: the transform (*0x6ccd78, as 0x426a20) returns what the original
+ * leaves in st(0), which the projection (*0x6ccd80, as 0x426b00) takes. */
+#define PF_TRANSFORM(rec) (((__typeof__(&subunit_transform_c))GP(0x6ccd78))(rec))
+#define PF_PROJECT(h) (((__typeof__(&wide_project_c))GP(0x6ccd80))(h))
+#endif
+
 /* V0 = a (x / y dword, z word; the original's z high half is an unwritten
  * stack word: 0 here, the transforms read words), transform into out_a,
  * project; the same for b into out_b. */
 static void pf_transform_pair(uint32_t a_xy, uint32_t a_z, uint8_t *out_a, uint32_t b_xy, uint32_t b_z, uint8_t *out_b)
 {
+#if defined(__i386__)
     uint32_t blk[6] = {a_xy, a_z, A(out_a), b_xy, b_z, A(out_b)};
 
     __asm__ volatile("movl (%0), %%eax\n\t"
@@ -217,6 +233,14 @@ static void pf_transform_pair(uint32_t a_xy, uint32_t a_z, uint8_t *out_a, uint3
                      :
                      : "S"(blk)
                      : "eax", "ecx", "edx", "cc", "memory", X87);
+#else
+    G32(0x6ccc64) = a_xy;
+    G32(0x6ccc68) = a_z;
+    PF_PROJECT(PF_TRANSFORM(out_a));
+    G32(0x6ccc64) = b_xy;
+    G32(0x6ccc68) = b_z;
+    PF_PROJECT(PF_TRANSFORM(out_b));
+#endif
 }
 
 /* ===== 0x433f00: the trails: a new point first when 0x6c8004 is the race
@@ -346,6 +370,7 @@ static inline uint32_t pf_rand(void)
 static void pf_beam_pair(uint32_t a_xy, uint32_t a_z, uint8_t *ra, uint32_t b_xy, uint32_t b_z, uint8_t *rb,
                          int32_t *da, int32_t *db)
 {
+#if defined(__i386__)
     uint32_t blk[8] = {a_xy, a_z, A(ra), b_xy, b_z, A(rb), 0, 0};
 
     __asm__ volatile("movl (%0), %%eax\n\t"
@@ -379,6 +404,19 @@ static void pf_beam_pair(uint32_t a_xy, uint32_t a_z, uint8_t *ra, uint32_t b_xy
                      : "eax", "ecx", "edx", "cc", "memory", X87);
     *da = (int32_t)blk[6];
     *db = (int32_t)blk[7];
+#else
+    float h;
+
+    G32(0x6ccc64) = a_xy;
+    G32(0x6ccc68) = a_z;
+    PF_PROJECT(PF_TRANSFORM(ra));
+    G32(0x6ccc64) = b_xy;
+    G32(0x6ccc68) = b_z;
+    h = PF_TRANSFORM(rb);
+    *da = pf_ftol(U32(ra, 4));
+    PF_PROJECT(h);
+    *db = pf_ftol(U32(rb, 4));
+#endif
 }
 
 /* ===== 0x4345c0: the lightning beams (4 records of 0x18 at 0x6c8100:
@@ -586,7 +624,7 @@ int32_t STDCALL window_proc(uint32_t hwnd, uint32_t msg, uint32_t wparam, uint32
         ClientToScreen(GMEM(hwnd), GMEM(0x4d5f90));
         return 0;
     case 0x100:
-        CALL5(0x4360e1, hwnd, wparam, 1, (int32_t)(int16_t)lparam, lparam >> 16);
+        cheat_code_char_at(hwnd, wparam, 1, (int32_t)(int16_t)lparam, lparam >> 16);
         return 0;
     case 0x111:
         window_command(hwnd, wparam & 0xffff);
@@ -604,8 +642,8 @@ int32_t STDCALL window_proc(uint32_t hwnd, uint32_t msg, uint32_t wparam, uint32
  * shut down (0x435e2c(0)), 0x4be460 = 1, PostQuitMessage(0). ===== */
 void GAMEAPI window_destroy_quit(void)
 {
-    CALL0(0x474260);
-    CALL1(0x435e2c, 0);
+    GCALL(0x474260, boot_data_save)();
+    GCALL(0x435e2c, shutdown_all)(0);
     G32(0x4be460) = 1;
     PostQuitMessage(0);
 }
@@ -626,7 +664,7 @@ void GAMEAPI input_focus_poll(void)
         SetActiveWindow(GMEM(G32(0x6c8000)));
         SetFocus(GMEM(G32(0x6c8000)));
     }
-    CALL0(0x489600);
+    GCALL(0x489600, input_poll)();
 }
 
 /* ===== 0x43692a: the clock, timeGetTime(). ===== */
@@ -658,15 +696,18 @@ void GAMEAPI loading_picture_draw(int32_t which)
         if (U8(g_config, 0x96) != 0)
             n = 8;
         sprintf_at2(name, 0x4ace70, n);
-        G32(0x4be490) = CALL3(0x477530, name, 0x4be398, 0);
-        G32(0x4acc64) = CALL5(0x4201f0, G32(0x4be3ac), G32(0x4be3a8), (int32_t)GS16(0x4be39a), (int32_t)GS16(0x4be39e),
-                              (int32_t)GS16(0x4be39c));
+        G32(0x4be490) = (uint32_t)GCALL(0x477530, image_bmp_load)(name, (uint8_t *)GMEM(0x4be398), 0);
+        G32(0x4acc64) =
+            (uint32_t)GCALL(0x4201f0, image_tiles_upload)(G32(0x4be3ac), (const uint8_t *)GMEM(G32(0x4be3a8)),
+                                                          (int32_t)GS16(0x4be39a), (int32_t)GS16(0x4be39e),
+                                                          (int32_t)GS16(0x4be39c));
     }
     if (G32(0x4be490) != 0) {
         int32_t rect[4];
 
         SetRect(rect, 0, 0, G32(0x4acc38), G32(0x4acc3c));
-        CALL6(0x4203a0, G32(0x4acc64), (int32_t)GS16(0x4be39a), (int32_t)GS16(0x4be39e), rect, 0, -1);
+        GCALL(0x4203a0, image_tiles_draw)((int32_t)G32(0x4acc64), (int32_t)GS16(0x4be39a), (int32_t)GS16(0x4be39e),
+                                          rect, 0, 0xffffffffu);
     }
 }
 
@@ -714,13 +755,13 @@ int32_t STDCALL mode_dialog_proc(uint32_t dlg, uint32_t msg, uint32_t wparam, ui
         mode_dialog_languages_fill(dlg);
         SendDlgItemMessageA(GMEM(dlg), 0x3ea, 0x14e, U8(g_config, 0x36), 0);
         mode_dialog_texts_set(dlg);
-        CALL2(0x4883c0, dlg, 0x3e8);
+        GCALL(0x4883c0, dd_driver_list_fill)(dlg, 0x3e8);
         G32(0x4be448) = SendDlgItemMessageA(GMEM(dlg), 0x3e8, 0x147, 0, 0);
-        CALL1(0x487020, G32(0x4be448));
-        CALL4(0x488470, dlg, 0x3e9, G32(0x4be44c), G32(0x4acc58));
+        GCALL(0x487020, dd_create)((int32_t)G32(0x4be448));
+        video_mode_list_fill_at(dlg, 0x3e9, G32(0x4be44c), G32(0x4acc58));
         SendDlgItemMessageA(GMEM(dlg), 0x3f7, 0xf1, G32(0x4acc68 + G32(0x4acc58) * 4), 0);
         SendDlgItemMessageA(GMEM(dlg), 0x406, 0xf1, G32(0x4acc68 + G32(0x4be44c) * 4), 0);
-        if (CALL0(0x474b70) == 0)
+        if (GCALL(0x474b70, pair_lookup_default)() == 0)
             EnableWindow(GetDlgItem(GMEM(dlg), 3), 0);
         return 1;
     }
@@ -731,19 +772,19 @@ int32_t STDCALL mode_dialog_proc(uint32_t dlg, uint32_t msg, uint32_t wparam, ui
             G32(0x4be4b8) = SendDlgItemMessageA(GMEM(dlg), 0x3ea, 0x147, 0, 0);
             language_set_at(G32(0x4be4b8));
             mode_dialog_texts_set(dlg);
-            CALL4(0x488470, dlg, 0x3e9, G32(0x4be44c), G32(0x4acc58));
+            video_mode_list_fill_at(dlg, 0x3e9, G32(0x4be44c), G32(0x4acc58));
         }
         if (id == 0x3e8 && code == 1) {
             G32(0x4be448) = SendDlgItemMessageA(GMEM(dlg), 0x3e8, 0x147, 0, 0);
-            CALL1(0x487020, G32(0x4be448));
-            CALL4(0x488470, dlg, 0x3e9, G32(0x4be44c), G32(0x4acc58));
+            GCALL(0x487020, dd_create)((int32_t)G32(0x4be448));
+            video_mode_list_fill_at(dlg, 0x3e9, G32(0x4be44c), G32(0x4acc58));
         }
         if (id == 1) {
             uint32_t mode;
 
             if (G32(0x4be4b8) != U8(g_config, 0x36)) {
                 U8(g_config, 0x36) = (uint8_t)G32(0x4be4b8);
-                CALL1(0x473c50, 1);
+                GCALL(0x473c50, config_default_texts)(1);
             }
             U8(g_config, 0x36) = (uint8_t)G32(0x4be4b8);
             language_set_at(U8(g_config, 0x36));
@@ -751,7 +792,7 @@ int32_t STDCALL mode_dialog_proc(uint32_t dlg, uint32_t msg, uint32_t wparam, ui
             G32(0x4be44c) = SendDlgItemMessageA(GMEM(dlg), 0x406, 0xf0, 0, 0) == 1 ? 1 : 0;
             G32(0x4be448) = SendDlgItemMessageA(GMEM(dlg), 0x3e8, 0x147, 0, 0);
             mode = (uint32_t)SendDlgItemMessageA(GMEM(dlg), 0x3e9, 0x147, 0, 0);
-            if (CALL1(0x488d60, G32(0x4be448)) == 0)
+            if (GCALL(0x488d60, joy_device_value)((int32_t)G32(0x4be448)) == 0)
                 U32(g_config, 0x48) = 0xb;
             EndDialog(GMEM(dlg), mode << 16 | G32(0x4be448));
         }
@@ -760,7 +801,7 @@ int32_t STDCALL mode_dialog_proc(uint32_t dlg, uint32_t msg, uint32_t wparam, ui
         if (id == 3) {
             U8(g_config, 0x36) = (uint8_t)G32(0x4be4b8);
             language_set_at(U8(g_config, 0x36));
-            CALL1(0x473c50, 0);
+            GCALL(0x473c50, config_default_texts)(0);
             EndDialog(GMEM(dlg), -2);
         }
         return 1;
@@ -781,17 +822,17 @@ int32_t STDCALL error_dialog_proc(uint32_t dlg, uint32_t msg, uint32_t wparam, u
 
     (void)lparam;
     if (msg == 0x110) {
-        CALL1(0x42df90, 8);
+        GCALL(0x42df90, strings_load)(8);
         text_entry_at(title, 0x104, 0x4acf90, 0);
         if (I32(g_config, 0x48) >= 0x80) {
             text_entry_at(extra, 0x104, 0x4acfa4, 1);
-            CALL4(0x4979f0, message, extra, U32(g_config, 0x48), U32(g_config, 0x4c));
+            GCALL(0x4979f0, msvc_sprintf)(message, extra, U32(g_config, 0x48), U32(g_config, 0x4c));
         } else {
             text_entry_at(message, 0x104, 0x4acfb8, I32(g_config, 0x48) + 2);
             if (I32(g_config, 0x48) == 4) {
                 text_entry_at(extra, 0x104, 0x4acfcc, 10);
-                CALL2(0x498460, message, 0x4acfe0);
-                CALL2(0x498460, message, extra);
+                GCALL(0x498460, msvc_strcat)(message, (const char *)GMEM(0x4acfe0));
+                GCALL(0x498460, msvc_strcat)(message, extra);
             }
         }
         SendDlgItemMessageA(GMEM(dlg), 0x409, 0xc, 0, (LPARAM)(uintptr_t)title);
@@ -817,14 +858,14 @@ void GAMEAPI hud_update(uint32_t *slot)
 {
     int32_t r;
 
-    CALL1(0x438df0, (int32_t)S16(slot[0], 0x658));
-    CALL1(0x438e60, slot);
-    CALL1(0x4390c0, slot);
-    r = CALL1(0x439050, slot);
-    CALL1(0x438fb0, slot);
-    CALL2(0x439270, slot, r);
+    GCALL(0x438df0, hud_speed_digits)((int32_t)S16(slot[0], 0x658));
+    GCALL(0x438e60, hud_lap_place)((uint8_t *)slot);
+    GCALL(0x4390c0, hud_weapon_icons)((uint8_t *)slot);
+    r = GCALL(0x439050, hud_warning_sprite)((uint8_t *)slot);
+    GCALL(0x438fb0, hud_time_digits)((uint8_t *)slot);
+    GCALL(0x439270, hud_lap_banner)((uint8_t *)slot, r);
     if (U8(g_race, 0x551) == 2)
-        CALL2(0x439f20, slot, U8(g_race, 0x552));
+        GCALL(0x439f20, hud_split_layout)((uint8_t *)slot, U8(g_race, 0x552));
 }
 
 /* ===== 0x438760: a view's HUD extras: 0x439400 in race modes 3 and 5..8,
@@ -834,10 +875,10 @@ void GAMEAPI hud_update_extra(uint32_t *slot)
     uint8_t mode = U8(g_race, 0x551);
 
     if (mode == 3 || (mode > 4 && mode <= 8))
-        CALL1(0x439400, slot);
-    CALL2(0x43a000, slot, G32(0x6c7fdc) & 0xff);
+        GCALL(0x439400, hud_car_markers)((uint8_t *)slot);
+    GCALL(0x43a000, hud_name_texts)((uint8_t *)slot, G32(0x6c7fdc) & 0xff);
     if (U8(g_race, 0x552) == 0)
-        CALL2(0x45cfe0, slot, G32(0x6c7fdc) & 0xff);
+        GCALL(0x45cfe0, netplay_chat_show)(A(slot), G32(0x6c7fdc) & 0xff);
 }
 
 /* fild qword (v, 0); fstp dword t; fld t; fadd dword *src; fstp *dst. */

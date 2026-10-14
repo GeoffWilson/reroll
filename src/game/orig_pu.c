@@ -30,6 +30,7 @@
 #include "../runtime.h"
 #include "physics.h"
 #include "com.h"
+#include "gamefn.h"
 
 #define U8(p, off) (*(uint8_t *)((uint8_t *)(uintptr_t)(p) + (off)))
 #define U16(p, off) (*(uint16_t *)((uint8_t *)(uintptr_t)(p) + (off)))
@@ -44,18 +45,6 @@
 #define A(x) ((uint32_t)(uintptr_t)(x))
 
 #define g_config G32(0x4b2198)
-
-typedef int32_t(GAMEAPI *pu_fn0)(void);
-typedef int32_t(GAMEAPI *pu_fn1)(uint32_t a);
-typedef int32_t(GAMEAPI *pu_fn2)(uint32_t a, uint32_t b);
-typedef int32_t(GAMEAPI *pu_fn3)(uint32_t a, uint32_t b, uint32_t c);
-typedef int32_t(GAMEAPI *pu_fn4)(uint32_t a, uint32_t b, uint32_t c, uint32_t d);
-
-#define CALL0(a) (((pu_fn0)(a))())
-#define CALL1(a, x) (((pu_fn1)(a))(A(x)))
-#define CALL2(a, x, y) (((pu_fn2)(a))(A(x), A(y)))
-#define CALL3(a, x, y, z) (((pu_fn3)(a))(A(x), A(y), A(z)))
-#define CALL4(a, x, y, z, w) (((pu_fn4)(a))(A(x), A(y), A(z), A(w)))
 
 /* IDirectPlayLobbyA / IDirectPlayLobby2A methods (com.h has none). */
 #define DPERR_ALREADYINITIALIZED 0x88770005u
@@ -104,40 +93,46 @@ typedef int32_t(GAMEAPI *pu_fn4)(uint32_t a, uint32_t b, uint32_t c, uint32_t d)
 #define GUID_SP_MODEM 0x4a4120
 
 /* Outside the group, by address. */
-#define mem_copy_at(d, s, n) CALL3(0x476f30, d, s, n)
-#define mem_fill_at(d, c, n) CALL3(0x476f50, d, c, n)
-#define block_alloc_at(n, t) CALL2(0x476ae0, n, t)
-#define block_free_at(p) CALL1(0x476b40, p)
-#define arena_alloc_at(n) CALL1(0x476b80, n)
-#define dieffect_fill_at(e) CALL1(0x489250, e)
-#define dinput_stop_a_at(d) CALL1(0x489a80, d)
-#define dinput_stop_b_at(d) CALL1(0x489b90, d)
-#define dinput_stop_c_at(d) CALL1(0x489ca0, d)
-#define beginthread_at(f, s, a) CALL3(0x498d7c, f, s, a)
-#define net_flag9_set_at(x) CALL1(0x45f790, x)
-#define serial_baud_at(x) CALL1(0x48cff0, x)
-#define serial_stop_bits_at(x) CALL1(0x48d070, x)
-#define serial_parity_at(x) CALL1(0x48d090, x)
-#define serial_flow_at(x) CALL1(0x48d0e0, x)
-#define net_players_compact_at() CALL0(0x4609b0)
-#define net_state_bit5_at() CALL0(0x45ef30)
-#define net_player_left_at(i) CALL1(0x45cb90, i)
-#define net_race_abort_at() CALL0(0x45d170)
-#define net_players_send_at() CALL0(0x45dde0)
-#define net_states_send_at() CALL0(0x45f310)
-#define text_line_get_at(b, n, f, i) CALL4(0x42e6d0, b, n, f, i)
-#define sprintf_at(d, f) CALL2(0x4979f0, d, f)
-#define net_message_box_at(s) CALL1(0x48d270, s)
-#define menu_dirty_set_at() CALL0(0x452d20)
-#define net_game_message_handle_at(b, n, f, t) CALL4(0x45d230, b, n, f, t)
-#define game_time_at() ((uint32_t)CALL0(0x43692a))
-#define net_packet_filter_at(b, f) CALL2(0x48cf40, b, f)
-#define net_race_over_at() CALL0(0x45eba0)
-#define net_sequence_next_at() CALL0(0x48c920)
-#define net_checksum_at(b, n) ((uint32_t)CALL2(0x48cab0, b, n))
-#define net_drop_player_at(i) CALL1(0x48bf70, i)
-#define network_player_set_at(s, n, id) CALL3(0x48be20, s, n, id)
-#define network_buffer_reset_at() CALL0(0x48c990)
+#define mem_copy_at(d, s, n) GCALL(0x476f30, mem_copy)(PTR(A(d)), PTR(A(s)), n)
+#define mem_fill_at(d, c, n) GCALL(0x476f50, mem_fill)(PTR(A(d)), c, n)
+#define block_alloc_at(n, t) GCALL(0x476ae0, global_block_alloc)(n, t)
+#define block_free_at(p) GCALL(0x476b40, global_block_free)(p)
+#define arena_alloc_at(n) GCALL(0x476b80, arena_alloc_low)(n)
+#define dieffect_fill_at(e) GCALL(0x489250, ff_effect_defaults)(A(e))
+#define dinput_stop_a_at(d) GCALL(0x489a80, ff_road_stop)(d)
+#define dinput_stop_b_at(d) GCALL(0x489b90, ff_spring_a_stop)(d)
+#define dinput_stop_c_at(d) GCALL(0x489ca0, ff_spring_b_stop)(d)
+#define beginthread_at(f, s, a) GCALL(0x498d7c, msvc_beginthread)(A(f), s, a)
+#define net_flag9_set_at(x) GCALL(0x45f790, network_flag9_set)(x)
+#define serial_baud_at(x) GCALL(0x48cff0, serial_baud)(x)
+#define serial_stop_bits_at(x) GCALL(0x48d070, serial_stop_bits)(x)
+#define serial_parity_at(x) GCALL(0x48d090, serial_parity)(x)
+#define serial_flow_at(x) GCALL(0x48d0e0, serial_flow)(x)
+#define net_players_compact_at() GCALL(0x4609b0, net_players_compact)()
+#define net_state_bit5_at() GCALL(0x45ef30, net_state_bit5)()
+#define net_player_left_at(i) GCALL(0x45cb90, fe_net_player_left)(i)
+#define net_race_abort_at() GCALL(0x45d170, fe_net_race_abort)()
+#define net_players_send_at() GCALL(0x45dde0, netplay_players_send)()
+#define net_states_send_at() GCALL(0x45f310, net_states_send)()
+#define text_line_get_at(b, n, f, i) GCALL(0x42e6d0, text_line_get)(PTR(A(b)), n, (const char *)PTR(f), i)
+#define sprintf_at(d, f) GCALL(0x4979f0, msvc_sprintf)((char *)PTR(A(d)), (const char *)PTR(A(f)))
+#define net_message_box_at(s) GCALL(0x48d270, net_chat_send)((char *)PTR(A(s)))
+#define menu_dirty_set_at() GCALL(0x452d20, menu_dirty_set)()
+#if defined(__i386__)
+/* 0x45d230 reads three arguments; the original pushes the recipient too */
+#define net_game_message_handle_at(b, n, f, t) \
+    ((void(GAMEAPI *)(uint32_t, uint32_t, uint32_t, uint32_t))(uintptr_t)0x45d230)(A(b), n, f, t)
+#else
+#define net_game_message_handle_at(b, n, f, t) ((void)(t), GCALL(0x45d230, netplay_message_handle)(A(b), n, f))
+#endif
+#define game_time_at() GCALL(0x43692a, game_time_get)()
+#define net_packet_filter_at(b, f) GCALL(0x48cf40, net_packet_filter)((const uint32_t *)PTR(A(b)), f)
+#define net_race_over_at() GCALL(0x45eba0, net_race_over)()
+#define net_sequence_next_at() GCALL(0x48c920, fe_net_sequence_next)()
+#define net_checksum_at(b, n) GCALL(0x48cab0, fe_net_checksum)(PTR(A(b)), n)
+#define net_drop_player_at(i) GCALL(0x48bf70, fe_net_drop_player)((uint32_t)(i))
+#define network_player_set_at(s, n, id) GCALL(0x48be20, network_player_set)(s, (const char *)PTR(A(n)), (int32_t)(id))
+#define network_buffer_reset_at() GCALL(0x48c990, network_buffer_reset)()
 
 /* This group's functions (also in build/groups/pu_protos.txt for physics.h). */
 void GAMEAPI ff_effect_a_stop(int32_t dev); /* 0x489de0 */
@@ -323,7 +318,7 @@ int32_t GAMEAPI dplay_init(void)
 {
     mem_fill_at(0x5d2060, 0, 0x41d0);
     dplay_connections_probe();
-    g_dplay_hr = CoCreateInstance(GMEM(0x4a40e0), 0, 1, GMEM(0x4a40d0), (void **)GMEM(0x5d2060));
+    g_dplay_hr = CoCreateInstance(GMEM(0x4a40e0), 0, 1, GMEM(0x4a40d0), (uint32_t *)GMEM(0x5d2060));
     if (g_dplay_hr)
         return 0;
     g_recv_buffer = arena_alloc_at(0x1000);
@@ -408,7 +403,7 @@ void GAMEAPI dplay_close(void)
     for (i = 0; i < 6; i++)
         mem_fill_at(PLAYER(i), 0, 0x66c);
     g_player_count = 0;
-    hr = CoCreateInstance(GMEM(0x4a40e0), 0, 1, GMEM(0x4a40d0), (void **)GMEM(0x5d2060));
+    hr = CoCreateInstance(GMEM(0x4a40e0), 0, 1, GMEM(0x4a40d0), (uint32_t *)GMEM(0x5d2060));
     g_dplay_hr = hr;
     if (!hr)
         net_flag9_set_at(0);
@@ -450,11 +445,11 @@ int32_t GAMEAPI dplay_connections_probe(void)
     uint32_t hr;
 
     G32(0x5d5cd4) = 0;
-    hr = CoCreateInstance(GMEM(0x4a40e0), 0, 1, GMEM(0x4a40d0), (void **)&dp);
+    hr = CoCreateInstance(GMEM(0x4a40e0), 0, 1, GMEM(0x4a40d0), &dp);
     g_dplay_hr = hr;
     if (hr)
         return 0;
-    hr = CoCreateInstance(GMEM(0x4a41a0), 0, 1, GMEM(0x4a4190), (void **)&lobby);
+    hr = CoCreateInstance(GMEM(0x4a41a0), 0, 1, GMEM(0x4a4190), &lobby);
     g_dplay_hr = hr;
     if (hr)
         return 0;
@@ -591,11 +586,11 @@ int32_t GAMEAPI dplay_connection_init(uint32_t address, uint32_t phone, uint32_t
         break;
     }
     if (!use_stored) {
-        hr = DirectPlayLobbyCreateA(0, (void **)&lobby1, 0, 0, 0);
+        hr = DirectPlayLobbyCreateA(0, &lobby1, 0, 0, 0);
         g_dplay_hr = hr;
         if (hr)
             return 0;
-        hr = IDirectPlayLobbyA_QueryInterface(lobby1, GMEM(0x4a4170), (void **)&lobby2);
+        hr = IDirectPlayLobbyA_QueryInterface(lobby1, GMEM(0x4a4170), &lobby2);
         g_dplay_hr = hr;
         if (hr)
             return 0;
@@ -714,7 +709,7 @@ int32_t __attribute__((stdcall)) dplay_connection_enum_cb(uint32_t guid, uint32_
         return 1;
     mem_copy_at(U32(CONN(g_conn_count), 0x10), conn, size);
     G32(0x5d5cd4) = 0;
-    g_dplay_hr = CoCreateInstance(GMEM(0x4a40e0), 0, 1, GMEM(0x4a40d0), (void **)&dp);
+    g_dplay_hr = CoCreateInstance(GMEM(0x4a40e0), 0, 1, GMEM(0x4a40d0), &dp);
     if (!g_dplay_hr) {
         g_dplay_hr = IDirectPlay4A_InitializeConnection(dp, conn, 0);
         if (!g_dplay_hr)

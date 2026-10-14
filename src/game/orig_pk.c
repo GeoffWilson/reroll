@@ -31,6 +31,7 @@
  * them, is called by address. */
 #include "../runtime.h"
 #include "physics.h"
+#include "gamefn.h"
 
 #define U8(p, off) (*(uint8_t *)((uint8_t *)(uintptr_t)(p) + (off)))
 #define U16(p, off) (*(uint16_t *)((uint8_t *)(uintptr_t)(p) + (off)))
@@ -43,39 +44,34 @@
 #define PTR(a) ((uint8_t *)(uintptr_t)(a))
 #define A(x) ((uint32_t)(uintptr_t)(x))
 
-typedef int32_t(GAMEAPI *pk_fn0)(void);
-typedef int32_t(GAMEAPI *pk_fn1)(uint32_t a);
-typedef int32_t(GAMEAPI *pk_fn2)(uint32_t a, uint32_t b);
-typedef int32_t(GAMEAPI *pk_fn3)(uint32_t a, uint32_t b, uint32_t c);
-typedef int32_t(GAMEAPI *pk_fn5)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e);
+/* x87 asm entries in src/game/orig_pc.c, called by address with the
+ * prototypes their callers use: 0x426620 gte_rt_float (no arguments),
+ * 0x4290b0 vec_normalise_x87 (in, out; returns 0), and through 0x6cce3c
+ * the light colour (0x427400, 3DNow! 0x427250; no arguments). */
+typedef void(GAMEAPI *pk_void_fn)(void);
+typedef int32_t(GAMEAPI *pk_normalise_fn)(int32_t *in, int32_t *out);
 
-#define CALL0(a) (((pk_fn0)(a))())
-#define CALL1(a, x) (((pk_fn1)(a))(A(x)))
-#define CALL2(a, x, y) (((pk_fn2)(a))(A(x), A(y)))
-#define CALL3(a, x, y, z) (((pk_fn3)(a))(A(x), A(y), A(z)))
-#define CALL5(a, x, y, z, w, v) (((pk_fn5)(a))(A(x), A(y), A(z), A(w), A(v)))
-
-#define light_matrix_load_at(m) CALL1(0x428940, m)
-#define gte_rotate_short_at() CALL0(0x427fc0)
-#define gte_rt_float_at() CALL0(0x426620)
-#define gte_square_ir_at() CALL0(0x4282d0)
-#define vec_normalise_at(in, out) CALL2(0x4290b0, in, out)
-#define palette_get_at() ((uint32_t)CALL0(0x486350))
-#define quat_facing_at(q, v) CALL2(0x40ee60, q, v)
-#define body_sparks_at(b, n) CALL2(0x45bd30, b, n)
-#define contact_particle_at(b, p, k) CALL3(0x45be10, b, p, k)
-#define explosion_effects_at(p, v, a, b, c) CALL5(0x42aa30, p, v, a, b, c)
-#define gte_light_colour_at() CALL0(G32(0x6cce3c))
+#define light_matrix_load_at(m) GCALL(0x428940, light_matrix_load)(m)
+#define gte_rotate_short_at() GCALL(0x427fc0, gte_rotate_short)()
+#define gte_rt_float_at() ((pk_void_fn)(uintptr_t)0x426620)()
+#define gte_square_ir_at() GCALL(0x4282d0, gte_square_ir)()
+#define vec_normalise_at(in, out) ((pk_normalise_fn)(uintptr_t)0x4290b0)(in, out)
+#define palette_get_at() GCALL(0x486350, weather_palette_get)()
+#define quat_facing_at(q, v) GCALL(0x40ee60, quat_facing)((int32_t *)(q), v)
+#define body_sparks_at(b, n) GCALL(0x45bd30, body_sparks)(b, n)
+#define contact_particle_at(b, p, k) GCALL(0x45be10, contact_particle)(b, p, k)
+#define explosion_effects_at(p, v, a, b, c) GCALL(0x42aa30, explosion_effects)(p, v, a, b, c)
+#define gte_light_colour_at() ((pk_void_fn)(uintptr_t)G32(0x6cce3c))()
 /* this group's own, called by address as the original does */
-#define model_camera_matrix_set_at(b) CALL1(0x459e80, b)
-#define model_view_depth_at(b) CALL1(0x45a2a0, b)
-#define model_lights_set_at(b, l) CALL2(0x45b400, b, l)
-#define model_faces_draw_at(b, d) CALL2(0x45a430, b, d)
-#define model_faces_draw_smooth_at(b, d) CALL2(0x45ab20, b, d)
-#define prim_uv_rotate_at(p, k) CALL2(0x45a2f0, p, k)
-#define light_direction_at_at(p, l, o) CALL3(0x45ba30, p, l, o)
-#define body_tint_approach_at(b, p) CALL2(0x45b390, b, p)
-#define tint_byte_approach_at(a, b) ((uint8_t)CALL2(0x45b9f0, a, b))
+#define model_camera_matrix_set_at(b) GCALL(0x459e80, model_camera_matrix_set)(b)
+#define model_view_depth_at(b) GCALL(0x45a2a0, model_view_depth)(b)
+#define model_lights_set_at(b, l) GCALL(0x45b400, model_lights_set)(b, (const uint32_t *)PTR(l))
+#define model_faces_draw_at(b, d) GCALL(0x45a430, model_faces_draw)(b, d)
+#define model_faces_draw_smooth_at(b, d) GCALL(0x45ab20, model_faces_draw_smooth)(b, d)
+#define prim_uv_rotate_at(p, k) GCALL(0x45a2f0, prim_uv_rotate)(p, k)
+#define light_direction_at_at(p, l, o) GCALL(0x45ba30, light_direction_at)((const int32_t *)(p), (const int32_t *)PTR(l), o)
+#define body_tint_approach_at(b, p) GCALL(0x45b390, body_tint_approach)(b, (uint8_t *)(p))
+#define tint_byte_approach_at(a, b) ((uint8_t)GCALL(0x45b9f0, tint_byte_approach)(a, b))
 
 /* This group's functions (also in build/groups/pk_protos.txt for physics.h). */
 int32_t GAMEAPI missile_lock_level(const uint32_t *who); /* 0x458760 */
@@ -152,10 +148,19 @@ static inline int32_t pk_fist(uint32_t a)
  * then the projection *0x6ccd80, which takes the transform's st(0). */
 static inline void pk_transform_project(void *rec)
 {
+#if defined(__i386__)
     __asm__ volatile("pushl %0\n\tcall *0x6ccd78\n\taddl $4, %%esp\n\tcall *0x6ccd80"
                      :
                      : "S"(rec)
                      : "eax", "ecx", "edx", "cc", "memory", X87);
+#else
+    /* x86-64: the transform (*0x6ccd78: 0x426a20, the subunit wrapper's C)
+     * returns what the original leaves in st(0); the projection (*0x6ccd80:
+     * 0x426b00, src/widescreen.c) takes it as its argument. */
+    float h = ((float(GAMEAPI *)(uint8_t *))(uintptr_t)G32(0x6ccd78))((uint8_t *)rec);
+
+    ((void(GAMEAPI *)(float))(uintptr_t)G32(0x6ccd80))(h);
+#endif
 }
 
 /* 0x4278f0(a, b, c): the facing value of three projected vertex records,
@@ -164,7 +169,7 @@ typedef float(GAMEAPI *pk_facing_fn)(void *a, void *b, void *c);
 
 static uint32_t pk_facing(void *a, void *b, void *c)
 {
-    float f = ((pk_facing_fn)0x4278f0)(a, b, c);
+    float f = ((pk_facing_fn)(uintptr_t)0x4278f0)(a, b, c);
     uint32_t r;
 
     memcpy(&r, &f, 4);

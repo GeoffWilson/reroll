@@ -88,13 +88,16 @@ static void find_pads(void)
     nt_log("dinput: %d gamepad(s)", pad_count);
 }
 
+/* Objects are low memory; out-parameters are 4-byte slots in game memory. */
+#define OUT(slot, p) (*(slot) = (uint32_t)(uintptr_t)(p))
+
 /* ---- IDirectInputDevice2A ---- */
 
-static HRESULT WINAPI dev_query(struct device *d, const void *iid, void **out)
+static HRESULT WINAPI dev_query(struct device *d, const void *iid, uint32_t *out)
 {
     uint32_t first = iid ? *(const uint32_t *)iid : 0;
     if (first == IID_DEVICE2A || first == IID_DEVICEA) {
-        *out = d;
+        OUT(out, d);
         d->refs++;
         return DI_OK;
     }
@@ -149,6 +152,11 @@ static HRESULT WINAPI dev_get_capabilities(struct device *d, DWORD *caps)
     }
     return DI_OK;
 }
+
+/* The enumeration callbacks are game functions (input_enum_joystick_object,
+ * input_enum_joystick in src/game), declared with uint32_t or pointer
+ * arguments: called with pointer-width arguments (zero-extended), right for
+ * either; the records are on the game thread's (low) stack. */
 
 /* DIDEVICEOBJECTINSTANCEA: size, guidType +4, dwOfs +0x14, dwType +0x18,
  * dwFlags +0x1c, name +0x20 (260) ... (0x13c bytes in DirectX 5) */
@@ -398,10 +406,10 @@ static void effect_set(struct effect *e, const uint8_t *params, DWORD flags)
     }
 }
 
-static HRESULT WINAPI fx_query(struct effect *e, const void *iid, void **out)
+static HRESULT WINAPI fx_query(struct effect *e, const void *iid, uint32_t *out)
 {
     (void)iid;
-    *out = e;
+    OUT(out, e);
     e->refs++;
     return DI_OK;
 }
@@ -477,7 +485,7 @@ static HRESULT WINAPI fx_ok0(struct effect *e)
  * 13541c20-8e33-..., the periodic ones (square, sine, triangle, sawtooth
  * up / down) 13541c22..26, the conditions and custom force the rest. */
 static HRESULT WINAPI dev_create_effect(struct device *d, const uint8_t *guid, const uint8_t *params,
-                                        struct effect **out, void *outer)
+                                        uint32_t *out, void *outer)
 {
     uint32_t first = *(const uint32_t *)guid;
     struct effect *e;
@@ -490,7 +498,7 @@ static HRESULT WINAPI dev_create_effect(struct device *d, const uint8_t *guid, c
         ;
     if (i == MAX_EFFECTS)
         return (HRESULT)DIERR_UNSUPPORTED;
-    e = nt_lowmem_calloc(1, sizeof *e);
+    e = nt_lowmem_calloc(1, (uint32_t)sizeof *e);
     e->vtable = effect_vtable;
     e->refs = 1;
     e->device = d;
@@ -503,7 +511,7 @@ static HRESULT WINAPI dev_create_effect(struct device *d, const uint8_t *guid, c
     d->effects[i] = e;
     nt_log("dinput: pad %d effect %08x (%s)", d->pad, first,
            e->kind == FX_CONSTANT ? "constant" : e->kind == FX_PERIODIC ? "periodic" : "not played");
-    *out = e;
+    OUT(out, e);
     return DI_OK;
 }
 
@@ -650,10 +658,10 @@ static HRESULT WINAPI dev_get_device_info(struct device *d, uint8_t *info)
 
 /* ---- IDirectInputA ---- */
 
-static HRESULT WINAPI di_query(struct dinput *o, const void *iid, void **out)
+static HRESULT WINAPI di_query(struct dinput *o, const void *iid, uint32_t *out)
 {
     (void)iid;
-    *out = o;
+    OUT(out, o);
     return DI_OK;
 }
 
@@ -667,7 +675,7 @@ static LONG WINAPI di_release(struct dinput *o)
     return --o->refs > 0 ? o->refs : 0;
 }
 
-static HRESULT WINAPI di_create_device(struct dinput *o, const uint8_t *guid, struct device **out, void *outer)
+static HRESULT WINAPI di_create_device(struct dinput *o, const uint8_t *guid, uint32_t *out, void *outer)
 {
     struct device *d;
     uint32_t first;
@@ -675,7 +683,7 @@ static HRESULT WINAPI di_create_device(struct dinput *o, const uint8_t *guid, st
     (void)o;
     (void)outer;
     first = *(const uint32_t *)guid;
-    d = nt_lowmem_calloc(1, sizeof *d);
+    d = nt_lowmem_calloc(1, (uint32_t)sizeof *d);
     d->vtable = device_vtable;
     d->refs = 1;
     d->ff_gain = 10000;
@@ -692,7 +700,7 @@ static HRESULT WINAPI di_create_device(struct dinput *o, const uint8_t *guid, st
         *out = 0;
         return (HRESULT)DIERR_DEVICENOTREG;
     }
-    *out = d;
+    OUT(out, d);
     return DI_OK;
 }
 
@@ -719,7 +727,7 @@ static HRESULT WINAPI di_enum_devices(struct dinput *o, DWORD type, BOOL(WINAPI 
 
 static void **stubs(const char *interface, int count)
 {
-    void **v = nt_lowmem_calloc((size_t)count, sizeof *v);
+    void **v = nt_lowmem_calloc((uint32_t)count, (uint32_t)sizeof *v);
     int i;
     for (i = 0; i < count; i++) {
         char name[64];
@@ -729,7 +737,7 @@ static void **stubs(const char *interface, int count)
     return v;
 }
 
-HRESULT WINAPI DirectInputCreateA(void *instance, DWORD version, struct dinput **out, void *outer)
+HRESULT WINAPI DirectInputCreateA(void *instance, DWORD version, uint32_t *out, void *outer)
 {
     (void)instance;
     (void)version;
@@ -776,6 +784,6 @@ HRESULT WINAPI DirectInputCreateA(void *instance, DWORD version, struct dinput *
         nt_lowmem_arena(arena);
     }
     the_dinput.refs = 1;
-    *out = &the_dinput;
+    OUT(out, &the_dinput);
     return DI_OK;
 }

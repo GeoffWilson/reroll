@@ -134,7 +134,7 @@ static int valid(DWORD ch)
     return ch < CHANNELS;
 }
 
-/* QSWaveMixInitEx(config): the session (one) */
+/* QSWaveMixInitEx(config): the session (one; a static, so a low address) */
 void *WINAPI QSWaveMixInitEx(void *config)
 {
     SDL_AudioSpec spec = {SDL_AUDIO_F32, 2, OUT_RATE};
@@ -198,7 +198,7 @@ void *WINAPI QSWaveMixOpenWaveEx(DWORD session, const DWORD *params, DWORD flags
         nt_log("qmixer: wave format %u, %u channels, %u bits not supported", tag, chans, bits);
         return 0;
     }
-    w = nt_lowmem_calloc(1, sizeof *w);
+    w = nt_lowmem_calloc(1, (uint32_t)sizeof *w); /* the game keeps it in 32 bits */
     count = bytes / (bits / 8);
     w->channels = chans;
     w->rate = *(const uint32_t *)(format + 4);
@@ -410,8 +410,8 @@ DWORD WINAPI QSWaveMixSetSpeakerPlacement(DWORD session, DWORD placement)
     return 0;
 }
 
-/* no DirectSound objects behind this mixer */
-DWORD WINAPI QSWaveMixGetDirectSound(DWORD session, void **out)
+/* no DirectSound objects behind this mixer (out: 4-byte slots in game memory) */
+DWORD WINAPI QSWaveMixGetDirectSound(DWORD session, uint32_t *out)
 {
     (void)session;
     if (out)
@@ -419,7 +419,7 @@ DWORD WINAPI QSWaveMixGetDirectSound(DWORD session, void **out)
     return 1;
 }
 
-DWORD WINAPI QSWaveMixGetDirectSoundBuffer(DWORD session, DWORD channel, void **out)
+DWORD WINAPI QSWaveMixGetDirectSoundBuffer(DWORD session, DWORD channel, uint32_t *out)
 {
     (void)session;
     (void)channel;

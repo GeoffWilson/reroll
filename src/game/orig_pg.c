@@ -24,6 +24,7 @@
  * _ftol (0x497a80) is called by address with its operand in st(0). */
 #include "../runtime.h"
 #include "physics.h"
+#include "gamefn.h"
 
 #define U8(p, off) (*(uint8_t *)((uint8_t *)(uintptr_t)(p) + (off)))
 #define S8(p, off) (*(int8_t *)((uint8_t *)(uintptr_t)(p) + (off)))
@@ -45,33 +46,21 @@
 #define g_track G32(0x6c1eb0)
 #define g_tex_table G32(0x6c1e14)
 
-typedef int32_t(GAMEAPI *pg_fn0)(void);
-typedef int32_t(GAMEAPI *pg_fn1)(uint32_t a);
-typedef int32_t(GAMEAPI *pg_fn2)(uint32_t a, uint32_t b);
-typedef int32_t(GAMEAPI *pg_fn3)(uint32_t a, uint32_t b, uint32_t c);
-typedef int32_t(GAMEAPI *pg_fn4)(uint32_t a, uint32_t b, uint32_t c, uint32_t d);
-typedef int32_t(GAMEAPI *pg_fn7)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f,
-                                 uint32_t g);
-#define CALL0(a) (((pg_fn0)(a))())
-#define CALL1(a, x) (((pg_fn1)(a))(A(x)))
-#define CALL2(a, x, y) (((pg_fn2)(a))(A(x), A(y)))
-#define CALL3(a, x, y, z) (((pg_fn3)(a))(A(x), A(y), A(z)))
-#define CALL4(a, x, y, z, w) (((pg_fn4)(a))(A(x), A(y), A(z), A(w)))
-#define CALL7(a, x, y, z, w, v, u, t) (((pg_fn7)(a))(A(x), A(y), A(z), A(w), A(v), A(u), A(t)))
-
 /* Outside the group. */
-#define hud_sprite_at(n, a, f) CALL3(0x4387d0, n, a, f)
-#define vec_length_at(v) CALL1(0x480cd0, v)
-#define vec_div_at(v, d) CALL2(0x486e90, v, d)
-#define text_free_at(t) CALL1(0x479280, t)
-#define text_create_at(s, a, x, y, flags, b, c) CALL7(0x479060, s, a, x, y, flags, b, c)
-#define driver_name_at(buf, n) CALL2(0x4484a0, buf, n)
-#define message_at(a, b, c) CALL3(0x4600a0, a, b, c)
-#define track_cell_at(x, y, z, out) CALL4(0x419420, x, y, z, out)
-#define cell_row_ranges_at(cell, out, level) CALL3(0x440c60, cell, out, level)
-#define light_set_at(n, pos, a, b, rows, c, d) CALL7(0x4412e0, n, pos, a, b, rows, c, d)
-#define light_cells_add_at(n, rows) CALL2(0x441000, n, rows)
-#define mesh_rows_touch_at(v, s) CALL2(0x4411c0, v, s)
+#define hud_sprite_at(n, a, f) A(GCALL(0x4387d0, hud_sprite_set)(n, a, f))
+#define vec_length_at(v) GCALL(0x480cd0, vec_length)(v)
+#define vec_div_at(v, d) GCALL(0x486e90, vec_div)(v, d)
+#define text_free_at(t) GCALL(0x479280, text_free)((int32_t)(t))
+#define text_create_at(s, a, x, y, flags, b, c) \
+    GCALL(0x479060, text_create)((const uint8_t *)(s), a, x, y, flags, b, c)
+#define driver_name_at(buf, n) GCALL(0x4484a0, driver_name)(buf, n)
+#define message_at(a, b, c) GCALL(0x4600a0, net_kill_message)(a, b, c)
+#define track_cell_at(x, y, z, out) A(GCALL(0x419420, track_cell)(x, y, z, out))
+#define cell_row_ranges_at(cell, out, level) GCALL(0x440c60, cell_row_ranges)((const uint32_t *)GMEM(cell), out, level)
+#define light_set_at(n, pos, a, b, rows, c, d) \
+    GCALL(0x4412e0, light_set)(n, pos, (const uint32_t *)GMEM(a), b, rows, c, (uint8_t *)GMEM(d))
+#define light_cells_add_at(n, rows) GCALL(0x441000, light_cells_add)(n, rows)
+#define mesh_rows_touch_at(v, s) GCALL(0x4411c0, mesh_rows_touch)(v, s)
 
 /* This group's functions (also in build/groups/pg_protos.txt for physics.h). */
 void GAMEAPI hud_speed_digits(int32_t v); /* 0x438df0 */
@@ -188,44 +177,73 @@ static inline uint32_t pg_cmp(uint32_t a, uint32_t b)
 /* fld a; call _ftol. */
 static inline int32_t pg_ftol(uint32_t a)
 {
+#if defined(__i386__)
     int32_t r;
     __asm__ volatile("flds %1\n\tmovl $0x497a80, %%eax\n\tcall *%%eax"
                      : "=a"(r)
                      : "m"(a)
                      : "ecx", "edx", "cc", "memory", X87);
     return r;
+#else
+    long double v;
+    __asm__ volatile("flds %1\n\tfstpt %0" : "=m"(v) : "m"(a) : "st");
+    return (int32_t)(int64_t)v; /* _ftol truncates to 64 bits; eax is the low half */
+#endif
 }
 
 /* fld a; fadd b; call _ftol. */
 static inline int32_t pg_ftol_add(uint32_t a, uint32_t b)
 {
+#if defined(__i386__)
     int32_t r;
     __asm__ volatile("flds %1\n\tfadds %2\n\tmovl $0x497a80, %%eax\n\tcall *%%eax"
                      : "=a"(r)
                      : "m"(a), "m"(b)
                      : "ecx", "edx", "cc", "memory", X87);
     return r;
+#else
+    long double v;
+    __asm__ volatile("flds %1\n\tfadds %2\n\tfstpt %0" : "=m"(v) : "m"(a), "m"(b) : "st");
+    return (int32_t)(int64_t)v;
+#endif
 }
 
 /* fld a; fmul c; fdiv d; fsubr c; call _ftol: c - a * c / d. */
 static inline int32_t pg_ftol_fade(uint32_t a, uint32_t c, uint32_t d)
 {
+#if defined(__i386__)
     int32_t r;
     __asm__ volatile("flds %1\n\tfmuls %2\n\tfdivs %3\n\tfsubrs %2\n\tmovl $0x497a80, %%eax\n\tcall *%%eax"
                      : "=a"(r)
                      : "m"(a), "m"(c), "m"(d)
                      : "ecx", "edx", "cc", "memory", X87);
     return r;
+#else
+    long double v;
+    __asm__ volatile("flds %1\n\tfmuls %2\n\tfdivs %3\n\tfsubrs %2\n\tfstpt %0"
+                     : "=m"(v)
+                     : "m"(a), "m"(c), "m"(d)
+                     : "st");
+    return (int32_t)(int64_t)v;
+#endif
 }
 
 /* The transform pointer *0x6ccd78 (record out) then the projection
  * *0x6ccd80, which takes the transform's st(0). */
 static inline void pg_transform_project(uint32_t *out)
 {
+#if defined(__i386__)
     __asm__ volatile("pushl %0\n\tcall *0x6ccd78\n\taddl $4, %%esp\n\tcall *0x6ccd80"
                      :
                      : "S"(out)
                      : "eax", "ecx", "edx", "cc", "memory", X87);
+#else
+    /* x86-64: the transform returns its st(0) as a float, the projection
+     * takes it (subunit_transform_c / wide_project_c) */
+    float h = ((float(GAMEAPI *)(uint8_t *))(uintptr_t)G32(0x6ccd78))((uint8_t *)out);
+
+    ((void(GAMEAPI *)(float))(uintptr_t)G32(0x6ccd80))(h);
+#endif
 }
 
 /* (screen width << 8) / reference width (0x4acff0), signed. */
@@ -633,7 +651,7 @@ void GAMEAPI hud_fade_apply(uint32_t n, uint32_t level, int32_t tint)
         G16(0x6c3ee2 + k * 0xf0) = (uint16_t)(v & 0xff);
     }
     if (U8(g_race, 0x551) == 4)
-        CALL1(0x469d60, all);
+        GCALL(0x469d60, meters_colour_set)(all);
     if (U8(g_race, 0x552) != 0) {
         uint32_t q = p * 4, keep;
         if (q > 0xa0)
@@ -715,7 +733,7 @@ void GAMEAPI hud_name_texts(uint8_t *slot, uint32_t a)
     mode = U8(g_race, 0x551);
     if (mode == 1 || mode == 0 || mode == 9 || mode == 4)
         return;
-    CALL3(0x45f650, &count, info, names);
+    GCALL(0x45f650, net_player_list)((int32_t *)&count, info, names);
     if (U8(g_race, 0x551) == 8) {
         for (i = 0; i < (int32_t)U8(g_race, 0x54d); i++) {
             uint8_t *s = PTR(0x6bfb80 + i * 0x274);
@@ -938,17 +956,17 @@ void GAMEAPI hud_gap_bars(uint32_t level, uint8_t *slot)
  * result. */
 int32_t GAMEAPI archive_load_by_name(const char *name)
 {
-    int32_t idx = CALL1(0x43b550, name);
+    int32_t idx = (int32_t)GCALL(0x43b550, archive_find_by_name)(A(name));
     uint32_t alloc, release;
     int32_t r;
 
     if ((int16_t)idx == -1)
-        return CALL1(0x465340, name);
+        return (int32_t)GCALL(0x465340, file_load_whole)(A(name));
     alloc = G32(0x4b4a84);
     release = G32(0x4b4a88);
     G32(0x4b4a84) = 0x4445e0;
     G32(0x4b4a88) = 0x444570;
-    r = CALL1(0x43b630, idx);
+    r = (int32_t)GCALL(0x43b630, archive_load_by_index)((uint32_t)idx);
     G32(0x4b4a88) = release;
     G32(0x4b4a84) = alloc;
     return r;
@@ -989,11 +1007,11 @@ int32_t GAMEAPI leader_hit(uint8_t *body, uint8_t *hit, uint32_t a)
 {
     if (hit != NULL) {
         uint8_t *o;
-        CALL2(0x4599c0, hit, a);
+        GCALL(0x4599c0, car_blast_hit)(hit, (const uint8_t *)GMEM(a));
         if ((U32(hit, 0) & 0x1ff) == 3 && (o = PTR(U32(body, 0x18c))) != NULL && U8(hit, 0x70c) != 8)
             message_at(U16(hit, 0x64e), U16(o, 0x64e), 0xb);
     }
-    CALL2(0x459610, body, 0);
+    GCALL(0x459610, homer_end)(body, 0);
     return 0;
 }
 
@@ -1320,10 +1338,10 @@ void GAMEAPI flares_draw(uint8_t *view)
             dir[0] = (int32_t)((uint32_t)S16(r, 4) << 16) - I32(view, 0x34);
             dir[1] = (int32_t)((uint32_t)S16(r, 6) << 16) - I32(view, 0x38);
             dir[2] = (int32_t)((uint32_t)S16(r, 8) << 16) - I32(view, 0x3c);
-            CALL1(0x407e90, dir);
-            CALL3(0x407220, dir, up, mat);
-            CALL2(0x426e90, view + 0xc4, mat);
-            CALL3(0x426e10, mat, v, out);
+            GCALL(0x407e90, direction_fit)(dir);
+            GCALL(0x407220, matrix_look)(dir, up, (int16_t *)mat);
+            GCALL(0x426e90, matrix_mul_into)(view + 0xc4, mat);
+            GCALL(0x426e10, matrix_rotate_vec)(mat, v, out);
             X[0] = pg_i2f(out[0]);
             X[4] = pg_chs(X[0]);
             Y[0] = pg_i2f(out[1]);

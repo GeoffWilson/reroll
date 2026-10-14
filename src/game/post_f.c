@@ -10,26 +10,27 @@
 #include "body.h"
 #include "fixed.h"
 #include "physics.h"
+#include "gamefn.h"
 
 #undef grid_link
 #undef grid_unlink
 
-#define g_race (*(uint8_t **)0x4b1960)
-#define g_track (*(uint8_t **)0x6c1e30)
-#define g_markers (*(uint8_t **)0x6c1eb0)
+#define g_race (GP(0x4b1960))
+#define g_track (GP(0x6c1e30))
+#define g_markers (GP(0x6c1eb0))
 #define g_car_slots ((uint8_t *)0x6bfb80)
 #define CAR_SLOT_SIZE 0x274
-#define g_grid_pool (*(uint8_t **)0x6b9b90)
-#define g_bodies (*(uint8_t ***)0x6b9b80)
+#define g_grid_pool (GP(0x6b9b90))
+#define g_bodies ((uint32_t *)GP(0x6b9b80))
 #define g_body_count (*(uint16_t *)0x6b9b84)
-#define g_slots (*(uint8_t **)0x6ce740)  /* 0x48-byte collision slots */
-#define g_slot_free (*(uint8_t **)0x6ce73c)
-#define g_slot_used (*(uint8_t **)0x6ce744)
+#define g_slots (GP(0x6ce740))  /* 0x48-byte collision slots */
+#define g_slot_free (GP(0x6ce73c))
+#define g_slot_used (GP(0x6ce744))
 #define g_slot_used_last (*(int32_t *)0x6ce748)
-#define g_slot_where (*(uint8_t **)0x6ce750)
+#define g_slot_where (GP(0x6ce750))
 #define g_slot_used_count (*(int32_t *)0x6ce754)
 #define g_slot_free_last (*(int32_t *)0x6ce758)
-#define g_models (*(uint8_t **)0x6bfac0)
+#define g_models (GP(0x6bfac0))
 #define g_race_ticks (*(uint32_t *)0x6c0a50)
 #define g_misc_seed (*(uint32_t *)0x4b11d8)
 #define g_sin ((const int16_t *)0x4b24f8)
@@ -39,27 +40,19 @@
 #define SLOT_OF_CAR(car) (g_car_slots + U16(car, 0x64e) * CAR_SLOT_SIZE)
 
 /* Still original. */
-typedef void(GAMEAPI *void_fn)(void);
-typedef void(GAMEAPI *ptr_fn)(uint8_t *p);
-typedef uint8_t(GAMEAPI *sound_fn)(uint32_t id, uint32_t a, uint32_t b, uint32_t c, const void *where);
-typedef void(GAMEAPI *effect_fn)(const int32_t *at, const int32_t *dir, int32_t size, uint32_t what, uint32_t kind);
-typedef void(GAMEAPI *at_size_fn)(const int32_t *at, int32_t size);
-typedef void(GAMEAPI *at_fn)(const int32_t *at);
-typedef void(GAMEAPI *burst_fn)(const int32_t *at, const int32_t *dir, int32_t size);
-typedef void(GAMEAPI *u8_fn)(uint32_t v);
-#define sound_play ((sound_fn)0x471c90)
-#define points_transform ((void_fn)0x426620) /* x87 */
-#define effect_burst ((effect_fn)0x42ad60)
-#define effect_42b2d0 ((at_size_fn)0x42b2d0)
-#define effect_42b300 ((at_size_fn)0x42b300)
-#define effect_42b330 ((at_size_fn)0x42b330)
-#define effect_42b370 ((at_size_fn)0x42b370)
-#define effect_42b3b0 ((at_size_fn)0x42b3b0)
-#define effect_42c760 ((at_size_fn)0x42c760)
-#define effect_42c360 ((at_fn)0x42c360)
-#define effect_42c3c0 ((at_size_fn)0x42c3c0)
-#define effect_4624d0 ((burst_fn)0x4624d0)
-#define sound_release ((u8_fn)0x471f40)
+#define sound_play(id, a, b, c, where) GCALL(0x471c90, sound_play_body)(id, a, b, c, (uint32_t)(uintptr_t)(where))
+#define points_transform GCALL(0x426620, gte_rt_float) /* x87 */
+#define effect_burst GCALL(0x42ad60, particles_burst)
+#define effect_42b2d0 GCALL(0x42b2d0, light_flash_small)
+#define effect_42b300 GCALL(0x42b300, light_flash)
+#define effect_42b330 GCALL(0x42b330, blast_flash_set)
+#define effect_42b370 GCALL(0x42b370, blast_glow_set)
+#define effect_42b3b0 GCALL(0x42b3b0, smoke_cloud_start)
+#define effect_42c760 GCALL(0x42c760, scorch_track)
+#define effect_42c360 GCALL(0x42c360, shockwave_start)
+#define effect_42c3c0 GCALL(0x42c3c0, blast_point_set)
+#define effect_4624d0 GCALL(0x4624d0, pieces_spawn)
+#define sound_release GCALL(0x471f40, sound_voice_stop)
 
 /* --- the object grid --- */
 
@@ -69,7 +62,7 @@ uint8_t *GAMEAPI grid_record(uint32_t link)
     link &= 0xffff;
     if (link == 0)
         return 0;
-    return (uint8_t *)((link + 0x1ffffff) * 0x80 + (uint32_t)g_grid_pool);
+    return (uint8_t *)(uintptr_t)((link + 0x1ffffff) * 0x80 + (uint32_t)(uintptr_t)g_grid_pool);
 }
 
 /* 0x4613c0: record to link index. */
@@ -77,7 +70,7 @@ uint32_t GAMEAPI grid_index(const uint8_t *record)
 {
     if (!record)
         return 0;
-    return ((uint32_t)record - (uint32_t)g_grid_pool + 0x80) >> 7;
+    return ((uint32_t)(uintptr_t)record - (uint32_t)(uintptr_t)g_grid_pool + 0x80) >> 7;
 }
 
 static void unlink_from(uint8_t *object, uint32_t head)
@@ -86,7 +79,7 @@ static void unlink_from(uint8_t *object, uint32_t head)
 
     /* (all 16-bit stores: the links alias each other) */
     if (S16(object, 6) == 0) {
-        U16((uint8_t *)(U32(object, 0xc) & ~1u), head) = U16(object, 4);
+        U16((uint8_t *)(uintptr_t)(U32(object, 0xc) & ~1u), head) = U16(object, 4);
         next = grid_record(U16(object, 4));
         if (next)
             U16(next, 6) = 0;
@@ -105,7 +98,7 @@ static void unlink_from(uint8_t *object, uint32_t head)
 
 static void insert_at(uint8_t *object, uint32_t head)
 {
-    uint16_t *cell = (uint16_t *)((U32(object, 0xc) & ~1u) + head);
+    uint16_t *cell = (uint16_t *)(uintptr_t)((U32(object, 0xc) & ~1u) + head);
     uint16_t first = *cell;
     uint16_t self = (uint16_t)grid_index(object);
 
@@ -146,7 +139,7 @@ void GAMEAPI object_grid_link(uint8_t *object)
     int32_t off_track;
     uint8_t *cell = track_cell(I32(object, 0x34), I32(object, 0x38), I32(object, 0x3c), &off_track);
 
-    U32(object, 0xc) = (uint32_t)cell + (off_track != 0);
+    U32(object, 0xc) = (uint32_t)(uintptr_t)cell + (off_track != 0);
     object_grid_insert(object);
 }
 
@@ -156,7 +149,7 @@ void GAMEAPI object_grid_link2_at(uint8_t *object, int32_t x, int32_t y, int32_t
     int32_t off_track = z;
     uint8_t *cell = track_cell(x, y, z, &off_track);
 
-    U32(object, 0xc) = (uint32_t)cell + (off_track != 0);
+    U32(object, 0xc) = (uint32_t)(uintptr_t)cell + (off_track != 0);
     object_grid_insert2(object);
 }
 
@@ -167,7 +160,7 @@ void GAMEAPI object_grid_link2_at(uint8_t *object, int32_t x, int32_t y, int32_t
  * grid object (relinked when it changes 256-unit block), 4 a marker. */
 void GAMEAPI body_points_update(uint8_t *body)
 {
-    uint8_t *model = *(uint8_t **)(body + 0x10);
+    uint8_t *model = GP(body + 0x10);
     const uint32_t *offsets = (const uint32_t *)(model + U16(model, 0x4c));
     const uint16_t *points = (const uint16_t *)(body + 0x16a);
     int32_t *gte_translation = (int32_t *)0x6ccbf4;
@@ -201,7 +194,7 @@ void GAMEAPI body_points_update(uint8_t *body)
             break;
         }
         case 2: {
-            uint8_t *object = ((uint8_t **)0x5d6e00)[point & 0xfff];
+            uint8_t *object = GP(0x5d6e00 + (point & 0xfff) * 4);
             uint32_t old = U32(object, 0x10);
             int32_t old_z = S16(object, 0x14);
 
@@ -217,7 +210,7 @@ void GAMEAPI body_points_update(uint8_t *body)
             break;
         }
         case 4: {
-            int16_t *p = (int16_t *)(*(uint8_t **)(g_markers + 0x10c) + (point & 0xfff) * 0xc);
+            int16_t *p = (int16_t *)(GP(g_markers + 0x10c) + (point & 0xfff) * 0xc);
             p[0] = x;
             p[1] = y;
             p[2] = z;
@@ -233,7 +226,7 @@ void GAMEAPI bodies_points_update(void)
     uint32_t i;
 
     for (i = 0; i < *(uint32_t *)0x4d11ec; i++)
-        body_points_update(((uint8_t **)0x6b8d00)[i]);
+        body_points_update(GP(0x6b8d00 + i * 4));
     *(uint32_t *)0x4d11ec = 0;
 }
 
@@ -267,20 +260,20 @@ void GAMEAPI slot_give(uint32_t slot)
 /* 0x45c040: drop a body from the body list and its group's list. */
 void GAMEAPI body_list_remove(uint8_t *body)
 {
-    uint8_t **list = g_bodies, **last = g_bodies + g_body_count - 1;
+    uint32_t *list = g_bodies, *last = g_bodies + g_body_count - 1;
     uint8_t *group;
 
-    while (*list != body)
+    while (*list != (uint32_t)(uintptr_t)body)
         list++;
     *list = *last;
     *last = 0;
     g_body_count--;
-    group = *(uint8_t **)(body + 0x130);
+    group = GP(body + 0x130);
     if (group) {
-        uint8_t **entries = *(uint8_t ***)group;
-        uint8_t **end = entries + U16(group, 4) - 1;
+        uint32_t *entries = (uint32_t *)GP(group);
+        uint32_t *end = entries + U16(group, 4) - 1;
 
-        while (*entries != body)
+        while (*entries != (uint32_t)(uintptr_t)body)
             entries++;
         *entries = *end;
         *end = 0;
@@ -307,17 +300,17 @@ uint8_t *GAMEAPI particle_take(void)
 {
     uint8_t *p, *prev, *next;
 
-    if (*(uint8_t **)0x4be128) {
-        p = *(uint8_t **)0x4be128;
-        *(uint8_t **)0x4be128 = *(uint8_t **)(p + 0xac);
+    if (GP(0x4be128)) {
+        p = GP(0x4be128);
+        *(uint32_t *)0x4be128 = (uint32_t)(uintptr_t)GP(p + 0xac);
     } else {
-        uint8_t *oldest = *(uint8_t **)0x4be130;
+        uint8_t *oldest = GP(0x4be130);
 
         p = oldest;
         if (U32(oldest, 0xb0)) {
             uint8_t *q = oldest;
             for (;;) {
-                q = *(uint8_t **)(q + 0xa8);
+                q = GP(q + 0xa8);
                 if (!q) {
                     p = oldest;
                     break;
@@ -327,24 +320,24 @@ uint8_t *GAMEAPI particle_take(void)
                     break;
             }
         }
-        prev = *(uint8_t **)(p + 0xac);
-        next = *(uint8_t **)(p + 0xa8);
+        prev = GP(p + 0xac);
+        next = GP(p + 0xa8);
         if (prev)
-            *(uint8_t **)(prev + 0xa8) = next;
+            *(uint32_t *)(prev + 0xa8) = (uint32_t)(uintptr_t)next;
         else
-            *(uint8_t **)0x4be130 = next;
+            *(uint32_t *)0x4be130 = (uint32_t)(uintptr_t)next;
         if (next)
-            *(uint8_t **)(next + 0xac) = prev;
+            *(uint32_t *)(next + 0xac) = (uint32_t)(uintptr_t)prev;
         else
-            *(uint8_t **)0x4be12c = prev;
+            *(uint32_t *)0x4be12c = (uint32_t)(uintptr_t)prev;
     }
-    *(uint8_t **)(p + 0xa8) = 0;
-    *(uint8_t **)(p + 0xac) = *(uint8_t **)0x4be12c;
-    *(uint8_t **)0x4be12c = p;
-    if (*(uint8_t **)(p + 0xac))
-        *(uint8_t **)(*(uint8_t **)(p + 0xac) + 0xa8) = p;
-    if (!*(uint8_t **)0x4be130)
-        *(uint8_t **)0x4be130 = p;
+    *(uint32_t *)(p + 0xa8) = 0;
+    *(uint32_t *)(p + 0xac) = (uint32_t)(uintptr_t)GP(0x4be12c);
+    *(uint32_t *)0x4be12c = (uint32_t)(uintptr_t)p;
+    if (GP(p + 0xac))
+        *(uint32_t *)(GP(p + 0xac) + 0xa8) = (uint32_t)(uintptr_t)p;
+    if (!GP(0x4be130))
+        *(uint32_t *)0x4be130 = (uint32_t)(uintptr_t)p;
     if (p[0x94] == 1)
         object_grid_unlink2(p);
     U32(p, 0xb0) = 0;
@@ -409,7 +402,7 @@ void GAMEAPI explosion_effects(const int32_t *at, const int32_t *dir, int32_t si
 {
     if (size != 0 && (uint8_t)sound != 0) {
         uint32_t i = *(uint32_t *)0x6ccb7c;
-        int32_t *where = (int32_t *)(0x6cc820 + i * 0xc);
+        int32_t *where = (int32_t *)(uintptr_t)(0x6cc820 + i * 0xc);
 
         *(uint32_t *)0x6ccb7c = i + 1;
         if (i + 1 > 0x17)
@@ -446,7 +439,7 @@ void GAMEAPI explosion_effects(const int32_t *at, const int32_t *dir, int32_t si
     if (what & 0x100)
         effect_42c360(at);
     if (what & 0x40)
-        effect_42c3c0(at, size);
+        effect_42c3c0(at); /* (the original also pushes size) */
     if (what & 0x20000)
         effect_42b370(at, size);
     if (what & 0x1000)
@@ -459,7 +452,7 @@ void GAMEAPI explosion_effects(const int32_t *at, const int32_t *dir, int32_t si
  * puff of smoke if it had been out a while. */
 void GAMEAPI pickup_fallen(uint8_t *body)
 {
-    uint8_t *info = *(uint8_t **)(body + 0x164);
+    uint8_t *info = GP(body + 0x164);
     int32_t age = I32(info, 4);
 
     I32(info, 4) = 0;
@@ -481,7 +474,7 @@ void GAMEAPI pickup_fallen(uint8_t *body)
 /* 0x46c160: a mine or similar (types 7, 0x15) that fell: remove it. */
 void GAMEAPI dropped_fallen(uint8_t *item)
 {
-    uint8_t *body = *(uint8_t **)item;
+    uint8_t *body = GP(item);
 
     body_retire(body);
     object_grid_unlink(body);
@@ -499,8 +492,8 @@ void GAMEAPI cars_check_fallen(void)
     uint8_t *slot = g_car_slots;
 
     for (; n != 0; n--, slot += CAR_SLOT_SIZE) {
-        uint8_t *car = *(uint8_t **)slot;
-        int32_t ceiling = S16(((uint8_t **)g_models)[car[0x11c]], 0x14) + 0x200;
+        uint8_t *car = GP(slot);
+        int32_t ceiling = S16(GP(g_models + car[0x11c] * 4), 0x14) + 0x200;
 
         if (ceiling < I32(car, 0x38) >> 16) {
             U32(car, 0x128) = 0x20;
@@ -515,13 +508,13 @@ void GAMEAPI cars_check_fallen(void)
                 slot[0x258] = 0;
             if (slot[0x258] <= 0x5a)
                 continue;
-            U32(*(uint8_t **)slot, 0x128) = 0x20;
+            U32(GP(slot), 0x128) = 0x20;
         } else {
             slot[0x258] = 0;
             continue;
         }
         slot[0x258] = 0;
-        U32(*(uint8_t **)slot, 0x110) &= 0x7fffffff;
+        U32(GP(slot), 0x110) &= 0x7fffffff;
     }
 }
 
@@ -551,9 +544,9 @@ void GAMEAPI quat_facing(int32_t *q, int32_t *dir)
 /* 0x406e00: tell the car's camera to cut. */
 void GAMEAPI car_camera_cut(const uint8_t *car)
 {
-    uint8_t *camera = *(uint8_t **)(SLOT_OF_CAR(car) + 0x28);
+    uint8_t *camera = GP(SLOT_OF_CAR(car) + 0x28);
 
-    if ((uint32_t)camera != 0x12345678)
+    if ((uint32_t)(uintptr_t)camera != 0x12345678)
         U16(camera, 0x42) = 1;
 }
 
@@ -586,7 +579,7 @@ void GAMEAPI car_respawn_sparks(uint8_t *car, int32_t mode)
 
 /* --- placing a fallen body --- */
 
-#define g_planes (*(uint32_t **)0x6bfadc)
+#define g_planes (((uint32_t *)GP(0x6bfadc)))
 #define DISTANCES ((uint16_t *)0x4d11f8)
 
 /* respawn_blocked's track sweeps run with limit 0, where the sweep reads
@@ -612,16 +605,16 @@ void GAMEAPI patch_gather(uint8_t *slot, const uint16_t *patch, uint8_t *body, i
     uint32_t model_index = ((const uint8_t *)patch)[2] & 0x7f;
     uint32_t col0 = patch[0] >> 10, row0 = patch[0] & 0x3ff;
     uint32_t rows = patch[2] >> 8 & 0xf, cols = patch[2] >> 12;
-    uint8_t *model = ((uint8_t **)g_models)[model_index];
+    uint8_t *model = GP(g_models + model_index * 4);
     int32_t width = I32(model, 8), stride = width + 1, skip = width - (int32_t)cols;
     uint32_t index = (uint32_t)stride * row0 + col0;
-    const int16_t *verts = (const int16_t *)(*(uint8_t **)(model + 0x20) + index * 8);
-    const uint8_t *info = *(uint8_t **)(model + 0x50) + (index - row0) * 8;
+    const int16_t *verts = (const int16_t *)(GP(model + 0x20) + index * 8);
+    const uint8_t *info = GP(model + 0x50) + (index - row0) * 8;
     int32_t limit = (int32_t)((patch[2] & 0xff) * (patch[2] & 0xff) + (uint32_t)radius2) >> 6;
     int32_t px = point[0], py = point[1], pz = point[2];
     uint32_t base_key = model_index | col0 << 8 | row0 << 16, key = base_key, best_key = 0;
     int32_t best = 0x7fffffff, tested = 0;
-    uint8_t *list = *(uint8_t **)(body + 0x154), *out;
+    uint8_t *list = GP(body + 0x154), *out;
     uint32_t r, c;
     int side;
 
@@ -746,7 +739,7 @@ void GAMEAPI patch_gather(uint8_t *slot, const uint16_t *patch, uint8_t *body, i
                         U32(out, 4) = key;
                         out[0] = (out[0] & 0xf0) | (uint8_t)(kind & 0xf);
                         U32(out, 8) = plane;
-                        *(const int16_t **)(out + 0xc) = verts;
+                        *(uint32_t *)(out + 0xc) = (uint32_t)(uintptr_t)verts;
                         out[1] = (uint8_t)vi;
                     }
                 }
@@ -770,7 +763,7 @@ void GAMEAPI patch_gather(uint8_t *slot, const uint16_t *patch, uint8_t *body, i
 
             if (side == 0 ? col0 != 0 : col0 + cols != (uint32_t)width)
                 continue;
-            edges = (const uint16_t *)(*(uint8_t **)(model + 0x38) + row0 * 4);
+            edges = (const uint16_t *)(GP(model + 0x38) + row0 * 4);
             at = (row0 + 1) * (uint32_t)stride;
             key = base_key;
             if (side) {
@@ -781,7 +774,7 @@ void GAMEAPI patch_gather(uint8_t *slot, const uint16_t *patch, uint8_t *body, i
                 key &= 0xffff00ff;
                 kind = 6;
             }
-            vertex = (const int16_t *)(*(uint8_t **)(model + 0x20) + at * 8);
+            vertex = (const int16_t *)(GP(model + 0x20) + at * 8);
             for (r = rows; (int32_t)r > 0; r--, edges += 2, vertex += stride * 4,
                 key = (key & 0xffff) | ((key >> 16) + 1) << 16) {
                 uint16_t e = side ? edges[1] : edges[0];
@@ -801,7 +794,7 @@ void GAMEAPI patch_gather(uint8_t *slot, const uint16_t *patch, uint8_t *body, i
                 U32(out, 4) = key;
                 U32(out, 8) = plane;
                 out[0] = (out[0] & 0xf0) | (uint8_t)kind;
-                *(const int16_t **)(out + 0xc) = vertex;
+                *(uint32_t *)(out + 0xc) = (uint32_t)(uintptr_t)vertex;
                 out[1] = 0;
                 out += 0x10;
             }
@@ -823,27 +816,23 @@ void GAMEAPI patch_gather(uint8_t *slot, const uint16_t *patch, uint8_t *body, i
  * +0x259 bit 0 finished. Checkpoints (track +0x70, 0x14 bytes): +0 id,
  * +1 order, +2 lap position, +4 point, +0xc normal (64 = 1), +0x12 bit 0
  * timing line. */
-#define CHECKPOINT(i) (*(uint8_t **)(g_track + 0x70) + (uint32_t)(i) * 0x14)
-#define CHECKPOINT_AT(slot, field) ((*(uint32_t **)(g_track + 0x90))[(slot)[field]] & 0xff)
+#define CHECKPOINT(i) (GP(g_track + 0x70) + (uint32_t)(i) * 0x14)
+#define CHECKPOINT_AT(slot, field) ((((uint32_t *)GP(g_track + 0x90)))[(slot)[field]] & 0xff)
 
-typedef void(GAMEAPI *slot_fn)(uint8_t *slot);
-typedef int32_t(GAMEAPI *int_fn)(void);
-typedef void(GAMEAPI *message_fn)(uint32_t car, uint32_t a, uint32_t b);
-typedef void(GAMEAPI *int_arg_fn)(int32_t v);
-#define slot_lap_time ((slot_fn)0x43d750)
-#define slot_lap_bonus ((slot_fn)0x467490)
-#define hud_message ((message_fn)0x4600a0)
-#define slot_finish_plan ((slot_fn)0x47fbe0)
-#define voice_stop ((int_arg_fn)0x489f70)
-#define race_state_a ((int_fn)0x45ef80)
-#define race_state_b ((int_fn)0x45eed0)
-#define race_state_c ((int_fn)0x45ef30)
-#define race_results ((int_arg_fn)0x439a70)
-#define race_records ((void_fn)0x45fc40)
-#define replay_mark ((ptr_fn)0x41c160)
-#define replay_record_play ((ptr_fn)0x41ba20)
-#define race_end_fade ((int_arg_fn)0x40afb0)
-#define race_end ((void_fn)0x40a9a0)
+#define slot_lap_time GCALL(0x43d750, slot_lap_record)
+#define slot_lap_bonus GCALL(0x467490, slot_lap_weapon)
+#define hud_message GCALL(0x4600a0, net_kill_message)
+#define slot_finish_plan GCALL(0x47fbe0, slot_finish_to_ai)
+#define voice_stop GCALL(0x489f70, ff_device_stop_all)
+#define race_state_a GCALL(0x45ef80, net_state_game)
+#define race_state_b GCALL(0x45eed0, net_state_host)
+#define race_state_c GCALL(0x45ef30, net_state_bit5)
+#define race_results GCALL(0x439a70, race_results_update)
+#define race_records GCALL(0x45fc40, net_finish_send)
+#define replay_mark GCALL(0x41c160, replay_finish_mark)
+#define replay_record_play GCALL(0x41ba20, replay_step)
+#define race_end_fade GCALL(0x40afb0, race_end_fade_set)
+#define race_end GCALL(0x40a9a0, race_end_signal)
 
 /* 0x43e000: on a timing line, end the current lap time. */
 void GAMEAPI slot_lap_line(uint8_t *slot)
@@ -861,7 +850,7 @@ void GAMEAPI slot_lap_line(uint8_t *slot)
         mark = 0xbf;
         I32(slot, 0x5c) = (int32_t)race_clock();
     }
-    (*(uint8_t **)slot)[0x65c] = mark;
+    (GP(slot))[0x65c] = mark;
     slot_time_digits(1, slot);
 }
 
@@ -882,7 +871,7 @@ void GAMEAPI slot_lap_done(uint8_t *slot)
         slot[0x2e]++;
         return;
     }
-    car = *(uint8_t **)slot;
+    car = GP(slot);
     if (car[0x661] == 0 && lap != 0) {
         car[0x65d] = 0x6f;
         if (g_race[0xa86]) {
@@ -890,7 +879,7 @@ void GAMEAPI slot_lap_done(uint8_t *slot)
             slot_lap_bonus(slot);
         }
     }
-    (*(uint8_t **)slot)[0x661] = 0;
+    (GP(slot))[0x661] = 0;
     if (slot[0x2c])
         slot_lap_time(slot);
     lap = ++slot[0x2c];
@@ -904,7 +893,7 @@ void GAMEAPI slot_lap_done(uint8_t *slot)
         slot[0x2c] = 5;
         slot[0x2e] = 5;
         /* (sic: slot 1 - car, not the car's own) */
-        other = (uint8_t *)(0x6bfdf4 - U16(*(uint8_t **)slot, 0x64e) * CAR_SLOT_SIZE);
+        other = (uint8_t *)(uintptr_t)(0x6bfdf4 - U16(GP(slot), 0x64e) * CAR_SLOT_SIZE);
         if (other[0x2c] > 1) {
             other[0x2c]--;
             other[0x2e]--;
@@ -922,7 +911,7 @@ void GAMEAPI slot_lap_done(uint8_t *slot)
             I32(g_race, 0x57c) = 5;
         race = g_race;
         if ((slot[0x259] & 1) == 0) {
-            car = *(uint8_t **)slot;
+            car = GP(slot);
             if (car[0x70c] != 8) {
                 if (race[0x58c] == 0)
                     slot[0x25a] = 1;
@@ -942,7 +931,7 @@ void GAMEAPI slot_lap_done(uint8_t *slot)
         for (i = 0; i < race[0x54d]; i++) {
             uint8_t *s = g_car_slots + i * CAR_SLOT_SIZE;
 
-            if ((*(uint8_t **)s)[0x70c] != 8 && (s[0x259] & 1) == 0)
+            if ((GP(s))[0x70c] != 8 && (s[0x259] & 1) == 0)
                 goto check_last;
         }
         if (I32(race, 0x57c) == 5) {
@@ -960,9 +949,9 @@ void GAMEAPI slot_lap_done(uint8_t *slot)
             for (i = 0; i < g_race[0x54d]; i++) {
                 uint8_t *s = g_car_slots + i * CAR_SLOT_SIZE;
 
-                replay_mark(*(uint8_t **)s);
-                replay_record_play(*(uint8_t **)s);
-                replay_record_play(*(uint8_t **)s);
+                replay_mark(GP(s));
+                replay_record_play(GP(s));
+                replay_record_play(GP(s));
             }
             race_end_fade(1);
             race_end();
@@ -971,7 +960,7 @@ void GAMEAPI slot_lap_done(uint8_t *slot)
     }
 check_last:
     if (slot[0x2c] == race[0x586])
-        (*(uint8_t **)slot)[0x65d] = 0x6f;
+        (GP(slot))[0x65d] = 0x6f;
 }
 
 /* 0x43d8e0: progress between the slot's checkpoints. With `probe` 1 only
@@ -980,7 +969,7 @@ check_last:
  * the next checkpoint (completing a lap at checkpoint 0) or back. */
 int32_t GAMEAPI slot_checkpoints(uint8_t *slot, uint32_t probe)
 {
-    uint8_t *car = *(uint8_t **)slot, *next, *prev, *best = 0;
+    uint8_t *car = GP(slot), *next, *prev, *best = 0;
     uint32_t counter = slot[0x2f], wanted, next_index, prev_index, position;
     int32_t best_dist = 0x7fffffff, prev_dist, passed = 0, behind = 0;
     int32_t px, py, pz, d, dir[3], up[3], facing;
@@ -1049,7 +1038,7 @@ int32_t GAMEAPI slot_checkpoints(uint8_t *slot, uint32_t probe)
         I32(slot, 0x38) = 0;
     dir[0] = 0; /* (the original's is unset when track_direction fails) */
     track_direction(dir, up, car);
-    if (S16(*(uint8_t **)slot, 0x658) < 3)
+    if (S16(GP(slot), 0x658) < 3)
         facing = mul16(dir[0], S16(car, 0xc8)) + mul16(dir[1], S16(car, 0xce)) + mul16(dir[2], S16(car, 0xd4));
     else
         facing = mul16(dir[0], I32(car, 0x68)) + mul16(dir[1], I32(car, 0x6c)) + mul16(dir[2], I32(car, 0x70));
@@ -1097,10 +1086,10 @@ int32_t GAMEAPI slot_checkpoints(uint8_t *slot, uint32_t probe)
  * (after it was put back on the track). */
 void GAMEAPI slot_checkpoints_reset(uint8_t *slot)
 {
-    uint8_t *car = *(uint8_t **)slot, *nearest = 0;
+    uint8_t *car = GP(slot), *nearest = 0;
     int32_t px = I32(car, 0x34) >> 16, py = I32(car, 0x38) >> 16, pz = I32(car, 0x3c) >> 16;
     int32_t best = 0x7fffffff, i, rows = g_track[0x44];
-    const uint32_t *row = *(uint32_t **)(g_track + 0x90);
+    const uint32_t *row = ((uint32_t *)GP(g_track + 0x90));
 
     for (; rows > 0; rows--, row++) {
         uint32_t packed = *row;
@@ -1154,13 +1143,13 @@ void GAMEAPI slot_checkpoints_reset(uint8_t *slot)
 
 /* --- putting a fallen body back --- */
 
-#define g_respawn_last_node (*(int16_t **)0x4d11f0)
+#define g_respawn_last_node (*(uint32_t *)0x4d11f0) /* an int16_t * */
 #define RESPAWN_POSITION ((int32_t *)0x4d1800)
 #define RESPAWN_DIRECTION ((int32_t *)0x4d3c90)
 #define TEST_BODY ((uint8_t *)0x4d1810)   /* scratch copy of the body */
 #define TEST_SLOTS ((uint8_t *)0x4d1950)  /* its slots */
-#define g_copy_to (*(uint32_t **)0x4d17f8)
-#define g_copy_from (*(uint32_t **)0x4d11f4)
+#define g_copy_to (*(uint32_t *)0x4d17f8) /* the copy loops' pointers, kept in game memory */
+#define g_copy_from (*(uint32_t *)0x4d11f4)
 
 /* 0x468d80: would the test body hit anything where it is? Its slots
  * against the track and objects (all but the main one, or only the main
@@ -1197,10 +1186,10 @@ int32_t GAMEAPI respawn_blocked(uint8_t *test, const uint8_t *body, int32_t main
         return 0;
     {
         int32_t radius = I32(slots + test[0x140 + (int8_t)test[0x10c]] * 0x48, 0x40);
-        uint8_t **list = g_bodies;
+        uint32_t *list = g_bodies;
 
         for (i = g_body_count; i != 0; i--, list++) {
-            const uint8_t *other = *list;
+            const uint8_t *other = (const uint8_t *)(uintptr_t)*list;
             uint32_t t, dx, dy, dz, r;
 
             if (other == body)
@@ -1231,35 +1220,41 @@ int32_t GAMEAPI respawn_try(uint8_t *body, const int32_t *position, const int32_
     uint8_t *slots = g_slots, *main_slot;
     int32_t words = (U32(body, 0) & 0x1ff) == 3 ? 0x91d : 0x60, i, n, result = 1, off_track;
     uint8_t *cell;
+    uint32_t *to, *from;
 
     if (q)
         quat_to_matrix(q, matrix);
-    g_copy_to = (uint32_t *)TEST_BODY;
-    g_copy_from = (uint32_t *)body;
+    to = (uint32_t *)TEST_BODY;
+    from = (uint32_t *)body;
     for (; words > 0; words--)
-        *g_copy_to++ = *g_copy_from++;
+        *to++ = *from++;
     if (q) {
-        g_copy_from = (uint32_t *)matrix;
-        g_copy_to = (uint32_t *)(TEST_BODY + MATRIX);
+        from = (uint32_t *)matrix;
+        to = (uint32_t *)(TEST_BODY + MATRIX);
         for (i = 0; i < 4; i++)
-            *g_copy_to++ = *g_copy_from++;
-        *(uint16_t *)g_copy_to = *(uint16_t *)g_copy_from;
-        g_copy_from = (uint32_t *)q;
-        g_copy_to = (uint32_t *)(TEST_BODY + ORIENTATION);
+            *to++ = *from++;
+        *(uint16_t *)to = *(uint16_t *)from;
+        from = (uint32_t *)q;
+        to = (uint32_t *)(TEST_BODY + ORIENTATION);
         for (i = 0; i < 4; i++)
-            *g_copy_to++ = *g_copy_from++;
+            *to++ = *from++;
     }
+    g_copy_to = (uint32_t)(uintptr_t)to;
+    g_copy_from = (uint32_t)(uintptr_t)from;
     I32(TEST_BODY, 0x120) = 0x7fffffff;
     n = *(int32_t *)0x4d3c84 = (int8_t)body[0x10c];
     for (i = 0; i <= n; i++) {
         uint32_t fresh, k;
 
-        g_copy_from = (uint32_t *)(slots + body[0x140 + i] * 0x48);
+        from = (uint32_t *)(slots + body[0x140 + i] * 0x48);
+        g_copy_from = (uint32_t)(uintptr_t)from;
         fresh = slot_take();
         TEST_SLOTS[i] = (uint8_t)fresh;
-        g_copy_to = (uint32_t *)(slots + (fresh & 0xff) * 0x48);
+        to = (uint32_t *)(slots + (fresh & 0xff) * 0x48);
         for (k = 0; k < 0x12; k++)
-            *g_copy_to++ = *g_copy_from++;
+            *to++ = *from++;
+        g_copy_to = (uint32_t)(uintptr_t)to;
+        g_copy_from = (uint32_t)(uintptr_t)from;
         n = *(int32_t *)0x4d3c84;
     }
     I32(TEST_BODY, 0x34) = position[0];
@@ -1268,7 +1263,7 @@ int32_t GAMEAPI respawn_try(uint8_t *body, const int32_t *position, const int32_
     body_slots_at(TEST_BODY, I32(TEST_BODY, 0x118));
     U32(TEST_BODY, 0x110) = 0;
     main_slot = slots + TEST_SLOTS[(int8_t)TEST_BODY[0x10c]] * 0x48;
-    *(uint8_t **)(TEST_BODY + 0x154) = (uint8_t *)0x4d13f8;
+    *(uint32_t *)(TEST_BODY + 0x154) = 0x4d13f8;
     *key = 0xffffffff;
     I32(main_slot, 0xc) = I32(TEST_BODY, 0x38) >> 8;
     I32(main_slot, 8) = I32(TEST_BODY, 0x34) >> 8;
@@ -1285,20 +1280,20 @@ int32_t GAMEAPI respawn_try(uint8_t *body, const int32_t *position, const int32_
 
         cell = track_cell((int32_t)((uint32_t)x << 8), (int32_t)((uint32_t)y << 8), (int32_t)((uint32_t)z << 8),
                           &off_track);
-        *(uint8_t **)0x4d3c88 = cell;
+        *(uint32_t *)0x4d3c88 = (uint32_t)(uintptr_t)cell;
         if (off_track == 0) {
             int16_t point[3] = {(int16_t)(x >> 8), (int16_t)(y >> 8), (int16_t)(z >> 8)};
             int32_t r = I32(main_slot, 0x40) >> 8, count;
             uint32_t patch_index = U32(cell, 4) >> 16 & 0x3fff;
-            const uint16_t *patch = (const uint16_t *)(*(uint8_t **)(g_track + 0x80) + patch_index * 6);
+            const uint16_t *patch = (const uint16_t *)(GP(g_track + 0x80) + patch_index * 6);
 
             r = r * r;
             for (count = (patch[1] >> 9) + 1; count > 0; count--, patch += 3)
                 patch_gather(main_slot, patch, TEST_BODY, 0, point, r);
-            *(uint8_t **)0x4d1968 = *(uint8_t **)(TEST_BODY + 0x154) + U16(TEST_BODY, 0x15c) * 0x10;
+            *(uint32_t *)0x4d1968 = (uint32_t)(uintptr_t)(GP(TEST_BODY + 0x154) + U16(TEST_BODY, 0x15c) * 0x10);
             if ((U32(TEST_BODY, 0) & 0x1ff) != 4) {
                 body_object_contacts(TEST_BODY, slots + TEST_SLOTS[(int8_t)TEST_BODY[0x10c]] * 0x48, 0);
-                if (*(uint32_t *)(U32(TEST_BODY, 0xc) & ~1u) >> 19 & 7)
+                if (*(uint32_t *)(uintptr_t)(U32(TEST_BODY, 0xc) & ~1u) >> 19 & 7)
                     sweep_stale = 0;
             }
             *key = U32(TEST_BODY, 0x11c);
@@ -1347,12 +1342,12 @@ void GAMEAPI respawn_place(uint8_t *body, const int32_t *position, const int32_t
         for (i = 0; i < 4; i++)
             I32(body, 0x37c + i * 0xc4) = 0;
         I32(body, 0x640) = 0;
-        *(uint8_t **)(slot + 0x64) = line;
+        *(uint32_t *)(slot + 0x64) = (uint32_t)(uintptr_t)line;
         U32(slot, 0x68) = node;
-        if ((*(uint8_t **)slot)[0x70c] == 8)
+        if ((GP(slot))[0x70c] == 8)
             ai_rejoin_plan(slot);
         if (g_race[0x551] == 3 || g_race[0x551] == 8) {
-            uint8_t *left = g_race + U16(*(uint8_t **)slot, 0x64e) + 8;
+            uint8_t *left = g_race + U16(GP(slot), 0x64e) + 8;
 
             if (*left)
                 (*left)--;
@@ -1387,7 +1382,7 @@ void GAMEAPI respawn_place(uint8_t *body, const int32_t *position, const int32_t
  * camera body (type 4) that fell ends the pass. */
 void GAMEAPI fallen_bodies_update(void)
 {
-    uint8_t **list;
+    uint32_t *list;
     int32_t count;
     /* (sic: the nearest nodes are not reset between bodies) */
     int16_t *best = 0, *second = 0;
@@ -1403,17 +1398,17 @@ void GAMEAPI fallen_bodies_update(void)
     if (count == 0)
         return;
     do {
-        uint8_t *body = *list;
+        uint8_t *body = (uint8_t *)(uintptr_t)*list;
 
         if (U32(body, 0x128) == 0x20) {
             uint32_t type = U32(body, 0) & 0x1ff;
 
             if (type == 4) {
-                camera_far(*(uint8_t **)(body + 0x164));
+                camera_far(GP(body + 0x164));
                 return;
             }
             if (type == 7 || type == 0x15) {
-                dropped_fallen(*(uint8_t **)(body + 0x164));
+                dropped_fallen(GP(body + 0x164));
                 list--;
                 count--;
             } else if (type == 0x21) {
@@ -1422,7 +1417,7 @@ void GAMEAPI fallen_bodies_update(void)
                 count--;
             } else {
                 int32_t bx = I32(body, 0x34) >> 16, by = I32(body, 0x38) >> 16, bz = I32(body, 0x3c) >> 16;
-                const uint8_t *line = *(uint8_t **)(g_track + 0x60);
+                const uint8_t *line = GP(g_track + 0x60);
                 int32_t lines = g_track[0x46] - 1, step;
                 int16_t *next;
 
@@ -1431,12 +1426,12 @@ void GAMEAPI fallen_bodies_update(void)
                     int32_t k, nodes;
 
                     line += 0xc;
-                    node = *(int16_t **)(line + 8);
+                    node = ((int16_t *)GP(line + 8));
                     nodes = U16(line, 0);
                     for (k = 0; k < nodes; k++, node += 8) {
                         int32_t dx, dy, dz, d;
 
-                        if (node == g_respawn_last_node)
+                        if ((uint32_t)(uintptr_t)node == g_respawn_last_node)
                             continue;
                         dx = node[0] - bx;
                         dy = node[1] - by;
@@ -1459,7 +1454,7 @@ void GAMEAPI fallen_bodies_update(void)
                         }
                     }
                 }
-                g_respawn_last_node = best;
+                g_respawn_last_node = (uint32_t)(uintptr_t)best;
                 RESPAWN_POSITION[0] = (int32_t)((uint32_t)best[0] << 16);
                 RESPAWN_POSITION[1] = (int32_t)((uint32_t)best[1] << 16);
                 RESPAWN_POSITION[2] = (int32_t)((uint32_t)best[2] << 16);
@@ -1487,7 +1482,7 @@ void GAMEAPI fallen_bodies_update(void)
                 } else {
                     RESPAWN_POSITION[0] = (int32_t)((uint32_t)second[0] << 16);
                     RESPAWN_POSITION[1] = (int32_t)((uint32_t)second[1] << 16);
-                    g_respawn_last_node = second;
+                    g_respawn_last_node = (uint32_t)(uintptr_t)second;
                     RESPAWN_POSITION[2] = (int32_t)((uint32_t)second[2] << 16);
                     respawn_place(body, RESPAWN_POSITION, q, (int16_t *)(body + MATRIX), (uint8_t *)second_line,
                                   (uint32_t)second_index, key);

@@ -14,8 +14,10 @@
 #define REROLL_WIN32_API 1
 #endif
 
-/* Calling convention of the original game functions (MSVC cdecl). */
-#if defined(REROLL_NATIVE)
+/* Calling convention of the original game functions (MSVC cdecl). A 64-bit
+ * build has one calling convention: everything that calls the game's C is
+ * our C. */
+#if defined(REROLL_NATIVE) && defined(__i386__)
 #define GAMEAPI __attribute__((cdecl))
 #define WINAPI __attribute__((stdcall))
 #else
@@ -55,21 +57,22 @@ __declspec(dllimport) DWORD WINAPI GetTickCount(void);
 __declspec(dllimport) void WINAPI Sleep(DWORD ms);
 __declspec(dllimport) BOOL WINAPI QueryPerformanceCounter(uint64_t *count);
 __declspec(dllimport) BOOL WINAPI QueryPerformanceFrequency(uint64_t *frequency);
-__declspec(dllimport) void *WINAPI VirtualAlloc(void *addr, size_t size, DWORD type, DWORD prot);
-__declspec(dllimport) BOOL WINAPI VirtualFree(void *addr, size_t size, DWORD type);
+__declspec(dllimport) void *WINAPI VirtualAlloc(void *addr, DWORD size, DWORD type, DWORD prot);
+__declspec(dllimport) BOOL WINAPI VirtualFree(void *addr, DWORD size, DWORD type);
 __declspec(dllimport) DWORD WINAPI GetEnvironmentVariableA(const char *name, char *buf, DWORD size);
 
+/* MEMORY_BASIC_INFORMATION as the game knows it: 32-bit fields (native/
+ * kernel32.c fills it so on both builds) */
 struct memory_basic_information {
-    void *base_address;
-    void *allocation_base;
+    uint32_t base_address;
+    uint32_t allocation_base;
     DWORD allocation_protect;
-    size_t region_size;
+    uint32_t region_size;
     DWORD state;
     DWORD protect;
     DWORD type;
 };
-__declspec(dllimport) size_t WINAPI VirtualQuery(const void *addr, struct memory_basic_information *info,
-                                                 size_t size);
+__declspec(dllimport) DWORD WINAPI VirtualQuery(const void *addr, struct memory_basic_information *info, DWORD size);
 
 #define MEM_COMMIT 0x1000
 #define MEM_RELEASE 0x8000

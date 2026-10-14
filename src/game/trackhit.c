@@ -12,15 +12,18 @@
 #include "body.h"
 #include "fixed.h"
 #include "physics.h"
+#include "gamefn.h"
 #include "../coverage.h"
 
 typedef int32_t(GAMEAPI *normalise_fn)(const int32_t *v, int32_t *out);
-#define vec_normalise_float ((normalise_fn)0x4290b0) /* x87, still the original */
+/* 0x4290b0: src/game/orig_pc.c's vec_normalise_x87, an x87 asm entry taking its
+ * arguments on the stack (no C prototype in gamefn.h) */
+#define vec_normalise_float ((normalise_fn)(uintptr_t)0x4290b0)
 
 /* Per polygon results of the plane test, 0x28 bytes each: point, normal,
  * distance (+0x18), time (+0x24). */
 #define g_track_hits ((uint8_t *)0x6ce760)
-#define g_tiles (**(uint8_t ****)0x6c1e30)
+#define g_tile(i) GP(GP(GP(0x6c1e30)) + (i) * 4)
 #define g_parity (*(uint32_t *)0x6c0a50)
 #define g_gte_diagonal(i) (*(int16_t *)(0x6ccbe0 + (i) * 8))
 #define g_gte_vector2(i) (*(int16_t *)(0x6ccc88 + (i) * 4))
@@ -65,7 +68,7 @@ void GAMEAPI wall_touched(const int32_t *contact, const int16_t *vertex)
 void GAMEAPI track_edge_hit(uint8_t *slot, int32_t *out, int32_t *best, int32_t *state, const uint8_t *entry,
                             const uint8_t *next, const uint8_t *list)
 {
-    const int16_t *v = *(const int16_t *const *)(entry + 0xc), *a, *b;
+    const int16_t *v = ((const int16_t *)(uintptr_t)*(const uint32_t *)(entry + 0xc)), *a, *b;
     uint32_t width = entry[3], kind = entry[0] & 0xf;
     int32_t smooth_edge = 0, d[3], hit[8], t;
 
@@ -185,7 +188,7 @@ static int sides_meet(int32_t edge, int32_t side)
  * cell key (out[8]). */
 uint32_t GAMEAPI slot_track_sweep(uint8_t *body, uint8_t *slot, int32_t *out, uint32_t limit)
 {
-    uint8_t *list = *(uint8_t **)(body + 0x154), *entry, *next = 0, *p;
+    uint8_t *list = GP(body + 0x154), *entry, *next = 0, *p;
     int32_t total = *(uint16_t *)(body + 0x15c), remaining = total, radius = I32(slot, 0x40);
     int32_t prev_kind = 0, prev_plane = -1, index = 0, edge_hits = 0, code = 0, result = 0;
     int32_t dist = 0x7fffffff, state = 0, t, best, n[3] = {0, 0, 0}, point[3] = {0, 0, 0}, i;
@@ -239,7 +242,7 @@ uint32_t GAMEAPI slot_track_sweep(uint8_t *body, uint8_t *slot, int32_t *out, ui
         kind = entry[0] & 0xf;
         key = U32(entry, 4);
         plane = U32(entry, 8);
-        vertices = *(const int16_t **)(entry + 0xc);
+        vertices = (const int16_t *)GP(entry + 0xc);
 
         if ((int32_t)plane == prev_plane && prev_kind < 6) {
             /* same plane as the last polygon: next to it, or level with it */
@@ -578,7 +581,7 @@ uint32_t GAMEAPI slot_track_sweep(uint8_t *body, uint8_t *slot, int32_t *out, ui
                 break;
             }
             if ((p[0] & 0xf) < 6) {
-                if (row < 0 || (uint32_t)row >= U32(g_tiles[pkey & 0xff], 0xc)) {
+                if (row < 0 || (uint32_t)row >= U32(g_tile(pkey & 0xff), 0xc)) {
                     track_edge_hit(slot, out, &best, &result, p, 0, list);
                     continue;
                 }

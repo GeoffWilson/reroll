@@ -20,14 +20,14 @@
  * game's own draw code does when it moves the camera temporarily. */
 #include "../runtime.h"
 #include "interp.h"
+#include "gamefn.h"
 
-typedef void(GAMEAPI *object_fn)(void *object);
-#define grid_unlink ((object_fn)0x4611d0)
-#define grid_link ((object_fn)0x460fb0)
+#define grid_unlink GCALL(0x4611d0, object_grid_unlink)
+#define grid_link GCALL(0x460fb0, object_grid_link)
 
 #define g_car_slots ((uint8_t *)0x6bfb80)
 #define CAR_SLOT_SIZE 0x274
-#define g_race_data (*(uint8_t **)0x4b1960)
+#define g_race_data GP(0x4b1960)
 
 #define MAX_OBJECTS 64 /* per car: body, camera, 4 wheels */
 #define WHEEL_POINTERS 0x390
@@ -106,8 +106,7 @@ static void relink(uint8_t *object)
     }
 }
 
-typedef int32_t(GAMEAPI *count_fn)(void);
-#define view_count ((count_fn)0x40d040) /* views on screen (split screen) */
+#define view_count GCALL(0x40d040, view_count) /* views on screen (split screen) */
 #define g_view_slots ((const int32_t *)0x6c0a40) /* car slot shown by each view */
 #define TV_CAMERAS 0x6cf6e0u
 #define TV_CAMERA_SIZE 0x150u
@@ -129,34 +128,34 @@ static int gather(uint8_t **objects, int *kinds)
 
     for (i = 0; i < cars && count + 6 <= MAX_OBJECTS; i++) {
         uint8_t *slot = g_car_slots + i * CAR_SLOT_SIZE;
-        uint8_t *car = *(uint8_t **)slot;
-        uint8_t **view = *(uint8_t ***)(slot + 0x28);
+        uint8_t *car = GP(slot);
+        const uint32_t *view = (const uint32_t *)GP(slot + 0x28); /* game slot: 32-bit pointers */
 
         if (car) {
             kinds[count] = KIND_CAR;
             objects[count++] = car;
             for (w = 0; w < 4; w++) {
-                uint8_t *wheel = *(uint8_t **)(car + WHEEL_POINTERS + w * WHEEL_POINTER_STRIDE);
+                uint8_t *wheel = GP(car + WHEEL_POINTERS + w * WHEEL_POINTER_STRIDE);
                 if (wheel && wheel != car) {
                     kinds[count] = KIND_WHEEL; /* relinking these corrupts the grid */
                     objects[count++] = wheel;
                 }
             }
         }
-        if (view && view[0] && view[0] != car) {
+        if (view && view[0] && GMEM(view[0]) != car) {
             kinds[count] = KIND_CAMERA;
-            objects[count++] = view[0];
+            objects[count++] = GMEM(view[0]);
         }
     }
     /* The camera of every view on screen, in case one shows a slot beyond
      * the race's cars (e.g. replays watching another car). */
     for (i = 0; i < view_count() && i < 4 && count < MAX_OBJECTS; i++) {
         uint8_t *slot = g_car_slots + g_view_slots[i] * CAR_SLOT_SIZE;
-        uint8_t **view = *(uint8_t ***)(slot + 0x28);
+        const uint32_t *view = (const uint32_t *)GP(slot + 0x28); /* game slot: 32-bit pointers */
 
-        if (view && view[0] && !contains(objects, count, view[0])) {
+        if (view && view[0] && !contains(objects, count, GMEM(view[0]))) {
             kinds[count] = KIND_CAMERA;
-            objects[count++] = view[0];
+            objects[count++] = GMEM(view[0]);
         }
     }
     /* TV cameras (end-of-race showcase, replays): drawing a view in that mode
@@ -166,7 +165,7 @@ static int gather(uint8_t **objects, int *kinds)
      * it is not a grid object and has no other fields. */
     for (i = 0; i < view_count() && i < 4 && count < MAX_OBJECTS; i++) {
         kinds[count] = KIND_TV_CAMERA;
-        objects[count++] = (uint8_t *)(TV_CAMERAS + i * TV_CAMERA_SIZE - 0x34);
+        objects[count++] = GMEM(TV_CAMERAS + i * TV_CAMERA_SIZE - 0x34);
     }
     return count;
 }
@@ -273,13 +272,13 @@ struct trigger_queue {
 
 static void save_trigger_queue(struct trigger_queue *q)
 {
-    memcpy(q->queue, (const void *)TRIGGER_QUEUE_START, sizeof(q->queue));
+    memcpy(q->queue, GMEM(TRIGGER_QUEUE_START), sizeof(q->queue));
     q->counter = g_trigger_counter;
 }
 
 static void restore_trigger_queue(const struct trigger_queue *q)
 {
-    memcpy((void *)TRIGGER_QUEUE_START, q->queue, sizeof(q->queue));
+    memcpy(GMEM(TRIGGER_QUEUE_START), q->queue, sizeof(q->queue));
     g_trigger_counter = q->counter;
 }
 
@@ -294,9 +293,9 @@ static void restore_trigger_queue(const struct trigger_queue *q)
  *   strength (+-8 per draw, 0x479b30). */
 #define HUD_COUNTERS 0x6c7fdc
 #define HUD_COUNTERS_SIZE 0x14
-#define BEEP_COUNTDOWN(car) (*(uint8_t *)(0x6c7fe2 + (car) * 4))
+#define BEEP_COUNTDOWN(car) (*(uint8_t *)(uintptr_t)(0x6c7fe2 + (car) * 4))
 #define VIEW_SLOTS 4
-#define VIEW_TINT(i) (*(uint8_t *)(0x6bfb80 + (i) * 0x274 + 0x256))
+#define VIEW_TINT(i) (*(uint8_t *)(uintptr_t)(0x6bfb80 + (i) * 0x274 + 0x256))
 
 struct draw_counters {
     uint8_t hud[HUD_COUNTERS_SIZE];
@@ -306,7 +305,7 @@ struct draw_counters {
 static void save_draw_counters(struct draw_counters *c)
 {
     int i;
-    memcpy(c->hud, (const void *)HUD_COUNTERS, HUD_COUNTERS_SIZE);
+    memcpy(c->hud, GMEM(HUD_COUNTERS), HUD_COUNTERS_SIZE);
     for (i = 0; i < VIEW_SLOTS; i++)
         c->tint[i] = VIEW_TINT(i);
     /* a beep due now (countdown 0) belongs to the step's own draw: an extra
@@ -319,7 +318,7 @@ static void save_draw_counters(struct draw_counters *c)
 static void restore_draw_counters(const struct draw_counters *c)
 {
     int i;
-    memcpy((void *)HUD_COUNTERS, c->hud, HUD_COUNTERS_SIZE);
+    memcpy(GMEM(HUD_COUNTERS), c->hud, HUD_COUNTERS_SIZE);
     for (i = 0; i < VIEW_SLOTS; i++)
         VIEW_TINT(i) = c->tint[i];
 }

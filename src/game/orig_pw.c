@@ -37,6 +37,7 @@
 #include "../runtime.h"
 #include "physics.h"
 #include "com.h"
+#include "gamefn.h"
 
 #define U8(p, off) (*(uint8_t *)((uint8_t *)(uintptr_t)(p) + (off)))
 #define S16(p, off) (*(int16_t *)((uint8_t *)(uintptr_t)(p) + (off)))
@@ -87,12 +88,16 @@ void fmv_macroblock_decode(void); /* 0x495958: asm entry, cdecl, keeps all but e
 void GAMEAPI fmv_macroblock_decode_c(const uint8_t *src, uint32_t dst, uint32_t pitch); /* 0x495958 body */
 
 /* Outside the group (C runtime free / calloc, the fatal error box). */
-typedef void(GAMEAPI *pw_fn1)(uint32_t a);
-typedef uint32_t(GAMEAPI *pw_fn2)(uint32_t a, uint32_t b);
+#define pw_free(p) GCALL(0x49827a, msvc_free)(PTR(p))
+#define pw_calloc(n, size) A(GCALL(0x49946c, msvc_calloc)((n), (size)))
+#if defined(__i386__)
+/* 0x493340: an asm entry (orig_pv.c), the text in ecx */
 typedef void(FASTCALL *pw_fast1)(uint32_t a);
-#define pw_free(p) (((pw_fn1)0x49827a)(A(p)))
-#define pw_calloc(n, size) (((pw_fn2)0x49946c)((n), (size)))
-#define pw_fatal(text) (((pw_fast1)0x493340)(text))
+#define pw_fatal(text) (((pw_fast1)(uintptr_t)0x493340)(text))
+#else
+void GAMEAPI movie_fatal_error_c(uint32_t text); /* 0x493340 body (orig_pv.c) */
+#define pw_fatal(text) movie_fatal_error_c(text)
+#endif
 
 /* The decoder's tables and state. */
 #define T_Y 0x4daac8 /* luma -> pixel, 128 dwords */
@@ -816,6 +821,7 @@ void GAMEAPI fmv_adpcm_mono_c(int32_t start, const uint8_t *src, uint16_t *dst, 
     *index = (uint32_t)idx;
 }
 
+#if defined(__i386__) /* x86-64: every caller is C and calls the body */
 __asm__(".text\n"
         ".globl fmv_adpcm_mono\n"
         "fmv_adpcm_mono:\n\t"
@@ -830,6 +836,7 @@ __asm__(".text\n"
         "addl $24, %esp\n\t"
         "popal\n\t"
         "ret\n");
+#endif
 
 /* ===== 0x4950a3 (cdecl; keeps every register): stereo 4-bit ADPCM, n
  * byte pairs (at least one): high nibble left, low right, into 16-bit
@@ -867,6 +874,7 @@ void GAMEAPI fmv_adpcm_stereo_c(uint32_t unused, const uint8_t *src, uint16_t *d
     *index = (G32(0x4b4844) << 16) | (G32(0x4b4840) & 0xffff);
 }
 
+#if defined(__i386__) /* x86-64: every caller is C and calls the body */
 __asm__(".text\n"
         ".globl fmv_adpcm_stereo\n"
         "fmv_adpcm_stereo:\n\t"
@@ -881,6 +889,7 @@ __asm__(".text\n"
         "addl $24, %esp\n\t"
         "popal\n\t"
         "ret\n");
+#endif
 
 /* ===== 0x495220 (ecx src, edx dst; stack n): unpack n source bytes: a
  * byte equal to the one before it is followed by a count of further
@@ -1077,6 +1086,7 @@ void GAMEAPI fmv_idct_rows_c(const int32_t *s)
     pw_idct(s, o, 9);
 }
 
+#if defined(__i386__) /* x86-64: every caller is C and calls the body */
 __asm__(".text\n"
         ".globl fmv_idct_rows\n"
         "fmv_idct_rows:\n\t"
@@ -1084,6 +1094,7 @@ __asm__(".text\n"
         "call fmv_idct_rows_c\n\t"
         "addl $4, %esp\n\t"
         "ret\n");
+#endif
 
 /* ===== 0x4955be (esi: 8 values): the column pass into 8 dwords at
  * *0x6d300c (which it also reads once, unused). ===== */
@@ -1093,6 +1104,7 @@ void GAMEAPI fmv_idct_cols_c(const int32_t *s)
     pw_idct(s, (int32_t *)PTR(G32(IDCT_OUT)), 1);
 }
 
+#if defined(__i386__) /* x86-64: every caller is C and calls the body */
 __asm__(".text\n"
         ".globl fmv_idct_cols\n"
         "fmv_idct_cols:\n\t"
@@ -1100,6 +1112,7 @@ __asm__(".text\n"
         "call fmv_idct_cols_c\n\t"
         "addl $4, %esp\n\t"
         "ret\n");
+#endif
 
 /* ===== 0x4956d2 (esi 16 Y, ebx 8 Cb with Cr at +0x100, edi 16 pixels):
  * a row of pixels: the tables at bits 17..23 of each value, one chroma for
@@ -1117,6 +1130,7 @@ void GAMEAPI fmv_row_to_pixels_c(const uint32_t *y, const uint32_t *c, uint32_t 
     }
 }
 
+#if defined(__i386__) /* x86-64: every caller is C and calls the body */
 __asm__(".text\n"
         ".globl fmv_row_to_pixels\n"
         "fmv_row_to_pixels:\n\t"
@@ -1126,6 +1140,7 @@ __asm__(".text\n"
         "call fmv_row_to_pixels_c\n\t"
         "addl $12, %esp\n\t"
         "ret\n");
+#endif
 
 /* ===== 0x495958 (cdecl src, dst, pitch; keeps all but eax): a coded
  * macroblock: the bit stream from src, six blocks (Y0..Y3 into the 16 x 16
@@ -1159,6 +1174,7 @@ void GAMEAPI fmv_macroblock_decode_c(const uint8_t *src, uint32_t dst, uint32_t 
     }
 }
 
+#if defined(__i386__) /* x86-64: every caller is C and calls the body */
 __asm__(".text\n"
         ".globl fmv_macroblock_decode\n"
         "fmv_macroblock_decode:\n\t"
@@ -1172,3 +1188,4 @@ __asm__(".text\n"
         "popl %edx\n\t"
         "popl %ecx\n\t"
         "ret\n");
+#endif

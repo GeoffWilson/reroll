@@ -4,15 +4,19 @@
 
 #include "../runtime.h"
 
-/* The queue at 0x6b9860. */
+/* The queue at 0x6b9860. Its arrays are 32-bit pointers in game memory:
+ * EVQ_EVENTS / EVQ_HEAP / EVQ_FREE read them. */
 struct event_queue {
     uint32_t count;    /* keys in the heap */
     int32_t capacity;  /* event records */
-    uint8_t *events;   /* records, EVENT_SIZE bytes each */
-    uint32_t *heap;    /* 1-based keys: time in bits 0..19, record in 20..31 */
-    uint32_t *free;    /* free record indices, << 20 */
+    uint32_t events;   /* records, EVENT_SIZE bytes each */
+    uint32_t heap;     /* 1-based keys: time in bits 0..19, record in 20..31 */
+    uint32_t free;     /* free record indices, << 20 */
     int32_t free_top;  /* top of `free` */
 };
+#define EVQ_EVENTS(q) ((uint8_t *)(uintptr_t)(q)->events)
+#define EVQ_HEAP(q) ((uint32_t *)(uintptr_t)(q)->heap)
+#define EVQ_FREE(q) ((uint32_t *)(uintptr_t)(q)->free)
 #define EVENT_SIZE 0x68
 #define g_event_queue ((struct event_queue *)0x6b9860)
 

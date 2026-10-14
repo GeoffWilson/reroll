@@ -103,8 +103,13 @@ int nt_data_extract(const char *exe, const char *out_path)
 static void on_trap(int sig, siginfo_t *info, void *context)
 {
     ucontext_t *uc = context;
+#if defined(__i386__)
     uint32_t at = (uint32_t)uc->uc_mcontext.gregs[REG_EIP] - 1;
     uint32_t ret = *(uint32_t *)(uintptr_t)(uint32_t)uc->uc_mcontext.gregs[REG_ESP];
+#else
+    uint32_t at = (uint32_t)uc->uc_mcontext.gregs[REG_RIP] - 1;
+    uint32_t ret = (uint32_t)*(uint64_t *)(uintptr_t)uc->uc_mcontext.gregs[REG_RSP];
+#endif
     (void)sig;
     (void)info;
     if (at < 0x401000 || at >= 0x4a3000)

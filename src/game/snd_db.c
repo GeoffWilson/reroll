@@ -17,6 +17,7 @@
  * here calls QMixer or WinAPI directly. */
 #include "../runtime.h"
 #include "physics.h"
+#include "gamefn.h"
 
 #define U8(p, off) (*(uint8_t *)((uint8_t *)(p) + (off)))
 #define S8(p, off) (*(int8_t *)((uint8_t *)(p) + (off)))
@@ -24,12 +25,12 @@
 #define S16(p, off) (*(int16_t *)((uint8_t *)(p) + (off)))
 #define I32(p, off) (*(int32_t *)((uint8_t *)(p) + (off)))
 #define U32(p, off) (*(uint32_t *)((uint8_t *)(p) + (off)))
-#define PTR(p, off) (*(uint8_t **)((uint8_t *)(p) + (off)))
+#define PTR(p, off) ((uint8_t *)(uintptr_t)U32(p, off)) /* 32-bit pointers in game memory */
 #define SHL(x, n) ((int32_t)((uint32_t)(int32_t)(x) << (n)))
 #define G32_AT(a) (*(uint32_t *)(a))
 
-#define g_config (*(uint8_t **)0x4b2198)
-#define g_race (*(uint8_t **)0x4b1960)
+#define g_config GP(0x4b2198)
+#define g_race GP(0x4b1960)
 #define g_voice_count (*(int32_t *)0x4b1c8c)
 #define g_sound_count (*(int32_t *)0x4d4534)
 #define g_sound_3d (*(int32_t *)0x4ac984) /* nonzero: voice_alloc sets voices up at once, the mixer is idle */
@@ -47,8 +48,10 @@
 #define g_level_far (*(uint32_t *)0x4d45f8) /* float */
 #define g_debug (*(int32_t *)0x4d4648)
 #define g_debug_ticks (*(int32_t *)0x4d464c)
-#define g_cd_desc (*(uint8_t **)0x5ff384) /* 0x14 bytes */
-#define g_cd_info (*(uint8_t **)0x6000d0) /* 0x28 bytes */
+#define g_cd_desc GP(0x5ff384) /* 0x14 bytes */
+#define g_cd_desc_at G32_AT(0x5ff384)
+#define g_cd_info GP(0x6000d0) /* 0x28 bytes */
+#define g_cd_info_at G32_AT(0x6000d0)
 #define g_voice_plain ((uint8_t *)0x5ff300) /* per voice: g_plain_volume at start */
 #define g_voice_started ((uint8_t *)0x5ff340)
 
@@ -71,71 +74,60 @@
 #define V_LINK2 0x2d
 
 /* Listener slots 0-3 (0x472290 sets them). */
-#define L_POS ((uint8_t **)0x4d4600)
-#define L_VEL ((uint8_t **)0x4d4610)
+#define L_POS(l) GP(0x4d4600 + (l) * 4)
+#define L_VEL(l) GP(0x4d4610 + (l) * 4)
 #define L_MAT ((uint32_t *)0x4d4620)
 #define L_D ((uint32_t *)0x4d4630)
 
 /* Still original. */
-typedef void(GAMEAPI *void_fn)(void);
-typedef int32_t(GAMEAPI *int_fn)(void);
-typedef void(GAMEAPI *u32_fn)(uint32_t a);
-typedef int32_t(GAMEAPI *int_u32_fn)(uint32_t a);
-typedef void(GAMEAPI *u32x2_fn)(uint32_t a, uint32_t b);
-typedef void(GAMEAPI *u32x3_fn)(uint32_t a, uint32_t b, uint32_t c);
-typedef void(GAMEAPI *u32x4_fn)(uint32_t a, uint32_t b, uint32_t c, uint32_t d);
-typedef void(GAMEAPI *mix3d_fn)(uint32_t voice, int32_t *pos, int32_t *vel, uint32_t mat, uint32_t d);
-typedef uint32_t(GAMEAPI *play_fn)(uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, uint32_t a5);
-typedef uint32_t(GAMEAPI *moving_fn)(uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, uint32_t a5, uint32_t a6,
-                                     uint32_t a7);
-typedef void(GAMEAPI *voice_slot_fn)(int32_t i, uint32_t a, uint32_t b, uint32_t c, uint32_t d);
-typedef void *(GAMEAPI *alloc_fn)(uint32_t size);
-typedef void(GAMEAPI *printf_fn)(const char *format, ...);
-typedef void(GAMEAPI *nothing_fn)(uint32_t a, ...);
+/* The original pushes arguments these two do not read (ps_wait_none 0x479ae0:
+ * xor eax, eax; ret, sound_device_ready 0x428060: returns 1); kept. */
+typedef int32_t(GAMEAPI *nothing_fn)(uint32_t a, ...);
+typedef uint32_t(GAMEAPI *device_ok_fn)(uint32_t a);
 typedef int32_t(GAMEAPI *isqrt_fn)(int32_t x);
 
-#define sound_play ((play_fn)0x471c90)
-#define sound_moving ((moving_fn)0x471da0)
-#define eax_get_room ((int_u32_fn)0x471740)
-#define eax_get_room_hf ((int_u32_fn)0x471810)
-#define eax_set_room ((int_u32_fn)0x4716c0)
-#define eax_set_room_hf ((int_u32_fn)0x471780)
-#define eax_voice_level ((u32x2_fn)0x4714c0)
-#define eax_voice_fade ((u32x3_fn)0x471580)
-#define device_set_level ((u32_fn)0x46f760)
-#define device_voice_free ((u32_fn)0x46fd40)
-#define device_voice_pitch ((u32x2_fn)0x46ffd0)
-#define device_voice_volume ((u32x2_fn)0x470040)
-#define device_voice_pos ((u32x4_fn)0x4700b0)
-#define device_voice_dir ((u32x4_fn)0x470160)
-#define device_voice_play ((u32x3_fn)0x46fc40)
-#define device_voice_get ((int_u32_fn)0x46ffa0)
-#define device_frame ((void_fn)0x470ef0)
-#define device_start ((void_fn)0x4702a0)
-#define device_restart ((void_fn)0x470680)
-#define device_debug_on ((void_fn)0x470740)
-#define device_debug_off ((void_fn)0x470790)
-#define device_debug_clear ((void_fn)0x470e40)
-#define voice_3d ((mix3d_fn)0x472bb0)
-#define voice_slot ((voice_slot_fn)0x472290)
-#define sound_mix_thunk ((void_fn)0x472040)
-#define fix_isqrt_orig ((isqrt_fn)0x40d9d0)
-#define game_alloc ((alloc_fn)0x4445e0)
-#define debug_printf ((printf_fn)0x496340)
-#define nothing ((nothing_fn)0x479ae0) /* xor eax, eax; ret */
-#define nothing2 ((void_fn)0x4291f0) /* ret */
-#define device_ok ((int_u32_fn)0x428060) /* returns 1 */
-#define output_mode ((int_u32_fn)0x471a70)
-#define cd_set_volume ((u32x2_fn)0x496c90)
-#define cd_play_orig ((u32_fn)0x496770)
-#define cd_resume ((void_fn)0x4967f0)
-#define cd_stop ((void_fn)0x4967a0)
-#define cd_pause_orig ((void_fn)0x496890)
-#define cd_open ((void_fn)0x496690)
-#define cd_set_first ((u32_fn)0x496c50)
-#define cd_set_repeat ((u32_fn)0x496c80)
-#define cd_track_count ((int_fn)0x497630)
-#define game_time ((int_fn)0x43692a)
+#define sound_play GCALL(0x471c90, sound_play_body)
+#define sound_moving GCALL(0x471da0, sound_moving_body)
+#define eax_get_room GCALL(0x471740, eax_environment_get)
+#define eax_get_room_hf GCALL(0x471810, eax_volume_get)
+#define eax_set_room GCALL(0x4716c0, eax_environment_set)
+#define eax_set_room_hf GCALL(0x471780, eax_volume_set)
+#define eax_voice_level GCALL(0x4714c0, eax_voice_reverb_set)
+#define eax_voice_fade GCALL(0x471580, eax_voice_fade_step)
+#define device_set_level GCALL(0x46f760, snd_set_rolloff)
+#define device_voice_free GCALL(0x46fd40, snd_chan_stop)
+#define device_voice_pitch GCALL(0x46ffd0, snd_chan_frequency)
+#define device_voice_volume GCALL(0x470040, snd_chan_volume)
+#define device_voice_pos GCALL(0x4700b0, snd_chan_position)
+#define device_voice_dir GCALL(0x470160, snd_chan_velocity)
+#define device_voice_play GCALL(0x46fc40, snd_chan_play)
+#define device_voice_get GCALL(0x46ffa0, snd_chan_claim)
+#define device_frame GCALL(0x470ef0, sound_channels_refresh)
+#define device_start GCALL(0x4702a0, snd_distance_map)
+#define device_restart GCALL(0x470680, snd_stats_clear)
+#define device_debug_on GCALL(0x470740, snd_profile_start)
+#define device_debug_off GCALL(0x470790, snd_profile_update)
+#define device_debug_clear GCALL(0x470e40, snd_stats_log)
+#define voice_3d GCALL(0x472bb0, voice_3d_place)
+#define voice_slot GCALL(0x472290, voice_slot_set)
+#define sound_mix_thunk GCALL(0x472040, sound_mix_jump)
+#define fix_isqrt_orig GCALL(0x40d9d0, fix_isqrt)
+#define game_alloc GCALL(0x4445e0, kr_malloc)
+#define debug_printf GCALL(0x496340, debug_log_printf)
+#define nothing ((nothing_fn)(uintptr_t)0x479ae0) /* xor eax, eax; ret */
+#define nothing2 GCALL(0x4291f0, dx_error_ignore) /* ret */
+#define device_ok ((device_ok_fn)(uintptr_t)0x428060) /* returns 1 */
+#define output_mode GCALL(0x471a70, sound_output_mode)
+#define cd_set_volume GCALL(0x496c90, cdaudio_set_volume)
+#define cd_play_orig GCALL(0x496770, cdaudio_play)
+#define cd_resume GCALL(0x4967f0, cdaudio_pause)
+#define cd_stop GCALL(0x4967a0, cdaudio_stop)
+#define cd_pause_orig GCALL(0x496890, cdaudio_resume)
+#define cd_open GCALL(0x496690, cdaudio_open)
+#define cd_set_first GCALL(0x496c50, cdaudio_set_shuffle)
+#define cd_set_repeat GCALL(0x496c80, cdaudio_set_skip_first)
+#define cd_track_count GCALL(0x497630, cd_volume_get)
+#define game_time GCALL(0x43692a, game_time_get)
 
 /* pitch * 11025 / 1024, as the original scales a voice's rate. */
 static int32_t rate(int32_t pitch)
@@ -155,8 +147,8 @@ static int32_t scaled(int32_t vol, int plain)
  * device level 1.0 and room 1. */
 int32_t GAMEAPI sound_eax_open(void)
 {
-    g_eax_room = eax_get_room(0x4d44d8);
-    g_eax_room_hf = eax_get_room_hf(0x4d44dc);
+    g_eax_room = eax_get_room((uint32_t *)0x4d44d8);
+    g_eax_room_hf = eax_get_room_hf((uint32_t *)0x4d44dc);
     device_set_level(0x3f800000);
     eax_set_room(1);
     return 0;
@@ -238,10 +230,10 @@ uint8_t GAMEAPI sound_voices_reset(uint32_t track)
         if (device_ok(1) != 1)
             return 0xf8;
         nothing((uint32_t)(int16_t)track);
-        g_cd_desc = game_alloc(0x14);
+        g_cd_desc_at = game_alloc(0x14);
         sound_cd_desc_init(g_cd_desc, track);
-        nothing((uint32_t)g_cd_desc);
-        nothing((uint32_t)g_cd_desc);
+        nothing(g_cd_desc_at);
+        nothing(g_cd_desc_at);
     }
     for (int32_t i = 0; i < 0x300; i++)
         ((uint32_t *)VOICES)[i] = 0;
@@ -252,7 +244,7 @@ uint8_t GAMEAPI sound_voices_reset(uint32_t track)
         U8(VOICE(i), V_LINK1) = 0x7f;
         U8(VOICE(i), V_LINK2) = 0x7f;
     }
-    g_cd_info = game_alloc(0x28);
+    g_cd_info_at = game_alloc(0x28);
     sound_cd_info_init(g_cd_info);
     return 0;
 }
@@ -470,7 +462,7 @@ void GAMEAPI sound_listener_set(uint32_t i, const uint32_t *pos, const uint32_t 
         d[0] = pos[0];
         d[1] = pos[1];
         z = pos[2];
-        pos_at[i] = (uint32_t)d;
+        pos_at[i] = (uint32_t)(uintptr_t)d;
         d[2] = z;
     } else {
         pos_at[i] = 0;
@@ -481,7 +473,7 @@ void GAMEAPI sound_listener_set(uint32_t i, const uint32_t *pos, const uint32_t 
         d[0] = vel[0];
         d[1] = vel[1];
         z = vel[2];
-        vel_at[i] = (uint32_t)d;
+        vel_at[i] = (uint32_t)(uintptr_t)d;
         d[2] = z;
     } else {
         vel_at[i] = 0;
@@ -490,7 +482,7 @@ void GAMEAPI sound_listener_set(uint32_t i, const uint32_t *pos, const uint32_t 
         uint32_t *d = (uint32_t *)0x6000e0 + i * 8;
         for (int32_t k = 0; k < 8; k++)
             d[k] = mat[k];
-        mat_at[i] = (uint32_t)d;
+        mat_at[i] = (uint32_t)(uintptr_t)d;
     } else {
         mat_at[i] = 0;
     }
@@ -689,8 +681,8 @@ void GAMEAPI sound_mix(void)
         if (flags & 0x20) {
             int32_t nearest = 0x100000;
             for (int8_t l = 0; l < 4; l++) {
-                if (L_POS[l]) {
-                    int32_t dist = sound_distance((const int32_t *)L_POS[l], (const int32_t *)PTR(v, V_POS));
+                if (L_POS(l)) {
+                    int32_t dist = sound_distance((const int32_t *)L_POS(l), (const int32_t *)PTR(v, V_POS));
                     if (dist < nearest) {
                         best = l;
                         nearest = dist;
@@ -701,11 +693,11 @@ void GAMEAPI sound_mix(void)
                 far = 1;
         } else if (flags & 2) {
             best = 0;
-            if (sound_distance((const int32_t *)L_POS[0], (const int32_t *)PTR(v, V_POS)) > 0x100000)
+            if (sound_distance((const int32_t *)L_POS(0), (const int32_t *)PTR(v, V_POS)) > 0x100000)
                 goto stop;
             for (uint8_t l = 1; l < 4; l++) {
                 uint8_t *link = links[l - 1];
-                uint8_t *lpos = L_POS[l];
+                uint8_t *lpos = L_POS(l);
                 uint32_t id;
                 int32_t dist = 0;
                 tmp = *link;
@@ -724,11 +716,11 @@ void GAMEAPI sound_mix(void)
                         I32(c, V_PITCH) = I32(v, V_PITCH);
                     }
                 } else if (lpos != 0 && dist <= 0x100000) {
-                    uint32_t pos = (uint32_t)PTR(v, V_POS);
+                    uint32_t pos = U32(v, V_POS);
                     uint8_t r = (uint8_t)sound_moving(
                         l, ((uint32_t)vol & 0xffffff00u) | U8(v, V_SOUND), (pos & 0xffffff00u) | U8(v, V_KIND),
-                        ((uint32_t)PTR(v, V_VEL) & 0xffff0000u) | U16(v, V_PITCH), (uint32_t)vol, pos,
-                        (uint32_t)PTR(v, V_VEL));
+                        (U32(v, V_VEL) & 0xffff0000u) | U16(v, V_PITCH), (uint32_t)vol, pos,
+                        U32(v, V_VEL));
                     tmp = r;
                     if ((int32_t)r < g_voice_count) {
                         uint8_t *c = VOICE(r);
@@ -748,8 +740,8 @@ void GAMEAPI sound_mix(void)
     relative:
         mat = L_MAT[best];
         d = L_D[best];
-        if (L_POS[best]) {
-            const int32_t *p = (const int32_t *)L_POS[best];
+        if (L_POS(best)) {
+            const int32_t *p = (const int32_t *)L_POS(best);
             rel_pos[0] = p[0];
             rel_pos[1] = p[1];
             rel_pos[2] = p[2];
@@ -762,7 +754,7 @@ void GAMEAPI sound_mix(void)
         }
         if (PTR(v, V_VEL) && (U8(v, V_FLAGS) & 0x12)) {
             const int32_t *p = (const int32_t *)PTR(v, V_VEL);
-            const int32_t *lv = (const int32_t *)L_VEL[best];
+            const int32_t *lv = (const int32_t *)L_VEL(best);
             rel_vel[0] = p[0];
             rel_vel[1] = p[1];
             rel_vel[2] = p[2];
@@ -789,7 +781,7 @@ void GAMEAPI sound_mix(void)
     place:
         device_voice_pitch((uint32_t)i, (uint32_t)pitch);
         device_voice_volume((uint32_t)i, (uint32_t)vol);
-        voice_3d((uint32_t)i, rel_pos, rel_vel, mat, d);
+        voice_3d((int32_t)i, rel_pos, rel_vel, GMEM(mat), d);
     started:
         if (U8(v, V_STATE) == 0x40) {
             U8(v, V_STATE) = 1;

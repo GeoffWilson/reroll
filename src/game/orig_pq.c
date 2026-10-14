@@ -22,6 +22,7 @@
  * Integer logic is C. Everything outside the group is called by address. */
 #include "../runtime.h"
 #include "physics.h"
+#include "gamefn.h"
 
 #define U8(p, off) (*(uint8_t *)((uint8_t *)(uintptr_t)(p) + (off)))
 #define S8(p, off) (*(int8_t *)((uint8_t *)(uintptr_t)(p) + (off)))
@@ -37,36 +38,29 @@
 #define PTR(a) ((uint8_t *)(uintptr_t)(a))
 #define A(x) ((uint32_t)(uintptr_t)(x))
 
-typedef int32_t(GAMEAPI *pq_fn0)(void);
-typedef int32_t(GAMEAPI *pq_fn1)(uint32_t a);
-typedef int32_t(GAMEAPI *pq_fn2)(uint32_t a, uint32_t b);
-typedef int32_t(GAMEAPI *pq_fn4)(uint32_t a, uint32_t b, uint32_t c, uint32_t d);
-typedef int32_t(GAMEAPI *pq_fn5)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e);
-typedef float(GAMEAPI *pq_facing_fn)(uint32_t a, uint32_t b, uint32_t c);
+/* 0x4278f0: src/game/orig_pc.c's vec_facing_float (x87 asm entry): (a, b,
+ * c) on the stack, the float result in st(0); not in gamefn.h. */
+typedef float(GAMEAPI *pq_facing_fn)(void *a, void *b, void *c);
 
-#define CALL0(a) (((pq_fn0)(a))())
-#define CALL1(a, x) (((pq_fn1)(a))(A(x)))
-#define CALL2(a, x, y) (((pq_fn2)(a))(A(x), A(y)))
-#define CALL4(a, x, y, z, w) (((pq_fn4)(a))(A(x), A(y), A(z), A(w)))
-#define CALL5(a, x, y, z, w, v) (((pq_fn5)(a))(A(x), A(y), A(z), A(w), A(v)))
-
-#define pq_sound_play(s, k, v, p, o) ((uint8_t)CALL5(0x471c90, s, k, v, p, o))
-#define pq_voice_stop(v) CALL1(0x471f40, v)
-#define pq_voice_pitch(v, p) CALL2(0x471f80, v, p)
-#define pq_surface_kind(body) ((uint32_t)CALL1(0x40d6f0, body))
-#define pq_surface_flash() CALL0(0x47db80)
-#define pq_tint_add(c) CALL1(0x42bfc0, c)
-#define pq_draw_prim(p) CALL1(0x428460, p)
-#define pq_grid_unlink2(o) CALL1(0x4612a0, o)
-#define pq_grid_link2_at(o, x, y, z) CALL4(0x460ff0, o, x, y, z)
-#define pq_vec_normalise(v) CALL1(0x480c70, v)
-#define pq_effects(p, v, a, b, c) CALL5(0x42aa30, p, v, a, b, c)
-#define pq_grid_unlink(o) CALL1(0x4611d0, o)
-#define pq_triggers(o) CALL1(0x4427a0, o)
-#define pq_palette() ((uint32_t)CALL0(0x486350))
-#define pq_light_matrix_load(m) CALL1(0x428940, m)
-#define pq_square_ir() CALL0(0x4282d0)
-#define pq_light_colour() CALL0(0x427100)
+#define pq_sound_play(s, k, v, p, o) ((uint8_t)GCALL(0x471c90, sound_play_body)(s, k, v, p, o))
+#define pq_voice_stop(v) GCALL(0x471f40, sound_voice_stop)(v)
+#define pq_voice_pitch(v, p) GCALL(0x471f80, voice_set_pitch)(v, p)
+#define pq_surface_kind(body) ((uint32_t)GCALL(0x40d6f0, surface_kind)(PTR(body)))
+#define pq_surface_flash() GCALL(0x47db80, ice_overlay_draw)()
+#define pq_tint_add(c) GCALL(0x42bfc0, screen_tint_add)(c)
+#define pq_draw_prim(p) GCALL(0x428460, capture_draw_prim)(A(p))
+#define pq_grid_unlink2(o) GCALL(0x4612a0, object_grid_unlink2)(PTR(A(o)))
+#define pq_grid_link2_at(o, x, y, z) \
+    GCALL(0x460ff0, object_grid_link2_at)(PTR(A(o)), (int32_t)(x), (int32_t)(y), (int32_t)(z))
+#define pq_vec_normalise(v) GCALL(0x480c70, vec_normalise)((int32_t *)PTR(A(v)))
+#define pq_effects(p, v, a, b, c) \
+    GCALL(0x42aa30, explosion_effects)((const int32_t *)PTR(A(p)), (const int32_t *)PTR(A(v)), a, b, c)
+#define pq_grid_unlink(o) GCALL(0x4611d0, object_grid_unlink)(PTR(A(o)))
+#define pq_triggers(o) GCALL(0x4427a0, body_triggers_apply)(PTR(A(o)))
+#define pq_palette() GCALL(0x486350, weather_palette_get)()
+#define pq_light_matrix_load(m) GCALL(0x428940, light_matrix_load)((const uint32_t *)(m))
+#define pq_square_ir() GCALL(0x4282d0, gte_square_ir)()
+#define pq_light_colour() GCALL(0x427100, gte_light_colour)()
 
 /* This group's functions (also in build/groups/pq_protos.txt for physics.h). */
 void GAMEAPI texture_anims_step(void); /* 0x478df0 */
@@ -579,6 +573,7 @@ void GAMEAPI track_run_split(uint32_t *out, uint32_t kind, uint32_t start, uint3
  * takes st(0)); 0 at the first that does not. The corners' clip codes are
  * and-ed into a mask that starts at 0 (sic), so the answer is never
  * affected by them; the projection runs a fifth time before the 1. */
+#if defined(__i386__)
 __asm__(".intel_syntax noprefix\n"
         ".text\n"
         ".globl track_quad_in_range\n"
@@ -659,6 +654,45 @@ __asm__(".intel_syntax noprefix\n"
         "    ret\n"
         "    .size track_quad_in_range, .-track_quad_in_range\n"
         ".att_syntax prefix\n");
+#else
+/* x86-64: the same steps in C. The transform (*0x6ccd78: 0x426a20, the
+ * subunit wrapper's C) returns what the original leaves in st(0); the
+ * projection (*0x6ccd80: 0x426b00) takes it as its argument. The fifth
+ * projection finds the x87 stack empty in the original: the indefinite
+ * NaN. */
+int32_t track_quad_in_range(uint8_t *quad)
+{
+    typedef float(GAMEAPI * transform_fn)(uint8_t * rec);
+    typedef void(GAMEAPI * project_fn)(float h);
+    const uint32_t *xy = (const uint32_t *)(quad + 4);
+    const uint16_t *z = (const uint16_t *)(quad + 0x14);
+    uint8_t rec[0x1c];
+    float limit = (float)(-(int32_t)S16(quad, 2) * 2), h, depth;
+    uint32_t mask = 0, n = 3, indefinite = 0xffc00000u;
+
+    G32(0x6ccc64) = xy[0];
+    G32(0x6ccc68) = z[0];
+    h = ((transform_fn)(uintptr_t)G32(0x6ccd78))(rec);
+    for (;;) {
+        xy++;
+        z++;
+        ((project_fn)(uintptr_t)G32(0x6ccd80))(h);
+        memcpy(&depth, rec + 4, 4);
+        mask &= U32(rec, 0);
+        if (!(depth >= limit)) /* C0: below, or unordered */
+            return 0;
+        if (n == 0)
+            break;
+        G32(0x6ccc64) = *xy;
+        G32(0x6ccc68) = *z;
+        h = ((transform_fn)(uintptr_t)G32(0x6ccd78))(rec);
+        n--;
+    }
+    memcpy(&h, &indefinite, 4);
+    ((project_fn)(uintptr_t)G32(0x6ccd80))(h);
+    return (U32(rec, 0) & mask) == 0;
+}
+#endif
 
 /* 0x47a500(now, before): the runs visible now (8-byte entries: kind,
  * start, count, level) minus the parts that were visible before (same
@@ -867,8 +901,9 @@ uint32_t GAMEAPI car_glow_packets_draw(uint8_t *g, uint32_t ot_front, uint32_t o
     pkts = G32(0x6ce60c) == 0x6cd4a0 ? U32(rec, 0x14) : U32(rec, 0x18);
     ret = ot_front;
     f0 = U32(faces, U8(g, 0x1109) * 8);
-    f = ((pq_facing_fn)0x4278f0)(A(g + 0x10fc + (f0 & 0xff) * 0x18), A(g + 0x10fc + (f0 >> 8 & 0xff) * 0x18),
-                                 A(g + 0x10fc + (f0 >> 16 & 0xff) * 0x18));
+    f = ((pq_facing_fn)(uintptr_t)0x4278f0)(PTR(g + 0x10fc + (f0 & 0xff) * 0x18),
+                                            PTR(g + 0x10fc + (f0 >> 8 & 0xff) * 0x18),
+                                            PTR(g + 0x10fc + (f0 >> 16 & 0xff) * 0x18));
     memcpy(&fb, &f, 4);
     if (flip)
         fb ^= 0x80000000;

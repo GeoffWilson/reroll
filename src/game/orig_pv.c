@@ -35,6 +35,7 @@
 #include "../runtime.h"
 #include "com.h"
 #include "physics.h"
+#include "gamefn.h"
 
 #define U8(p, off) (*(uint8_t *)((uint8_t *)(uintptr_t)(p) + (off)))
 #define S16(p, off) (*(int16_t *)((uint8_t *)(uintptr_t)(p) + (off)))
@@ -50,28 +51,13 @@
 #define PTR(a) ((uint8_t *)(uintptr_t)(a))
 #define A(x) ((uint32_t)(uintptr_t)(x))
 
-typedef int32_t(GAMEAPI *pv_fn0)(void);
-typedef int32_t(GAMEAPI *pv_fn1)(uint32_t a);
-typedef int32_t(GAMEAPI *pv_fn2)(uint32_t a, uint32_t b);
-typedef int32_t(GAMEAPI *pv_fn3)(uint32_t a, uint32_t b, uint32_t c);
-typedef int32_t(GAMEAPI *pv_fn4)(uint32_t a, uint32_t b, uint32_t c, uint32_t d);
-typedef int32_t(GAMEAPI *pv_fn6)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f);
-
-#define CALL0(a) (((pv_fn0)(a))())
-#define CALL1(a, x) (((pv_fn1)(a))(A(x)))
-#define CALL2(a, x, y) (((pv_fn2)(a))(A(x), A(y)))
-#define CALL3(a, x, y, z) (((pv_fn3)(a))(A(x), A(y), A(z)))
-#define CALL4(a, x, y, z, w) (((pv_fn4)(a))(A(x), A(y), A(z), A(w)))
-#define CALL6(a, x, y, z, w, v, u) (((pv_fn6)(a))(A(x), A(y), A(z), A(w), A(v), A(u)))
-
 /* MSVC fastcall callees (ecx, edx, then the stack; the callee pops it). */
 #define PV_FAST __attribute__((fastcall))
-typedef int32_t(PV_FAST *pv_fast1)(uint32_t c);
-typedef int32_t(PV_FAST *pv_fast2)(uint32_t c, uint32_t d);
-typedef int32_t(PV_FAST *pv_fast3)(uint32_t c, uint32_t d, uint32_t s);
-#define FAST1(a, x) (((pv_fast1)(a))(A(x)))
-#define FAST2(a, x, y) (((pv_fast2)(a))(A(x), A(y)))
-#define FAST3(a, x, y, z) (((pv_fast3)(a))(A(x), A(y), A(z)))
+
+/* Out-parameters of DirectSound / COM calls: 32-bit slots in game memory
+ * (native/ writes 32 bits). `call` names the parameter out_; the value is the
+ * call's. */
+#define OUT32(addr, call) ({ uint32_t *out_ = (uint32_t *)GMEM(addr); call; })
 
 /* stdcall: the timer callback. */
 #define PV_STD __attribute__((stdcall))
@@ -100,41 +86,41 @@ typedef int32_t(PV_FAST *pv_fast3)(uint32_t c, uint32_t d, uint32_t s);
 #define g_ds_16bit G32(0x4da29c)
 
 /* Outside the group, by address. */
-#define net_local_slot_at() CALL0(0x48cf20)
-#define net_player_active_at(i) CALL1(0x48cfd0, i)
-#define net_message_send_at(to, m, n, f) CALL4(0x48cc30, to, m, n, f)
-#define block_alloc_at(n, t) ((uint32_t)CALL2(0x476ae0, n, t))
-#define block_free_at(p) CALL1(0x476b40, p)
-#define game_time_at() ((uint32_t)CALL0(0x43692a))
-#define net_player_remove_at(i) CALL1(0x48bed0, i)
-#define heap_alloc_at(n) ((uint32_t)CALL1(0x4445e0, n))
-#define textures_reset_at() CALL0(0x4291f0)
-#define rot_matrix_at(ang, m) CALL2(0x426f80, ang, m)
-#define normal_colour_at(n, c, out) CALL3(0x4292b0, n, c, out)
-#define light_matrix_set_at(m) CALL1(0x428940, m)
-#define ot_add_at(ot, p) CALL2(0x427ab0, ot, p)
-#define crt_fread_at(b, s, n, f) CALL4(0x49908e, b, s, n, f)
-#define crt_malloc_at(n) ((uint32_t)CALL1(0x4982c2, n))
-#define crt_free_at(p) CALL1(0x49827a, p)
-#define crt_clock_at() ((uint32_t)CALL0(0x499016))
-#define crt_fseek_at(f, o, w) CALL3(0x4991a5, f, o, w)
-#define crt_calloc_at(n, s) ((uint32_t)CALL2(0x49946c, n, s))
-#define crt_fopen_at(p, m) ((uint32_t)CALL2(0x499459, p, m))
-#define crt_strncmp_at(a, b, n) CALL3(0x4993f0, a, b, n)
-#define crt_ftell_at(f) ((uint32_t)CALL1(0x49925e, f))
-#define crt_fclose_at(f) CALL1(0x4994f9, f)
-#define crt_exit_at(c) CALL1(0x498c89, c)
-#define adpcm_mono_at(a, src, dst, n, s, i) CALL6(0x495000, a, src, dst, n, s, i)
-#define adpcm_stereo_at(a, src, dst, n, s, i) CALL6(0x4950a3, a, src, dst, n, s, i)
-#define movie_frame_decode_at(m, slot) FAST2(0x494f10, m, slot)
-#define movie_blit16_at(m) FAST1(0x494040, m)
-#define movie_blit24_at(m) FAST1(0x4943b0, m)
-#define movie_blit_other_at(m) FAST1(0x494740, m)
-#define movie_frame_done_at(m) FAST1(0x494d30, m)
-#define movie_video_init_at(m) FAST1(0x494d40, m)
-#define movie_video_free_at(m) FAST1(0x494ed0, m)
-#define movie_audio_stop_at(m) FAST1(0x493a10, m)
-#define movie_tables_init_at(buf, out, n) FAST3(0x495220, buf, out, n)
+#define net_local_slot_at() GCALL(0x48cf20, net_local_slot)()
+#define net_player_active_at(i) GCALL(0x48cfd0, fe_net_player_active)(i)
+#define net_message_send_at(to, m, n, f) GCALL(0x48cc30, net_message_send)(to, m, n, f)
+#define block_alloc_at(n, t) ((uint32_t)GCALL(0x476ae0, global_block_alloc)(n, t))
+#define block_free_at(p) GCALL(0x476b40, global_block_free)(p)
+#define game_time_at() ((uint32_t)GCALL(0x43692a, game_time_get)())
+#define net_player_remove_at(i) GCALL(0x48bed0, net_player_remove)(i)
+#define heap_alloc_at(n) ((uint32_t)GCALL(0x4445e0, kr_malloc)(n))
+#define textures_reset_at() GCALL(0x4291f0, dx_error_ignore)()
+#define rot_matrix_at(ang, m) GCALL(0x426f80, matrix_from_angles)(GMEM(ang), GMEM(m))
+#define normal_colour_at(n, c, out) GCALL(0x4292b0, light_colour_at)(GMEM(n), GMEM(c), GMEM(out))
+#define light_matrix_set_at(m) GCALL(0x428940, light_matrix_load)(GMEM(m))
+#define ot_add_at(ot, p) GCALL(0x427ab0, ot_add_prim)(ot, GMEM(p))
+#define crt_fread_at(b, s, n, f) GCALL(0x49908e, crtc_fread)(GMEM(b), s, n, GMEM(f))
+#define crt_malloc_at(n) A(GCALL(0x4982c2, msvc_malloc)(n))
+#define crt_free_at(p) GCALL(0x49827a, msvc_free)(GMEM(p))
+#define crt_clock_at() ((uint32_t)GCALL(0x499016, msvc_clock)())
+#define crt_fseek_at(f, o, w) GCALL(0x4991a5, crtc_fseek)(GMEM(f), o, w)
+#define crt_calloc_at(n, s) A(GCALL(0x49946c, msvc_calloc)(n, s))
+#define crt_fopen_at(p, m) A(GCALL(0x499459, crtc_fopen)(GMEM(p), GMEM(m)))
+#define crt_strncmp_at(a, b, n) GCALL(0x4993f0, msvc_strncmp)(GMEM(a), GMEM(b), n)
+#define crt_ftell_at(f) ((uint32_t)GCALL(0x49925e, crtc_ftell)(GMEM(f)))
+#define crt_fclose_at(f) GCALL(0x4994f9, crtc_fclose)(GMEM(f))
+#define crt_exit_at(c) GCALL(0x498c89, msvc_exit)(c)
+#define adpcm_mono_at(a, src, dst, n, s, i) GCALL(0x495000, fmv_adpcm_mono_c)(a, GMEM(src), GMEM(dst), n, GMEM(s), GMEM(i))
+#define adpcm_stereo_at(a, src, dst, n, s, i) GCALL(0x4950a3, fmv_adpcm_stereo_c)(a, GMEM(src), GMEM(dst), n, GMEM(s), GMEM(i))
+#define movie_frame_decode_at(m, slot) GCALL(0x494f10, fmv_video_frame)(GMEM(m), GMEM(slot))
+#define movie_blit16_at(m) GCALL(0x494040, fmv_present_16)(GMEM(m))
+#define movie_blit24_at(m) GCALL(0x4943b0, fmv_present_24)(GMEM(m))
+#define movie_blit_other_at(m) GCALL(0x494740, fmv_present_32)(GMEM(m))
+#define movie_frame_done_at(m) GCALL(0x494d30, fmv_frames_swap)(GMEM(m))
+#define movie_video_init_at(m) GCALL(0x494d40, fmv_video_init)(GMEM(m))
+#define movie_video_free_at(m) GCALL(0x494ed0, fmv_video_free)(GMEM(m))
+#define movie_audio_stop_at(m) GCALL(0x493a10, fmv_audio_close)(GMEM(m))
+#define movie_tables_init_at(buf, out, n) GCALL(0x495220, fmv_rle_unpack)(GMEM(buf), GMEM(out), n)
 
 /* This group's functions (also in build/groups/pv_protos.txt). */
 int32_t GAMEAPI net_message_send_to(int32_t mode, uint32_t to, uint32_t msg, uint32_t size, uint32_t flags); /* 0x48cdd0 */
@@ -238,7 +224,7 @@ static inline uint32_t pv_fild16_scale(uint32_t src)
     uint32_t t, r;
     __asm__ volatile("filds (%2)\n\tfstps %1\n\tflds %1\n\tfmuls 0x4a3310\n\tfstps %0"
                      : "=m"(r), "=m"(t)
-                     : "r"(src)
+                     : "r"(PTR(src))
                      : "st", "memory");
     return r;
 }
@@ -247,10 +233,18 @@ static inline uint32_t pv_fild16_scale(uint32_t src)
  * which takes the transform's st(0). */
 static inline void pv_transform_project(uint32_t out)
 {
+#if defined(__i386__)
     __asm__ volatile("pushl %0\n\tcall *0x6ccd78\n\taddl $4, %%esp\n\tcall *0x6ccd80"
                      :
                      : "S"(out)
                      : "eax", "ecx", "edx", "cc", "memory", X87);
+#else
+    /* x86-64: the transform (*0x6ccd78) returns what the original leaves in
+     * st(0); the projection (*0x6ccd80) takes it as its argument. */
+    float h = ((float(GAMEAPI *)(uint8_t *))(uintptr_t)G32(0x6ccd78))(PTR(out));
+
+    ((void(GAMEAPI *)(float))(uintptr_t)G32(0x6ccd80))(h);
+#endif
 }
 
 /* idiv as the original: traps on a zero divisor where it does (a C
@@ -968,7 +962,11 @@ void GAMEAPI snatch_state_check(void)
  * native build jumps to its own implementation, as winapi.h calls it)
  * ================================================================= */
 
-#ifdef REROLL_NATIVE
+/* x86-64 (native only): no C calls these addresses (orig_pt.c and the rest
+ * call the imports themselves); a tail jump leaves the register arguments
+ * as they are, so they stay jumps (C bodies would need physics.h's
+ * void(void) declarations changed to the imports' prototypes). */
+#if defined(REROLL_NATIVE) || !defined(__i386__)
 #define PV_IMPORT_JMP(name, slot) __asm__ volatile("jmp " #name)
 #else
 #define PV_IMPORT_JMP(name, slot) __asm__ volatile("jmp *" #slot)
@@ -1050,6 +1048,7 @@ int32_t GAMEAPI movie_chunk_read_c(uint8_t *m)
     return 2;
 }
 
+#if defined(__i386__) /* x86-64: every caller is C and calls the body */
 __asm__(".text\n"
         ".globl movie_chunk_read\n"
         "movie_chunk_read:\n\t"
@@ -1057,6 +1056,7 @@ __asm__(".text\n"
         "call movie_chunk_read_c\n\t"
         "addl $4, %esp\n\t"
         "ret\n");
+#endif
 
 /* 0x492dc0: the play loop (in the caller or the movie thread): start /
  * end clocks (+0x33c / +0x340); until the stop word +0x68, the end chunk,
@@ -1086,7 +1086,7 @@ int32_t GAMEAPI movie_play_loop(uint8_t *m)
             done = 1;
         }
         if (U32(m, 0x1c) & 0x400)
-            done = CALL0(U32(m, 0x40));
+            done = ((int32_t(GAMEAPI *)(void))(uintptr_t)U32(m, 0x40))(); /* movie_frame_check 0x42d8e0 */
         if (U32(m, (U32(m, 0x364) + 0x22) * 0xc) != 0) {
             movie_frame_decode_at(m, m + (U32(m, 0x364) + 0x22) * 0xc);
             skip = I32(m, 0x5c);
@@ -1307,6 +1307,7 @@ void GAMEAPI movie_fatal_error_c(uint32_t text)
     crt_exit_at(1);
 }
 
+#if defined(__i386__) /* x86-64: every caller is C and calls the body */
 __asm__(".text\n"
         ".globl movie_fatal_error\n"
         "movie_fatal_error:\n\t"
@@ -1314,6 +1315,7 @@ __asm__(".text\n"
         "call movie_fatal_error_c\n\t"
         "addl $4, %esp\n\t"
         "ret\n");
+#endif
 
 /* 0x493360 (movie in ecx): with sound (flag 0x800): the DirectSound
  * (flag 0x1000: the caller's +0x30, else one made here, 0x4da294 = 1,
@@ -1338,7 +1340,7 @@ void GAMEAPI movie_sound_init_c(uint8_t *m)
     if (g_ds == 0) {
         g_ds_owned = 1;
         window = U32(m, 0x44);
-        if (DirectSoundCreate(0, GMEM(0x4da28c), 0) != 0 || IDirectSound_SetCooperativeLevel(g_ds, GMEM(window), 3) != 0)
+        if (OUT32(0x4da28c, DirectSoundCreate(0, out_, 0)) != 0 || IDirectSound_SetCooperativeLevel(g_ds, GMEM(window), 3) != 0)
             g_ds = 0;
         if (g_ds == 0) {
             g_ds_primary = 0;
@@ -1371,7 +1373,7 @@ create:
     desc[2] = 0;
     desc[3] = 0;
     desc[4] = 0;
-    if (IDirectSound_CreateSoundBuffer(g_ds, desc, GMEM(0x4da290), 0) != 0)
+    if (OUT32(0x4da290, IDirectSound_CreateSoundBuffer(g_ds, desc, out_, 0)) != 0)
         return;
     ch = (caps[1] & 2) ? 2 : 1;
     rate = S16(m, 0x14);
@@ -1396,6 +1398,7 @@ create:
     g_ds_bytes = dcaps[2];
 }
 
+#if defined(__i386__) /* x86-64: every caller is C and calls the body */
 __asm__(".text\n"
         ".globl movie_sound_init\n"
         "movie_sound_init:\n\t"
@@ -1403,6 +1406,7 @@ __asm__(".text\n"
         "call movie_sound_init_c\n\t"
         "addl $4, %esp\n\t"
         "ret\n");
+#endif
 
 /* 0x493590 (movie in ecx): with sound, the primary buffer released when
  * made here and given (flags 0x298 and 0x2000, sic), the DirectSound when
@@ -1419,6 +1423,7 @@ void GAMEAPI movie_sound_release_c(uint8_t *m)
         IDirectSound_Release(g_ds);
 }
 
+#if defined(__i386__) /* x86-64: every caller is C and calls the body */
 __asm__(".text\n"
         ".globl movie_sound_release\n"
         "movie_sound_release:\n\t"
@@ -1426,6 +1431,7 @@ __asm__(".text\n"
         "call movie_sound_release_c\n\t"
         "addl $4, %esp\n\t"
         "ret\n");
+#endif
 
 /* 0x4935e0 (movie in ecx): the sound buffer (+0x94: 16-bit PCM at the
  * movie's rate +0x14 and channels +0x18, the primary's size, flags 0xe0;
@@ -1455,7 +1461,7 @@ int32_t GAMEAPI movie_sound_start_c(uint8_t *m)
         desc[2] = g_ds_bytes;
         desc[3] = 0;
         desc[4] = A(wfx);
-        if (IDirectSound_CreateSoundBuffer(g_ds, desc, (void **)(m + 0x94), 0) == 0)
+        if (OUT32(A(m + 0x94), IDirectSound_CreateSoundBuffer(g_ds, desc, out_, 0)) == 0)
             IDirectSoundBuffer_SetFrequency(U32(m, 0x94), (DWORD)(int32_t)S16(m, 0x14));
         else
             U32(m, 0x94) = 0;
@@ -1500,6 +1506,7 @@ int32_t GAMEAPI movie_sound_start_c(uint8_t *m)
     return 0;
 }
 
+#if defined(__i386__) /* x86-64: every caller is C and calls the body */
 __asm__(".text\n"
         ".globl movie_sound_start\n"
         "movie_sound_start:\n\t"
@@ -1507,6 +1514,7 @@ __asm__(".text\n"
         "call movie_sound_start_c\n\t"
         "addl $4, %esp\n\t"
         "ret\n");
+#endif
 
 /* 0x4937e0: the 10 ms timer (stdcall TimeProc; user = the movie), unless
  * already running (+0x32c): once started (+0x374) with sound (+0x350),
@@ -1547,8 +1555,12 @@ void PV_STD movie_sound_timer(uint32_t id, uint32_t msg, uint32_t user, uint32_t
         k = U32(m, 0x35c);
         if ((int32_t)room >= I32(m, 8 * k + 0x9c) && U32(m, 8 * U32(m, 0x35c) + 0x98) != 0) {
             if (U32(m, 0x318) == 0) {
-                IDirectSoundBuffer_Lock(U32(m, 0x94), U32(m, 0x358), U32(m, 8 * U32(m, 0x35c) + 0x9c), (void **)&p1,
-                                        &n1, (void **)&p2, &n2, 0);
+                uint32_t q1 = p1, q2 = p2;
+
+                IDirectSoundBuffer_Lock(U32(m, 0x94), U32(m, 0x358), U32(m, 8 * U32(m, 0x35c) + 0x9c), &q1, &n1, &q2,
+                                        &n2, 0);
+                p1 = q1;
+                p2 = q2;
                 pv_copy(PTR(p1), PTR(U32(m, 8 * U32(m, 0x35c) + 0x98)), n1);
                 if (n2 != 0)
                     pv_copy(PTR(p2), PTR(U32(m, 8 * U32(m, 0x35c) + 0x98) + n1), n2);

@@ -25,6 +25,7 @@
 #include "../runtime.h"
 #include "com.h"
 #include "physics.h"
+#include "gamefn.h"
 
 #define A(p) ((uint32_t)(uintptr_t)(p))
 #define U8(a, off) (*(uint8_t *)(uintptr_t)((uint32_t)(a) + (uint32_t)(off)))
@@ -36,23 +37,23 @@
 #define G32(a) U32(a, 0)
 #define GI32(a) I32(a, 0)
 
-typedef int32_t(GAMEAPI *pb_fn0)(void);
-typedef int32_t(GAMEAPI *pb_fn1)(uint32_t a);
-typedef int32_t(GAMEAPI *pb_fn2)(uint32_t a, uint32_t b);
-typedef int32_t(GAMEAPI *pb_fn3)(uint32_t a, uint32_t b, uint32_t c);
-typedef float(GAMEAPI *pb_float3_fn)(uint32_t a, uint32_t b, uint32_t c);
-
-#define CALL0(a) ((pb_fn0)(a))()
-#define CALL1(a, x) ((pb_fn1)(a))((uint32_t)(x))
-#define CALL2(a, x, y) ((pb_fn2)(a))((uint32_t)(x), (uint32_t)(y))
-#define CALL3(a, x, y, z) ((pb_fn3)(a))((uint32_t)(x), (uint32_t)(y), (uint32_t)(z))
+#define GM(a) GMEM((uint32_t)(a))
 
 /* The GTE helpers through their pointers: transform V0 (0x6ccc64 / 0x6ccc68)
  * into a 0x18-byte record (leaves a value on the x87 stack), project the
  * last record (takes it), and the lighting / normal step. */
-#define GTE_TRANSFORM(rec) ((pb_fn1)(uintptr_t)G32(0x6ccd78))((uint32_t)(rec))
-#define GTE_PROJECT() ((pb_fn0)(uintptr_t)G32(0x6ccd80))()
-#define GTE_LIGHT() ((pb_fn0)(uintptr_t)G32(0x6cce3c))()
+#if defined(__i386__)
+/* typed as returning an int so the transform's st(0) stays for the projection */
+#define GTE_TRANSFORM(rec) ((int32_t(GAMEAPI *)(uint32_t))(uintptr_t)G32(0x6ccd78))((uint32_t)(rec))
+#define GTE_PROJECT() ((int32_t(GAMEAPI *)(void))(uintptr_t)G32(0x6ccd80))()
+#else
+/* x86-64: the transform returns its st(0) as a float and the projection
+ * takes it (subunit_transform_c / wide_project_c); kept here in between */
+static float pb_gte_h;
+#define GTE_TRANSFORM(rec) (pb_gte_h = ((float(GAMEAPI *)(uint8_t *))(uintptr_t)G32(0x6ccd78))((uint8_t *)GM(rec)))
+#define GTE_PROJECT() ((void(GAMEAPI *)(float))(uintptr_t)G32(0x6ccd80))(pb_gte_h)
+#endif
+#define GTE_LIGHT() ((void(GAMEAPI *)(void))(uintptr_t)G32(0x6cce3c))()
 
 #define g_race G32(0x4b1960)
 #define CAR_RECORD(i) (0x6bfb80u + (uint32_t)(i) * 0x274u) /* the race's car records: +0 car, +0x260 reflection, +0x264 */
@@ -125,7 +126,8 @@ static inline uint32_t pb_fild(uint32_t a)
  * single (fstp dword). */
 static uint32_t pb_facing(uint32_t a, uint32_t b, uint32_t c)
 {
-    float f = ((pb_float3_fn)0x4278f0)(a, b, c);
+    float f = ((float(GAMEAPI *)(const uint8_t *, const uint8_t *, const uint8_t *))(uintptr_t)0x4278f0)(GM(a), GM(b),
+                                                                                                  GM(c));
     uint32_t bits;
 
     memcpy(&bits, &f, 4);
@@ -135,7 +137,12 @@ static uint32_t pb_facing(uint32_t a, uint32_t b, uint32_t c)
 /* rep movsd */
 static inline void pb_movsd(uint32_t dst, uint32_t src, uint32_t n)
 {
+#if defined(__i386__)
     __asm__ volatile("rep movsl" : "+D"(dst), "+S"(src), "+c"(n) : : "memory");
+#else
+    for (; n; n--, dst += 4, src += 4)
+        G32(dst) = G32(src);
+#endif
 }
 
 /* abs by cdq / xor / sub (INT_MIN stays negative) */
@@ -167,36 +174,48 @@ static int32_t pb_ot_clamp(int32_t v)
 /* 0x420a30: render state and texture page from ebx (bits 0..9 used). */
 static void pb_state_select(uint32_t ebx)
 {
+#if defined(__i386__)
     uint32_t fn = 0x420a30, c, d;
     __asm__ volatile("call *%0" : "+a"(fn), "=c"(c), "=d"(d) : "b"(ebx) : "memory", "cc", X87_CLOBBER);
+#else
+    render_state_select_c(ebx);
+#endif
 }
 
 /* 0x420a90: one vertex into the batch: eax colour, edx vertex record (+4 z,
  * +8 x, +0xc y), bl / bh texture indices. */
 static void pb_batch_vertex(uint32_t colour, uint32_t vertex, uint32_t uv)
 {
+#if defined(__i386__)
     uint32_t a = colour, d = vertex, c;
     __asm__ volatile("movl $0x420a90, %%ecx\n\tcall *%%ecx" : "+a"(a), "+d"(d), "=&c"(c) : "b"(uv)
                      : "memory", "cc", X87_CLOBBER);
+#else
+    vertex_emit_indexed_c(colour, uv, (const uint8_t *)GM(vertex));
+#endif
 }
 
 /* 0x4180c0: one vertex into the clipper: eax colour, ecx / edx texture
  * indices, ebx six dwords. */
 static void pb_clip_vertex(uint32_t colour, uint32_t u, uint32_t v, uint32_t src)
 {
+#if defined(__i386__)
     uint32_t a = colour, c = u, d = v;
     __asm__ volatile("call *%[fn]" : "+a"(a), "+c"(c), "+d"(d) : "b"(src), [fn] "S"(0x4180c0u)
                      : "memory", "cc", X87_CLOBBER);
+#else
+    clip_vertex_add_c(colour, u, v, (const uint32_t *)GM(src));
+#endif
 }
 
-#define clip_vertex_2d(xy, uv, rgba) CALL3(0x418170, xy, uv, rgba)
-#define clip_restart() CALL0(0x418260)
-#define clip_a(flags) CALL1(0x417af0, flags)
-#define clip_b(flags) CALL1(0x417ce0, flags)
-#define clip_2d() CALL0(0x418290)
-#define batch_list(list) CALL1(0x420bb0, list)
-#define batch_flush_quads() CALL0(0x420720)
-#define batch_flush_triangles() CALL0(0x4206a0)
+#define clip_vertex_2d(xy, uv, rgba) GCALL(0x418170, clip_vertex_add_2d)(xy, uv, rgba)
+#define clip_restart() GCALL(0x418260, clip_vertices_restart)()
+#define clip_a(flags) GCALL(0x417af0, clip_polygon_a)(flags)
+#define clip_b(flags) GCALL(0x417ce0, clip_polygon_b)(flags)
+#define clip_2d() GCALL(0x418290, clip_polygon_2d)()
+#define batch_list(list) GCALL(0x420bb0, vertex_list_draw_fan)((const int32_t *)GM(list))
+#define batch_flush_quads() GCALL(0x420720, vertices_draw_quads)()
+#define batch_flush_triangles() GCALL(0x4206a0, vertices_draw_list)()
 
 /* The line colour: (r + g wrapped to a byte, + b) * 10 / 16 of the colour
  * halved. */
@@ -410,9 +429,9 @@ void GAMEAPI d3d_packet_draw(uint32_t p)
         break;
     case 0x2c: /* 0xb0: texture filtering on / nearest */
         if (U8(p, 4))
-            CALL0(0x41dd90);
+            GCALL(0x41dd90, d3d_filter_set)();
         else
-            CALL0(0x41ddd0);
+            GCALL(0x41ddd0, d3d_filter_nearest)();
         break;
     case 0x0b: /* 0x2c: 2D textured quad: xy / uv pairs +8 / +0xc, +0x10 / +0x14, +0x20 / +0x24, +0x18 / +0x1c */
         pb_state_select((U32(p, 0x16) & 0xffff00ffu) | (uint32_t)U8(p, 7) << 8);
@@ -497,7 +516,7 @@ int32_t GAMEAPI d3d_surfaces_restore(void)
         } else if (!failed) {
             continue;
         }
-        CALL1(0x420150, i);
+        GCALL(0x420150, texture_reload)(i);
     }
     return 1;
 }
@@ -554,7 +573,7 @@ void GAMEAPI car_packets_next(uint32_t car)
     U32(car, 0x14b0) = p;
     if (p > car + 0x1478)
         U32(car, 0x14b0) = car + 0x1408;
-    CALL2(0x427a40, U32(car, 0x14b0), 0xe);
+    GCALL(0x427a40, ot_clear_forward)((uint32_t *)GM(U32(car, 0x14b0)), 0xe);
 }
 
 /* ===== 0x422080: the next packet block of every car, and of every
@@ -620,7 +639,7 @@ int32_t GAMEAPI car_depth_offset(uint32_t car, uint32_t off)
     U32(car, 0x38) = oy + y;
     U32(car, 0x34) = x + U32(off, 0);
     U32(car, 0x3c) = oz + z;
-    r = CALL1(0x45a2a0, car);
+    r = GCALL(0x45a2a0, model_view_depth)((uint8_t *)GM(car));
     U32(car, 0x34) = x;
     U32(car, 0x38) = y;
     U32(car, 0x3c) = z;
@@ -826,7 +845,7 @@ void GAMEAPI model_draw_lod(uint32_t m, uint32_t ot, int32_t dist)
  * its drawing. ===== */
 void GAMEAPI model_draw_at(uint32_t m, uint32_t light, uint32_t ot, int32_t dist)
 {
-    CALL2(0x45b400, m, light);
+    GCALL(0x45b400, model_lights_set)((uint8_t *)GM(m), (const uint32_t *)GM(light));
     model_draw_lod(m, ot, dist);
 }
 
@@ -865,13 +884,13 @@ int32_t GAMEAPI wheel_facing_away(uint32_t w)
     for (k = 0; k < 3; k++, s += 8) {
         G32(0x6ccc64) = U32(s, -4);
         G32(0x6ccc68) = U32(s, 0);
-        CALL0(0x4266d0);
+        GCALL(0x4266d0, gte_rtps_float)();
         xy[k] = G32(0x6ccc9c);
     }
     G32(0x6ccc94) = xy[0];
     G32(0x6ccc9c) = xy[2];
     G32(0x6ccc98) = xy[1];
-    CALL0(0x4278a0);
+    GCALL(0x4278a0, gte_nclip)();
     v = GI32(0x6cccc4);
     if (G32(0x6cce94))
         v = (int32_t)(0u - (uint32_t)v);
@@ -1010,7 +1029,7 @@ void GAMEAPI cars_effects_draw(void)
     for (i = 0; i < U8(race, 0x54d); i++) {
         car = G32(CAR_RECORD(i));
         if (I32(car, 0x14b4) > -80) {
-            CALL2(0x46e4b0, car, U32(car, 0x14b0) + 0x20);
+            GCALL(0x46e4b0, car_trail_draw)((uint8_t *)GM(car), U32(car, 0x14b0) + 0x20);
             race = g_race;
         }
     }
@@ -1019,11 +1038,11 @@ void GAMEAPI cars_effects_draw(void)
         car = U32(rec, 0);
         if (I32(car, 0x14b4) > -80) {
             p = U32(car, 0x14b0);
-            U32(car, 0x228c) = (uint32_t)CALL3(0x47b470, car, p + 0x24, p + 0x18);
+            U32(car, 0x228c) = GCALL(0x47b470, car_glow_packets_draw)((uint8_t *)GM(car), p + 0x24, p + 0x18);
             if (U8(rec, 0x264)) {
                 mdl = U32(rec, 0x260);
                 p = U32(mdl, 0x14b0);
-                U32(mdl, 0x228c) = (uint32_t)CALL3(0x47b470, mdl, p + 0x24, p + 0x18);
+                U32(mdl, 0x228c) = GCALL(0x47b470, car_glow_packets_draw)((uint8_t *)GM(mdl), p + 0x24, p + 0x18);
             }
             race = g_race;
         }
@@ -1042,7 +1061,7 @@ void GAMEAPI cars_effects_draw(void)
             continue;
         if (I32(car, 0x14b4) > -80) {
             p = U32(car, 0x14b0);
-            CALL3(0x46dff0, car, p + 0x2c, p + 0xc);
+            GCALL(0x46dff0, shield_packets_link)((const uint8_t *)GM(car), p + 0x2c, p + 0xc);
             race = g_race;
         }
     }
@@ -1050,7 +1069,7 @@ void GAMEAPI cars_effects_draw(void)
         car = G32(CAR_RECORD(i));
         if (I32(car, 0x14b4) > -100) {
             p = U32(car, 0x14b0);
-            CALL3(0x475580, i, p + 0xc, p + 0x2c);
+            GCALL(0x475580, car_flame_draw)((int32_t)i, p + 0xc, p + 0x2c);
             race = g_race;
         }
     }
@@ -1060,7 +1079,7 @@ void GAMEAPI cars_effects_draw(void)
         if ((sel & 0x40) && ((sel >> 7) & 0xf) == i)
             continue;
         if (I32(car, 0x14b4) > -80) {
-            CALL2(0x46c9d0, car, U32(car, 0x14b0) + 8);
+            GCALL(0x46c9d0, shadow_add)(car, U32(car, 0x14b0) + 8);
             race = g_race;
         }
     }
@@ -1076,9 +1095,9 @@ void GAMEAPI cars_draw(void)
     uint32_t key = 0, light[3], i, car, idx, rec;
 
     G32(0x6ccc7c) = 0xffffff;
-    CALL0(0x422080);
-    CALL0(0x422c80);
-    CALL0(0x4231f0);
+    GCALL(0x422080, cars_packets_next)();
+    GCALL(0x422c80, cars_reflections_update)();
+    GCALL(0x4231f0, cars_view_flags_update)();
     light[2] = 0;
     light[1] = 0;
     light[0] = 0;
@@ -1091,9 +1110,9 @@ void GAMEAPI cars_draw(void)
             continue;
         if (idx * 2 != key) {
             key = idx * 2;
-            CALL2(0x459cb0, idx, A(light));
+            GCALL(0x459cb0, light_colours_from_ids)(idx, light);
         }
-        CALL1(0x422140, car);
+        GCALL(0x422140, car_ride_offset_update)(car);
         car_model_draw(car, A(light), 0);
         U8(car, 0x646) = 0;
         rec = CAR_RECORD(U16(car, 0x64e));
@@ -1106,9 +1125,9 @@ void GAMEAPI cars_draw(void)
             continue;
         if (key) {
             key = 0;
-            CALL2(0x459cb0, 0, A(light));
+            GCALL(0x459cb0, light_colours_from_ids)(0, light);
         }
-        CALL1(0x422140, car);
+        GCALL(0x422140, car_ride_offset_update)(car);
         car_model_draw(car, A(light), 0);
         U8(car, 0x646) = 0;
         rec = CAR_RECORD(U16(car, 0x64e));

@@ -19,6 +19,7 @@
  * called by address. */
 #include "../runtime.h"
 #include "physics.h"
+#include "gamefn.h"
 
 #define U8(p, off) (*(uint8_t *)((uint8_t *)(uintptr_t)(p) + (off)))
 #define U16(p, off) (*(uint16_t *)((uint8_t *)(uintptr_t)(p) + (off)))
@@ -35,18 +36,6 @@
 #define g_screen_w GI32(0x4acc38)
 #define g_screen_h GI32(0x4acc3c)
 #define g_fade GI32(0x4ac990)
-
-typedef int32_t(GAMEAPI *pe_fn0)(void);
-typedef int32_t(GAMEAPI *pe_fn1)(uint32_t a);
-typedef int32_t(GAMEAPI *pe_fn2)(uint32_t a, uint32_t b);
-typedef int32_t(GAMEAPI *pe_fn3)(uint32_t a, uint32_t b, uint32_t c);
-typedef int32_t(GAMEAPI *pe_fn5)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e);
-
-#define CALL0(a) (((pe_fn0)(a))())
-#define CALL1(a, x) (((pe_fn1)(a))(A(x)))
-#define CALL2(a, x, y) (((pe_fn2)(a))(A(x), A(y)))
-#define CALL3(a, x, y, z) (((pe_fn3)(a))(A(x), A(y), A(z)))
-#define CALL5(a, x, y, z, w, v) (((pe_fn5)(a))(A(x), A(y), A(z), A(w), A(v)))
 
 /* int -> float as the original: fild m32, fstp m32. */
 static inline void pe_fild_fstp(int32_t v, uint32_t at)
@@ -130,7 +119,7 @@ uint32_t GAMEAPI text_tab_next(uint32_t x)
 int32_t GAMEAPI glyph_place(uint32_t font_id, uint32_t code, const uint8_t *colours, int32_t y, int16_t *x,
                             int16_t *height, uint32_t flags)
 {
-    uint32_t font = (uint32_t)CALL1(0x42e050, font_id);
+    uint32_t font = GCALL(0x42e050, font_by_id)(font_id);
     *height = 0;
     if (!font)
         return -1;
@@ -140,7 +129,7 @@ int32_t GAMEAPI glyph_place(uint32_t font_id, uint32_t code, const uint8_t *colo
     uint8_t glyph = U8(font, 0x101c + code);
     if (glyph == 0xff) {
         if (code != 0xd6)
-            CALL2(0x476ec0, 0x4ac950, code);
+            GCALL(0x476ec0, dbg_vlog_printf)((const char *)GMEM(0x4ac950), code);
         return -1;
     }
     uint32_t a, b, w;
@@ -237,8 +226,8 @@ int32_t GAMEAPI glyph_place(uint32_t font_id, uint32_t code, const uint8_t *colo
             U8(a, o) = 0xff;
         }
     }
-    CALL2(0x4270e0, a, U32(font, 0x18));
-    CALL2(0x4270e0, b, U32(font, 0x18));
+    GCALL(0x4270e0, prim_flag2_set)((uint8_t *)GMEM(a), (int32_t)U32(font, 0x18));
+    GCALL(0x4270e0, prim_flag2_set)((uint8_t *)GMEM(b), (int32_t)U32(font, 0x18));
     if (!own)
         G16(0x4be2fc)++;
     return 0;
@@ -395,7 +384,7 @@ void GAMEAPI fe_frame_sprites_init(uint8_t *p)
         r[0x74]--;
         r[0x75]--;
         if (i)
-            CALL2(0x4290a0, r - 0x78, r);
+            GCALL(0x4290a0, dword_store)((uint32_t *)(r - 0x78), A(r));
     }
     uint8_t f = p[7];
     U16(p, 0x3e) = 0x3f;
@@ -430,32 +419,32 @@ void GAMEAPI fe_box_frame_place(uint32_t list, uint8_t *p, const uint8_t *colour
 {
     uint32_t q = A(p);
     int32_t r = w + x, b = y + h;
-    int32_t cw = CALL1(0x431670, 7), ch = CALL1(0x4316a0, 7);
+    int32_t cw = GCALL(0x431670, frontend_texture_width)(7), ch = GCALL(0x4316a0, frontend_texture_height)(7);
     int32_t tl_x0 = x - cw / 2, tl_x1 = cw - cw / 2 + x;
     int32_t tl_y0 = y - ch / 2, tl_y1 = ch - ch / 2 + y;
     pe_piece(q + 0x3c0, tl_x0, tl_y0, tl_x1, tl_y1);
-    cw = CALL1(0x431670, 8);
-    ch = CALL1(0x4316a0, 8);
+    cw = GCALL(0x431670, frontend_texture_width)(8);
+    ch = GCALL(0x4316a0, frontend_texture_height)(8);
     int32_t tr_x0 = r - cw / 2, tr_x1 = cw - cw / 2 + r;
     int32_t tr_y0 = y - ch / 2, tr_y1 = ch - ch / 2 + y;
     pe_piece(q + 0xf0, tr_x0, tr_y0, tr_x1, tr_y1);
-    cw = CALL1(0x431670, 9);
-    ch = CALL1(0x4316a0, 9);
+    cw = GCALL(0x431670, frontend_texture_width)(9);
+    ch = GCALL(0x4316a0, frontend_texture_height)(9);
     int32_t bl_x0 = x - cw / 2, bl_x1 = cw - cw / 2 + x;
     int32_t bl_y0 = b - ch / 2, bl_y1 = ch - ch / 2 + b;
     pe_piece(q + 0x2d0, bl_x0, bl_y0, bl_x1, bl_y1);
-    cw = CALL1(0x431670, 10);
-    ch = CALL1(0x4316a0, 10);
+    cw = GCALL(0x431670, frontend_texture_width)(10);
+    ch = GCALL(0x4316a0, frontend_texture_height)(10);
     int32_t br_x0 = r - cw / 2, br_x1 = cw - cw / 2 + r;
     int32_t br_y0 = b - ch / 2, br_y1 = ch - ch / 2 + b;
     pe_piece(q + 0x1e0, br_x0, br_y0, br_x1, br_y1);
     /* top and bottom edges (image 3's height) */
-    int32_t eh = CALL1(0x4316a0, 3);
+    int32_t eh = GCALL(0x4316a0, frontend_texture_height)(3);
     int32_t half = eh / 2;
     pe_piece(q + 0x78, tl_x1 - 1, y - half, tr_x0 + 1, eh - half + y);
     pe_piece(q + 0x258, bl_x1 - 1, b - half + 1, br_x0 + 1, eh - half + 1 + b);
     /* left and right edges (image 4's width) */
-    int32_t ew = CALL1(0x431670, 4);
+    int32_t ew = GCALL(0x431670, frontend_texture_width)(4);
     half = ew / 2;
     pe_piece(q + 0x168, r - half - 1, tl_y1 - 1, ew - half - 1 + r, bl_y0 + 1);
     pe_piece(q + 0x348, x - half, tr_y1 - 1, ew - half + x, br_y0 + 1);
@@ -482,7 +471,7 @@ void GAMEAPI fe_box_frame_place(uint32_t list, uint8_t *p, const uint8_t *colour
             p[0x7e + i * 0x78] = colour[2];
         }
     }
-    CALL3(0x429080, list, q, q + 0x3c0);
+    GCALL(0x429080, word_exchange)(list, q, (uint32_t *)GMEM(q + 0x3c0));
 }
 
 /* 0x432820: out rgb = in rgb * (256 - fade) / 256. */
@@ -552,33 +541,33 @@ int32_t GAMEAPI front_mode_race_setup(int32_t mode, uint32_t kind, uint32_t choi
     if (mode == 8) {
         track = mode;
     } else {
-        CALL0(0x433cd0);
+        GCALL(0x433cd0, race_option_clamp)();
         U8(g_options, 0x43) = U8(g_options, 0x82);
         U8(g_options, 0x14) = (uint8_t)mode;
         U8(g_options, 0x15) = (uint8_t)kind;
         U8(g_options, 0x16) = (uint8_t)choice;
         uint32_t o = g_options;
-        track = CALL2(0x433670, U8(o, 0x15), U8(o, 0x16));
+        track = GCALL(0x433670, race_track_choose)(U8(o, 0x15), U8(o, 0x16));
         if (track == -1)
             return -1;
         uint8_t t = U8(g_options, 0xb);
         if (t >= 1 && t <= 20)
             track = t - 1;
         U8(g_race, 0x579) = (uint8_t)track;
-        uint8_t world = (uint8_t)CALL1(0x433550, track);
+        uint8_t world = (uint8_t)GCALL(0x433550, track_world)(track);
         U8(g_race, 0xe) = world;
-        uint8_t place = (uint8_t)CALL1(0x4335c0, track);
+        uint8_t place = (uint8_t)GCALL(0x4335c0, track_world_place)(track);
         U8(g_race, 0xf) = place;
-        uint32_t now = (uint32_t)CALL0(0x436935);
+        uint32_t now = GCALL(0x436935, fe_time)();
         U32(g_race, 0x618) = now;
     }
     if (mode == 7) {
         uint32_t o = g_options;
         if (U8(o, 0x43) && U8(o, 0x83))
             U8(o, 0x43) = 2;
-        CALL0(0x432b70);
-        CALL2(0x432bd0, track, 1);
-        CALL0(0x432c80);
+        GCALL(0x432b70, start_kind_set)();
+        GCALL(0x432bd0, weapons_flags_set)(track, 1);
+        GCALL(0x432c80, race_option554_set)();
         uint8_t level;
         switch (U8(g_options, 0x87)) {
         case 1: level = 6; break;
@@ -590,8 +579,8 @@ int32_t GAMEAPI front_mode_race_setup(int32_t mode, uint32_t kind, uint32_t choi
         uint8_t v = U8(g_options, 0x8b);
         U8(g_race, 0x585) = v;
         U8(g_race, 0x54d) = 6;
-        CALL5(0x433ab0, 0, 1, 0, 0, 0);
-        if (CALL1(0x435d43, 1) == 0)
+        GCALL(0x433ab0, race_slots_init)(0, 1, 0, 0, 0);
+        if (GCALL(0x435d43, network_session_poll)(1) == 0)
             return 0;
     }
 done:

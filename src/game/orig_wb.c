@@ -20,6 +20,7 @@
  * 0x438310 back into subunit.c's wrappers). */
 #include "../runtime.h"
 #include "physics.h"
+#include "gamefn.h"
 
 #define U8(p, off) (*(uint8_t *)((uint8_t *)(uintptr_t)(p) + (off)))
 #define S16(p, off) (*(int16_t *)((uint8_t *)(uintptr_t)(p) + (off)))
@@ -32,25 +33,19 @@
 #define PTR(a) ((uint8_t *)(uintptr_t)(a))
 #define A(x) ((uint32_t)(uintptr_t)(x))
 
-typedef int32_t(GAMEAPI *wb_fn0)(void);
-typedef int32_t(GAMEAPI *wb_fn1)(uint32_t a);
-typedef int32_t(GAMEAPI *wb_fn2)(uint32_t a, uint32_t b);
-typedef int32_t(GAMEAPI *wb_fn3)(uint32_t a, uint32_t b, uint32_t c);
-typedef int32_t(GAMEAPI *wb_fn5)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e);
-
-#define CALL0(a) (((wb_fn0)(a))())
-#define CALL1(a, x) (((wb_fn1)(a))(A(x)))
-#define CALL2(a, x, y) (((wb_fn2)(a))(A(x), A(y)))
-#define CALL3(a, x, y, z) (((wb_fn3)(a))(A(x), A(y), A(z)))
-#define CALL5(a, x, y, z, w, v) (((wb_fn5)(a))(A(x), A(y), A(z), A(w), A(v)))
-
 #define g_race G32(0x4b1960)
 #define g_render_flags G8(0x6cce40)
 
 /* This group's functions (also in build/groups/wb_protos.txt for physics.h). */
 void GAMEAPI camera_matrix_body(void); /* 0x423d30 */
+#if defined(__i386__)
 void subunit_transform_body(void); /* 0x426a20: asm, (record) */
 void subunit_transform_only_body(void); /* 0x426be0: asm, (record) */
+#else
+/* x86-64: the C bodies of those two asm entries */
+float subunit_transform_c(uint8_t *rec); /* 0x426a20: returns what the original leaves in st(0) */
+float subunit_transform_only_c(uint8_t *rec); /* 0x426be0: the same (0 where it leaves none) */
+#endif
 void GAMEAPI hud_body(uint8_t *view); /* 0x438310 */
 void GAMEAPI draw_view_body(uint8_t *view); /* 0x479be0 */
 
@@ -63,8 +58,8 @@ void GAMEAPI draw_view_body(uint8_t *view); /* 0x479be0 */
 void GAMEAPI camera_matrix_body(void)
 {
     G16(0x6cd480) = G32(0x6cce94) ? 0xe000 : 0x2000;
-    CALL3(0x423d70, 0x6ce5d0, 0x6ce5a0, 0x6ce5c0);
-    CALL1(0x423df0, 0x6ce5d0);
+    GCALL(0x423d70, view_camera_build)(PTR(0x6ce5d0), (const uint32_t *)GMEM(0x6ce5a0), PTR(0x6ce5c0));
+    GCALL(0x423df0, view_camera_load)(PTR(0x6ce5d0));
 }
 
 /* ===== 0x426a20 / 0x426be0: the original's instructions.
@@ -82,6 +77,7 @@ void GAMEAPI camera_matrix_body(void)
  * the record gets only code 0x10 and z, and the x87 stack is left empty
  * (eax as on entry); otherwise as 0x426a20 with the codes built in memory
  * (eax = z's bits, ecx / edx as on entry). *0x6ccd74 = record either way. */
+#if defined(__i386__)
 __asm__(".intel_syntax noprefix\n"
         ".text\n"
         ".globl subunit_transform_body\n"
@@ -232,6 +228,71 @@ __asm__(".intel_syntax noprefix\n"
         "    ret\n" /* 426cc2 */
         ".size subunit_transform_only_body, .-subunit_transform_only_body\n"
         ".att_syntax prefix\n");
+#else
+/* x86-64: the same in C. The game runs the x87 at single precision, so
+ * float arithmetic step by step gives the same values (range edge cases
+ * aside); nothing passes values in registers or on the x87 stack here, so
+ * the value the original leaves in st(0) for the projection is returned. */
+#define GF(a) (*(float *)(uintptr_t)(a))
+
+/* T + m0 * vx + m1 * vy + m2 * vz in the original's order. */
+static float wb_row(uint32_t t, uint32_t m, float vx, float vy, float vz)
+{
+    float s = GF(m) * vx;
+    float p;
+
+    s = GF(t) + s;
+    p = GF(m + 4) * vy;
+    s = s + p;
+    p = GF(m + 8) * vz;
+    return s + p;
+}
+
+float subunit_transform_c(uint8_t *rec)
+{
+    float vx = (float)(int16_t)G16(0x6ccc64), vy = (float)(int16_t)G16(0x6ccc66), vz = (float)(int16_t)G16(0x6ccc68);
+    float z = wb_row(0x6ccd14, 0x6ccd3c, vx, vy, vz);
+    float x = wb_row(0x6ccd0c, 0x6ccd1c, vx, vy, vz);
+    float y = wb_row(0x6ccd10, 0x6ccd2c, vx, vy, vz);
+    uint32_t code = 0x10;
+    float r = z;
+
+    *(float *)(rec + 0x10) = x;
+    *(float *)(rec + 0x14) = y;
+    *(float *)(rec + 4) = z;
+    if (I32(rec, 4) >= (int32_t)G32(0x6ccd08))
+        code |= 0x20;
+    if (I32(rec, 4) >= (int32_t)G32(0x6ccd04)) {
+        r = GF(0x6ccd00) / r;
+        code &= ~0x10u;
+    }
+    U32(rec, 0) = code;
+    G32(0x6ccd74) = A(rec);
+    return r;
+}
+
+float subunit_transform_only_c(uint8_t *rec)
+{
+    float vx = (float)(int16_t)G16(0x6ccc64), vy = (float)(int16_t)G16(0x6ccc66), vz = (float)(int16_t)G16(0x6ccc68);
+    float r = 0;
+
+    U32(rec, 0) = 0x10;
+    *(float *)(rec + 4) = wb_row(0x6ccd14, 0x6ccd3c, vx, vy, vz);
+    if (!(U32(rec, 4) & 0x80000000)) {
+        *(float *)(rec + 0x10) = wb_row(0x6ccd0c, 0x6ccd1c, vx, vy, vz);
+        *(float *)(rec + 0x14) = wb_row(0x6ccd10, 0x6ccd2c, vx, vy, vz);
+        r = *(float *)(rec + 4);
+        if (I32(rec, 4) >= (int32_t)G32(0x6ccd08))
+            U32(rec, 0) |= 0x20;
+        if (I32(rec, 4) >= (int32_t)G32(0x6ccd04)) {
+            r = GF(0x6ccd00) / r;
+            U32(rec, 0) &= ~0x10u;
+        }
+    }
+    G32(0x6ccd74) = A(rec);
+    return r;
+}
+#endif
 
 /* fld a; fcomp b: 1 when a > b (C0 and C3 clear: not below, equal or unordered). */
 static int x87_greater(const void *a, const void *b)
@@ -286,15 +347,15 @@ void GAMEAPI hud_body(uint8_t *view)
     }
     if (G32(0x4d1198) && mode == 0) {
         if (!U8(race, 0x552))
-            CALL2(0x45cfe0, view, G32(0x6c7fdc) & 0xff);
-        CALL2(0x43a4a0, G32(0x6c7fdc) & 0xff, view);
-        CALL2(0x4792a0, view, 0);
+            GCALL(0x45cfe0, netplay_chat_show)(A(view), G32(0x6c7fdc) & 0xff);
+        GCALL(0x43a4a0, hud_gap_bars)(G32(0x6c7fdc) & 0xff, view);
+        GCALL(0x4792a0, text_messages_draw)(A(view), 0);
         return;
     }
     if (I32(race, 0x57c) >= 7)
         return;
     if (mode == 0)
-        CALL2(0x43a4a0, G32(0x6c7fdc) & 0xff, view);
+        GCALL(0x43a4a0, hud_gap_bars)(G32(0x6c7fdc) & 0xff, view);
     if (mode == 1)
         return;
     if (mode == 0) {
@@ -302,13 +363,13 @@ void GAMEAPI hud_body(uint8_t *view)
         uint32_t edx;
         int i;
 
-        CALL1(0x483d20, view);
-        count = (uint32_t)CALL1(0x458760, view);
+        GCALL(0x483d20, lock_marker_draw)(view);
+        count = (uint32_t)GCALL(0x458760, missile_lock_level)((const uint32_t *)view);
         if (count) {
             if (!(G8(0x6c0a50) & 0xf))
-                CALL3(0x439d50, car, 1, 9);
+                GCALL(0x439d50, hud_fade_set)(car, 1, 9);
             if (!G8(0x6c7fe2 + 4 * car)) {
-                CALL5(0x471c90, 0x3d, 6, 0x400, 0x36b0, U32(view, 0) + 0x34);
+                GCALL(0x471c90, sound_play_body)(0x3d, 6, 0x400, 0x36b0, U32(view, 0) + 0x34);
                 G8(0x6c7fe2 + 4 * car) = (uint8_t)count;
             }
             G8(0x6c7fe2 + 4 * car)--;
@@ -322,7 +383,7 @@ void GAMEAPI hud_body(uint8_t *view)
         if (size > limit)
             size = limit;
         icon = G8(0x6c7fe0 + 4 * car);
-        CALL3(0x439d70, car, size, icon ? icon - 1 : 0);
+        GCALL(0x439d70, hud_fade_apply)(car, size, icon ? icon - 1 : 0);
         if (!size)
             return;
         race = PTR(g_race);
@@ -357,21 +418,25 @@ void GAMEAPI hud_body(uint8_t *view)
             U32(ot, 0) = edx - 0x14;
         }
         if (U8(PTR(g_race), 0x551) == 4)
-            CALL2(0x469f80, U32(PTR(G32(0x6ce608)), 4), 0x6c7d90);
+            GCALL(0x469f80, meters_link)(U32(PTR(G32(0x6ce608)), 4), 0x6c7d90);
     }
     if (!G32(0x4be454))
-        CALL2(0x4792a0, view, 0);
+        GCALL(0x4792a0, text_messages_draw)(A(view), 0);
 }
 
 /* 0x428bd0 (the far plane, in st(0)) stored as a float: fstp as the original. */
 static uint32_t far_plane_get_bits(void)
 {
+#if defined(__i386__)
     uint32_t bits;
     __asm__ volatile("movl $0x428bd0, %%eax\n\tcall *%%eax\n\tfstps %0"
                      : "=m"(bits)
                      :
                      : "eax", "ecx", "edx", "memory", "cc", X87);
     return bits;
+#else
+    return G32(0x6ccd08); /* far_plane_get 0x428bd0 is fld dword [0x6ccd08]; ret */
+#endif
 }
 
 /* ===== 0x479be0 draw_view (view): one view of the race. The viewport is
@@ -418,14 +483,14 @@ void GAMEAPI draw_view_body(uint8_t *view)
         }
     }
     if (g_render_flags & 0x20) {
-        CALL2(0x428770, r, 2);
+        GCALL(0x428770, view_viewport_apply)((const uint8_t *)r, 2);
     } else {
         border[0] = S16(view, 0x18);
         border[1] = S16(view, 0x1c);
         border[2] = S16(view, 0x20);
         border[3] = S16(view, 0x24);
-        CALL3(0x4284b0, border, r, 0);
-        CALL2(0x428770, r, 0);
+        GCALL(0x4284b0, view_border_draw)(border, r, 0);
+        GCALL(0x428770, view_viewport_apply)((const uint8_t *)r, 0);
     }
     if (r[3] == 0)
         return;
@@ -439,72 +504,72 @@ void GAMEAPI draw_view_body(uint8_t *view)
             }
         }
     }
-    CALL1(0x40cbe0, view);
+    GCALL(0x40cbe0, camera_blend_begin)((uint8_t **)view);
     if ((U32(camera, 0xc) & ~1u) == 0) {
         if (U8(PTR(g_race), 0x54c)) {
             G32(0x6ce604) = 1;
-            CALL1(0x40cd00, view);
+            GCALL(0x40cd00, camera_blend_end)((uint8_t **)view);
             return;
         }
-        CALL1(0x40cd00, view);
+        GCALL(0x40cd00, camera_blend_end)((uint8_t **)view);
         return;
     }
-    CALL2(0x466f70, camera + 0x34, U32(view, 0));
-    CALL1(0x423d10, camera + 0xc4);
-    CALL1(0x479940, view);
-    CALL0(0x423d30);
+    GCALL(0x466f70, camera_shake_apply)(A(camera + 0x34), U32(view, 0));
+    GCALL(0x423d10, view_matrix_store)((const uint32_t *)(camera + 0xc4));
+    GCALL(0x479940, time_warp_view_effect)((const uint32_t *)view);
+    GCALL(0x423d30, camera_matrix_body)();
     colour = G32(0x4af4b8);
     lod = U32(camera, 0xc) & ~1u;
     G32(0x6ccc34) = (colour & 0xff) << 4 | 8;
     G32(0x6ccc38) = (colour >> 8 & 0xff) << 4 | 8;
     G32(0x6ccc3c) = (uint32_t)G8(0x4af4ba) << 4 | 8;
-    CALL0(0x47bd20);
-    CALL0(0x478df0);
-    CALL1(0x490430, U32(view, 0x28));
-    CALL1(0x42be20, camera);
-    CALL1(0x47ea00, camera);
+    GCALL(0x47bd20, cars_glow_texture_cycle)();
+    GCALL(0x478df0, texture_anims_step)();
+    GCALL(0x490430, sparkle_body)(PTR(U32(view, 0x28)));
+    GCALL(0x42be20, shake_flash_tint)(A(camera));
+    GCALL(0x47ea00, marker_proximity_tint)(camera);
     if (!(g_render_flags & 0x10))
-        CALL1(0x479b30, view);
-    CALL1(0x42c0a0, view);
-    CALL1(0x484980, view);
-    CALL1(0x438760, view);
-    CALL0(0x433f00);
-    CALL0(0x42b9a0);
-    CALL0(0x42c950);
-    CALL0(0x42c420);
-    CALL0(0x4345c0);
-    CALL0(0x467ec0);
-    CALL0(0x483210);
-    CALL0(0x48fdd0);
-    CALL0(0x46c840);
-    CALL1(0x438310, hud_view);
+        GCALL(0x479b30, view_surface_tint)(view);
+    GCALL(0x42c0a0, screen_tint_draw)(A(view));
+    GCALL(0x484980, weather_draw)(view);
+    GCALL(0x438760, hud_update_extra)((uint32_t *)view);
+    GCALL(0x433f00, trails_draw)();
+    GCALL(0x42b9a0, smoke_clouds_draw)();
+    GCALL(0x42c950, shock_waves_draw)();
+    GCALL(0x42c420, blast_flare_draw)();
+    GCALL(0x4345c0, beams_draw)();
+    GCALL(0x467ec0, pickups_draw)();
+    GCALL(0x483210, projectile_trails_draw)();
+    GCALL(0x48fdd0, snatch_draw)();
+    GCALL(0x46c840, shadows_draw)();
+    GCALL(0x438310, hud_body)(hud_view);
     colour = G32(0x4af4b8);
     G32(0x6ccc34) = (colour & 0xff) << 4 | 8;
     G32(0x6ccc38) = (colour >> 8 & 0xff) << 4 | 8;
     G32(0x6ccc3c) = (uint32_t)G8(0x4af4ba) << 4 | 8;
-    lod = (uint32_t)CALL1(0x47a030, lod);
-    CALL1(0x477940, lod);
+    lod = A(GCALL(0x47a030, visibility_body)(PTR(lod)));
+    GCALL(0x477940, track_sections_draw)((const uint32_t *)GMEM(lod));
     far = far_plane_get_bits();
-    CALL0(0x479f60);
-    CALL1(0x428b90, 0x47800000); /* 65536.0f */
-    CALL0(0x404f50);
-    CALL0(0x4291f0); /* the original pushes the camera before these no-ops */
-    CALL0(0x4291f0);
-    CALL1(0x4049b0, camera);
-    CALL0(0x4291f0);
-    CALL0(0x4291f0);
-    CALL1(0x428b90, far);
-    CALL1(0x47dd70, lod);
-    CALL0(0x459b20);
-    CALL0(0x46dc50);
-    CALL0(0x421ef0);
-    CALL1(0x423df0, 0x6ce5d0);
-    CALL0(0x4821d0);
-    CALL1(0x442060, camera);
-    CALL0(0x46f230);
-    CALL0(0x47db20);
+    GCALL(0x479f60, view_depth_markers_link)();
+    GCALL(0x428b90, far_plane_set)(0x47800000); /* 65536.0f */
+    GCALL(0x404f50, sky_quads_draw)();
+    GCALL(0x4291f0, dx_error_ignore)(); /* the original pushes the camera before these no-ops */
+    GCALL(0x4291f0, dx_error_ignore)();
+    GCALL(0x4049b0, sky_dome_draw)(camera);
+    GCALL(0x4291f0, dx_error_ignore)();
+    GCALL(0x4291f0, dx_error_ignore)();
+    GCALL(0x428b90, far_plane_set)(far);
+    GCALL(0x47dd70, sprites_draw)((const uint8_t *)GMEM(lod));
+    GCALL(0x459b20, objects_body)();
+    GCALL(0x46dc50, shields_draw)();
+    GCALL(0x421ef0, cars_draw)();
+    GCALL(0x423df0, view_camera_load)(PTR(0x6ce5d0));
+    GCALL(0x4821d0, car_light_trails_draw)();
+    GCALL(0x442060, flares_draw)(camera);
+    GCALL(0x46f230, skid_marks_draw)();
+    GCALL(0x47db20, warp_overlay_draw)();
     if (!(g_render_flags & 0x12))
-        CALL0(0x46a9e0);
-    CALL0(0x41b2f0);
-    CALL1(0x40cd00, view);
+        GCALL(0x46a9e0, countdown_body)();
+    GCALL(0x41b2f0, screen_colour_apply)();
+    GCALL(0x40cd00, camera_blend_end)((uint8_t **)view);
 }

@@ -109,7 +109,7 @@ void GAMEAPI body_script_step(uint8_t *body);
 void GAMEAPI body_explosion_force(uint8_t *body);
 void GAMEAPI controls_digital(const uint8_t *slot, uint8_t *record);
 void GAMEAPI controls_decode(int32_t player, const uint8_t *raw, uint8_t *packet);
-void GAMEAPI controls_fetch_packet(int32_t player, uint8_t *raw, uint8_t **packet);
+void GAMEAPI controls_fetch_packet(int32_t player, uint8_t *raw, uint32_t *packet);
 void GAMEAPI controls_analogue(int32_t player);
 int32_t GAMEAPI car_controls_read(uint8_t *car, int32_t player);
 void GAMEAPI car_handbrake(uint8_t *car, const uint8_t *record);
@@ -905,9 +905,21 @@ void GAMEAPI view_rect_saved_get(uint32_t *out); /* 0x426590 */
 void GAMEAPI view_saved_get(uint32_t *out); /* 0x4265b0 */
 void gte_rt_float(void); /* 0x426620: asm */
 void gte_rtps_float(void); /* 0x4266d0: asm */
+#if defined(__i386__)
 void gte_rtps_3dnow(void); /* 0x4268c0: asm, 3DNow!, (record) through 0x6ccd78 / 0x6ccd7c */
+#else /* C on x86-64 (src/game/orig_pc.c) */
+float gte_rtps_3dnow(uint8_t *rec);
+#endif
+#if defined(__i386__)
 void gte_rt_depth(void); /* 0x426cd0: asm, (record) returns z; leaves st(0) for gte_project_pending when z >= 0 */
+#else /* C on x86-64 (src/game/orig_pc.c) */
+int32_t gte_rt_depth(uint8_t *rec, float *st0);
+#endif
+#if defined(__i386__)
 void gte_project_pending(void); /* 0x426dc0: asm, takes st(0) from gte_rt_depth */
+#else /* C on x86-64 (src/game/orig_pc.c) */
+void gte_project_pending(float st0);
+#endif
 void GAMEAPI matrix_rotate_vec(const uint8_t *m, const int16_t *v, int32_t *out); /* 0x426e10 */
 void GAMEAPI matrix_mul_into(const uint8_t *a, uint8_t *b); /* 0x426e90 */
 void GAMEAPI matrix_translation_set(uint8_t *m, const int32_t *v); /* 0x426f60 */
@@ -915,7 +927,11 @@ void GAMEAPI gte_light_colour(void); /* 0x427100 */
 void gte_light_colour_3dnow(void); /* 0x427250: asm, 3DNow!, through 0x6cce3c */
 void gte_light_colour_float(void); /* 0x427400: asm, through 0x6cce3c */
 int32_t GAMEAPI gte_nclip(void); /* 0x4278a0 */
+#if defined(__i386__)
 void vec_facing_float(void); /* 0x4278f0: asm, (a, b, c) returns its float in st(0) */
+#else /* C on x86-64 (src/game/orig_pc.c) */
+float vec_facing_float(const uint8_t *a, const uint8_t *b, const uint8_t *c);
+#endif
 int32_t GAMEAPI ot_clear_forward(uint32_t *ot, uint32_t n); /* 0x427a40 */
 int32_t GAMEAPI ot_clear_reverse(uint32_t *ot, uint32_t n); /* 0x427a70 */
 uint32_t GAMEAPI ot_add_prim(uint32_t entry, uint32_t *prim); /* 0x427ab0 */
@@ -928,21 +944,37 @@ int32_t GAMEAPI clear_colour_store(uint32_t r, uint32_t g, uint32_t b); /* 0x428
 int32_t GAMEAPI depth_range_set(int32_t near, int32_t far, uint32_t c); /* 0x4283d0 */
 void GAMEAPI view_border_draw(const int16_t *r, const int16_t *in, uint32_t fill); /* 0x4284b0 */
 void GAMEAPI view_viewport_apply(const uint8_t *view, int32_t border); /* 0x428770 */
+#if defined(__i386__)
 void vertex_project_codes(void); /* 0x4288c0: asm, (record); st(0) handed to 0x426b00 */
+#else /* C on x86-64 (src/game/orig_pc.c) */
+void vertex_project_codes(uint8_t *rec);
+#endif
+#if defined(__i386__)
 void vertex_project_float(void); /* 0x428900: asm, (record) */
+#else /* C on x86-64 (src/game/orig_pc.c) */
+void vertex_project_float(uint8_t *rec);
+#endif
 void GAMEAPI light_matrix_load(const uint32_t *m); /* 0x428940 */
 void GAMEAPI render_flags_set(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e); /* 0x428a50 */
 void GAMEAPI projection_push(void); /* 0x428a80 */
 void GAMEAPI projection_pop(void); /* 0x428b00 */
 void GAMEAPI far_plane_set(uint32_t f); /* 0x428b90 */
+#if defined(__i386__)
 void far_plane_get(void); /* 0x428bd0: asm, returns the float in st(0) */
+#else /* C on x86-64 (src/game/orig_pc.c) */
+float far_plane_get(void);
+#endif
 void GAMEAPI matrix_transpose_s16(const uint8_t *src, int16_t *dst); /* 0x428be0 */
 int32_t GAMEAPI texture_surface_lock(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f); /* 0x428c30 */
 int32_t GAMEAPI texture_surface_unlock(uint32_t a, uint32_t b, uint32_t c); /* 0x428c60 */
 int32_t GAMEAPI texture_handle_new(void); /* 0x428c80 */
 int32_t GAMEAPI texture_surface_upload(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f); /* 0x428c90 */
 void GAMEAPI dword_store(uint32_t *p, uint32_t v); /* 0x4290a0 */
+#if defined(__i386__)
 void vec_normalise_x87(void); /* 0x4290b0: asm, (in, out) returns 0 */
+#else /* C on x86-64 (src/game/orig_pc.c) */
+int32_t vec_normalise_x87(const int32_t *in, int32_t *out);
+#endif
 void GAMEAPI dx_error_ignore(void); /* 0x4291f0 */
 void GAMEAPI light_colour_at(const uint8_t *pos, const uint32_t *rgb, uint32_t *out); /* 0x4292b0 */
 int32_t GAMEAPI textures_unusable_thunk(void); /* 0x429340 */
@@ -1018,7 +1050,9 @@ void GAMEAPI vertex_list_draw_fan(const int32_t *list); /* 0x420bb0 */
 int32_t GAMEAPI clip_far_z(uint32_t *in, uint32_t *out, int32_t *next); /* 0x417950 */
 int32_t GAMEAPI clip_polygon_a(uint32_t flags); /* 0x417af0 */
 int32_t GAMEAPI clip_polygon_b(uint32_t flags); /* 0x417ce0 */
+#if defined(__i386__)
 void clip_vertex_add(void); /* 0x4180c0: asm entry, register arguments eax (colour bytes), ecx / edx (texture indices), ebx (six dwords) */
+#endif
 void GAMEAPI clip_vertex_add_c(uint32_t packed, uint32_t u, uint32_t v, const uint32_t *src); /* 0x4180c0 body */
 void GAMEAPI clip_vertex_add_2d(uint32_t xy, uint32_t uv, uint32_t rgba); /* 0x418170 */
 void GAMEAPI clip_vertices_restart(void); /* 0x418260 */
@@ -1125,27 +1159,75 @@ int32_t GAMEAPI crtc_lcmap_string(uint32_t lcid, uint32_t flags, const char *src
 uint8_t *GAMEAPI crtc_mbsdec(const uint8_t *start, const uint8_t *p); /* 0x49cea2 */
 uint8_t *GAMEAPI crtc_mbsnbcpy(uint8_t *dst, const uint8_t *src, uint32_t n); /* 0x49d303 */
 uint32_t GAMEAPI crtc_mbctoupper(uint32_t c); /* 0x49d4a0 */
+#if defined(__i386__)
 void GAMEAPI crtc_fmod(void); /* 0x4987e0: asm, fmod(double, double) -> st(0) */
+#else /* C on x86-64 */
+double crtc_fmod(double x, double y);
+#endif
+#if defined(__i386__)
 void GAMEAPI crtc_atan2(void); /* 0x498820: asm, atan2(double y, double x) -> st(0) */
+#else /* C on x86-64 */
+double crtc_atan2(double y, double x);
+#endif
 void GAMEAPI crtc_one_arg_error(void); /* 0x49a8e7: asm, _startOneArgErrorHandling (eax, ecx, edx, st(0), frame) */
 void GAMEAPI crtc_two_arg_error(void); /* 0x49a8d0: asm, the two-argument entry */
+#if defined(__i386__)
 void GAMEAPI crtc_powhlp(void); /* 0x49ab37: asm, int _powhlp(double x, double y, double *result) */
+#else /* C on x86-64 */
+int32_t crtc_powhlp(double x, double y, double *result);
+#endif
+#if defined(__i386__)
 void GAMEAPI crtc_except2(void); /* 0x4a0f1a: asm, double _except2(flags, op, double a, double b, double r, cw) */
+#else /* C on x86-64 */
+double crtc_except2(int32_t flags, int32_t op, double a, double b, double result, int32_t cw);
+#endif
+#if defined(__i386__)
 void GAMEAPI crtc_handle_qnan2(void); /* 0x4a0eba: asm, double _handle_qnan2(op, double a, double b, cw) */
+#else /* C on x86-64 */
+double crtc_handle_qnan2(int32_t op, double a, double b, int32_t cw);
+#endif
 int32_t GAMEAPI cd_volume_get(void); /* 0x497630 */
 int32_t GAMEAPI cd_volume_available(void); /* 0x4977b0 */
 int32_t GAMEAPI msvc_sprintf(char *buf, const char *format, ...); /* 0x4979f0 */
+#if defined(__i386__)
 void msvc_chkstk(void); /* 0x497a50: asm, size in eax, esp moved down */
+#else /* C on x86-64 */
+void msvc_chkstk(void);
+#endif
+#if defined(__i386__)
 void msvc_ftol(void); /* 0x497a80: asm, st(0) in, edx:eax out */
+#else /* C on x86-64 */
+int64_t msvc_ftol(double x);
+#endif
+#if defined(__i386__)
 void msvc_cos(void); /* 0x497ac4: asm, double on the stack, result in st(0) */
+#else /* C on x86-64 */
+double msvc_cos(double x);
+#endif
+#if defined(__i386__)
 void msvc_sin(void); /* 0x497b74: asm, as cos */
+#else /* C on x86-64 */
+double msvc_sin(double x);
+#endif
+#if defined(__i386__)
 void msvc_atan(void); /* 0x497c24: asm, as cos */
+#else /* C on x86-64 */
+double msvc_atan(double x);
+#endif
+#if defined(__i386__)
 void msvc_pow(void); /* 0x497cc9: asm, two doubles on the stack, result in st(0) */
+#else /* C on x86-64 */
+double msvc_pow(double x, double y);
+#endif
 int32_t GAMEAPI msvc_atoi(const char *s); /* 0x498046 */
 int32_t GAMEAPI msvc_isctype(int32_t c, uint32_t mask); /* 0x498051 */
 char *GAMEAPI msvc_strstr(const char *s, const char *find); /* 0x4980d0 */
 uint64_t __attribute__((stdcall)) msvc_allmul(uint64_t a, uint64_t b); /* 0x498180 */
+#if defined(__i386__)
 void msvc_sqrt(void); /* 0x4981d4: asm, as cos */
+#else /* C on x86-64 */
+double msvc_sqrt(double x);
+#endif
 void GAMEAPI msvc_free(void *p); /* 0x49827a */
 void *GAMEAPI msvc_malloc(uint32_t size); /* 0x4982c2 */
 char *GAMEAPI msvc_strncpy(char *dst, const char *src, uint32_t n); /* 0x498350 */
@@ -1271,7 +1353,7 @@ void GAMEAPI body_sparks(uint8_t *body, int32_t n); /* 0x45bd30 */
 void GAMEAPI contact_particle(uint8_t *body, const uint8_t *contact, uint32_t kind); /* 0x45be10 */
 uint32_t GAMEAPI pause_is_local(void); /* 0x463970 */
 uint32_t GAMEAPI pause_frame(void); /* 0x463b70 */
-void GAMEAPI pause_open(uint8_t **car_ref); /* 0x463ca0 */
+void GAMEAPI pause_open(uint32_t *car_ref); /* 0x463ca0 */
 void GAMEAPI pause_menu_input(void); /* 0x464030 */
 void GAMEAPI camera_cycle(uint8_t *car, uint32_t delta); /* 0x469bb0 */
 void GAMEAPI camera_setting_copy(uint8_t *dst, const uint8_t *src); /* 0x469c50 */

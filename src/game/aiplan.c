@@ -9,8 +9,9 @@
 #include "../runtime.h"
 #include "body.h"
 #include "physics.h"
+#include "gamefn.h"
 
-#define g_race (*(uint8_t **)0x4b1960)
+#define g_race GP(0x4b1960)
 #define g_race_ticks (*(uint32_t *)0x6c0a50)
 #define g_ai_seed (*(uint32_t *)0x4a7148)
 #define g_ai_difficulty_mode (*(int32_t *)0x4a714c)
@@ -20,7 +21,7 @@
 #define CAR_SLOT_SIZE 0x274
 
 #define SLOT_OF(car) (g_car_slots + *(const uint16_t *)((car) + 0x64e) * CAR_SLOT_SIZE)
-#define SLOT_CAR(slot) (*(uint8_t **)(slot))
+#define SLOT_CAR(slot) GP(slot)
 #define SLOT_LAP(slot) ((slot)[0x2c])
 #define SLOT_DISTANCE(slot) I32(slot, 0x34)
 #define AI_FLAGS(rec) U32(rec, 0x2c)

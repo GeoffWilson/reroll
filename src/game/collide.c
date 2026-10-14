@@ -15,12 +15,13 @@
  *   j = -(1 + e) (v . n) / (1/m + n . ((I^-1 (r x n)) x r)),
  * in 16.16 fixed point, with the angular terms scaled down by 256. */
 #include "../runtime.h"
+#include "gamefn.h"
 #include "body.h"
 #include "fixed.h"
 #include "physics.h"
 #include "../coverage.h"
 
-#define g_contact_slots (*(uint8_t **)0x6ce740) /* per body part, 0x48 bytes */
+#define g_contact_slots GP(0x6ce740) /* per body part, 0x48 bytes */
 #define g_rest_speed (*(int32_t *)0x4acc50)     /* also the gravity scale (0x4662b0) */
 
 /* 0x4622f0: contact point from world space (in 1/256 units) to the body's
@@ -329,7 +330,7 @@ static int32_t weight_class(uint8_t *body)
 
     if ((U32(body, FLAGS) & 0x1ff) != 3)
         return 0;
-    state = *(const char **)(body + 0x6ac);
+    state = ((const char *)GP(body + 0x6ac));
     if (state != (const char *)0xffffffff && *state == 1)
         return 3;
     return I32(body, 0x2280);

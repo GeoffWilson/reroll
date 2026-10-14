@@ -10,17 +10,18 @@
  * node in 5..13; a second link in bits 14..18, node 19..27); a small
  * queue (0x4d5808 head, 0x4d580a tail, 20 entries) walks those links. */
 #include "../runtime.h"
+#include "gamefn.h"
 #include "body.h"
 #include "fixed.h"
 #include "physics.h"
 
-#define g_race (*(uint8_t **)0x4b1960)
-#define g_lines (*(uint8_t **)(*(uint8_t **)0x6c1e30 + 0x60))
+#define g_race GP(0x4b1960)
+#define g_lines GP(GP(0x6c1e30) + 0x60)
 #define g_car_slots ((uint8_t *)0x6bfb80)
 #define CAR_SLOT_SIZE 0x274
 
 #define LINE(i) (g_lines + (uint16_t)(i) * 0xc)
-#define NODE(line, i) (*(uint8_t **)((line) + 8) + (uint16_t)(i) * 0x10)
+#define NODE(line, i) (GP((line) + 8) + (uint16_t)(i) * 0x10)
 #define S16(p, off) (*(int16_t *)((p) + (off)))
 
 #define g_queue_head (*(uint16_t *)0x4d5808)
@@ -96,7 +97,7 @@ void GAMEAPI body_side(int32_t *out, const uint8_t *body)
 /* 0x47fcf0: the line direction at a car slot's planned node. */
 void GAMEAPI slot_plan_direction(int32_t *out, const uint8_t *slot)
 {
-    line_direction(out, (*(uint8_t **)(slot + 0x64))[5], *(const uint16_t *)(slot + 0x68));
+    line_direction(out, GP(slot + 0x64)[5], *(const uint16_t *)(slot + 0x68));
 }
 
 /* 0x47f9f0: how sharply the line bends at a node (signed by the turn's
@@ -216,7 +217,7 @@ int32_t GAMEAPI ai_route_crosses(uint8_t *car)
 {
     const uint8_t *slot = g_car_slots + *(uint16_t *)(car + 0x64e) * CAR_SLOT_SIZE;
     const int32_t *pos = VEC(car, POSITION);
-    uint16_t line_index = (*(uint8_t **)(slot + 0x64))[5], node = *(const uint16_t *)(slot + 0x68);
+    uint16_t line_index = GP(slot + 0x64)[5], node = *(const uint16_t *)(slot + 0x68);
     const uint8_t *line = LINE(line_index), *at = NODE(line, node);
     uint32_t backwards;
     int32_t side;
@@ -245,7 +246,7 @@ void GAMEAPI ai_dodge_scores(const uint8_t *car, const uint8_t *other, const int
                              int32_t rate, uint32_t line)
 {
     int32_t speed = I32(car, 0x654), closing = speed - I32(other, 0x654), adjust, k;
-    int32_t width = *(const uint16_t *)(*(uint8_t **)(car + 0x10) + 0x32), width_sq = width * width;
+    int32_t width = *(const uint16_t *)(GP(car + 0x10) + 0x32), width_sq = width * width;
 
     if (closing < 0) {
         adjust = 0;
@@ -315,7 +316,7 @@ static void add_target(const uint8_t *car, const int32_t *offset, int32_t *slots
 void GAMEAPI ai_follow_target(const uint8_t *my_slot, const uint8_t *other_slot, const int32_t *d, int32_t dist,
                               int32_t width, int32_t along, int32_t rate, int32_t *slots)
 {
-    const uint8_t *car = *(uint8_t **)my_slot, *other = *(uint8_t **)other_slot;
+    const uint8_t *car = GP(my_slot), *other = GP(other_slot);
     int32_t faster = S16(car, 0x658) - S16(other, 0x658), dir[3], forward[3], offset[3];
 
     if (*slots < 0 || g_target_count >= 0x14)
@@ -366,7 +367,7 @@ void GAMEAPI ai_follow_target(const uint8_t *my_slot, const uint8_t *other_slot,
 void GAMEAPI ai_overtake_target(const int32_t *d, int32_t dist, int32_t rate, const uint8_t *my_slot,
                                 const uint8_t *other_slot, int32_t along, int32_t *slots)
 {
-    uint8_t *car = *(uint8_t **)my_slot, *other = *(uint8_t **)other_slot;
+    uint8_t *car = GP(my_slot), *other = GP(other_slot);
     uint16_t my_line = *(uint16_t *)(car + 0x6b0), my_node = *(uint16_t *)(car + 0x6b2), other_line, other_node;
     int32_t my_at, other_at, pos[3], back[3], ahead[3], bend_mine, bend_other, forward[3], s, t, k;
 
@@ -376,7 +377,7 @@ void GAMEAPI ai_overtake_target(const int32_t *d, int32_t dist, int32_t rate, co
         other_line = *(uint16_t *)(other + 0x6b0);
         other_node = *(uint16_t *)(other + 0x6b2);
     } else {
-        other_line = (*(uint8_t **)(other_slot + 0x64))[5];
+        other_line = GP(other_slot + 0x64)[5];
         other_node = *(const uint16_t *)(other_slot + 0x68);
     }
     my_at = (int32_t)(uintptr_t)NODE(LINE(my_line), my_node);
@@ -386,7 +387,7 @@ void GAMEAPI ai_overtake_target(const int32_t *d, int32_t dist, int32_t rate, co
     bend_mine = line_bend(my_line, my_node, pos, back, ahead);
     bend_other = line_bend(other_line, other_node, pos, back, ahead);
     if (dist >= 500 || abs32(bend_mine) >= 0x2540 || abs32(bend_other) >= 0x2540 || !ai_route_crosses(car)) {
-        uint8_t plan_line = (*(uint8_t **)(other_slot + 0x64))[5];
+        uint8_t plan_line = GP(other_slot + 0x64)[5];
 
         for (k = 0; k < ROUTE_COUNT; k++) {
             uint8_t *route = g_routes + k * ROUTE_SIZE;
@@ -432,7 +433,7 @@ void GAMEAPI ai_overtake_target(const int32_t *d, int32_t dist, int32_t rate, co
 void GAMEAPI ai_react_to_cars(uint8_t *car, int32_t *slots)
 {
     const uint8_t *my_slot = g_car_slots + *(uint16_t *)(car + 0x64e) * CAR_SLOT_SIZE;
-    int32_t width = *(const uint16_t *)(*(uint8_t **)(car + 0x10) + 0x32), loose = 0;
+    int32_t width = *(const uint16_t *)(GP(car + 0x10) + 0x32), loose = 0;
     uint16_t odds = g_dodge_odds[U32(car, 0x6e8) >> 12 & 7];
     uint8_t i;
 
@@ -447,7 +448,7 @@ void GAMEAPI ai_react_to_cars(uint8_t *car, int32_t *slots)
             const uint8_t *slot = g_car_slots + i * CAR_SLOT_SIZE;
             int32_t gap;
 
-            if ((*(uint8_t **)slot)[0x70c] == 8)
+            if (GP(slot)[0x70c] == 8)
                 continue;
             gap = (int32_t)((uint32_t)slot[0x2c] << 16) - at + I32(slot, 0x34);
             if (gap < 0 && gap > -1500) {
@@ -458,7 +459,7 @@ void GAMEAPI ai_react_to_cars(uint8_t *car, int32_t *slots)
     }
     for (i = 0; i < g_race[0x54d]; i++) {
         const uint8_t *slot = g_car_slots + i * CAR_SLOT_SIZE;
-        uint8_t *other = *(uint8_t **)slot;
+        uint8_t *other = GP(slot);
         int32_t d[3], forward[3], rel[3], sq, dist, along, closing, rate, same_way;
         int16_t s[3];
         int pass;
@@ -484,7 +485,7 @@ void GAMEAPI ai_react_to_cars(uint8_t *car, int32_t *slots)
         rate = approach_rate(closing, along);
         same_way = vec_dot(VEC(car, VELOCITY), VEC(other, VELOCITY));
         if ((car[0x6dc] & 0x20) && along > (int32_t)((uint32_t)width << 16) && closing > 0 && rate > 1000)
-            ai_dodge_scores(car, other, d, dist, rate, (*(uint8_t **)(slot + 0x64))[5]);
+            ai_dodge_scores(car, other, d, dist, rate, GP(slot + 0x64)[5]);
         if (((car[0x6dc] & 1) || *(uint16_t *)(car + 0x6ec + i * 2) > odds) && same_way > 0 &&
             along > (int32_t)((uint32_t)-width << 16) &&
             (along < (int32_t)((uint32_t)width << 16) || rate > 2000) && S16(other, 0x658) > 0xfa &&

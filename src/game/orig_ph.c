@@ -23,6 +23,7 @@
 #include "../runtime.h"
 #include "physics.h"
 #include "winapi.h"
+#include "gamefn.h"
 
 #define U8(p, off) (*(uint8_t *)((uint8_t *)(uintptr_t)(p) + (off)))
 #define U16(p, off) (*(uint16_t *)((uint8_t *)(uintptr_t)(p) + (off)))
@@ -35,61 +36,49 @@
 #define GI32(a) (*(int32_t *)(uintptr_t)(a))
 #define A(x) ((uint32_t)(uintptr_t)(x))
 
-typedef int32_t(GAMEAPI *ph_fn0)(void);
-typedef int32_t(GAMEAPI *ph_fn1)(uint32_t a);
-typedef int32_t(GAMEAPI *ph_fn2)(uint32_t a, uint32_t b);
-typedef int32_t(GAMEAPI *ph_fn3)(uint32_t a, uint32_t b, uint32_t c);
-typedef int32_t(GAMEAPI *ph_fn4)(uint32_t a, uint32_t b, uint32_t c, uint32_t d);
-typedef int32_t(GAMEAPI *ph_fn5)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e);
-typedef int32_t(GAMEAPI *ph_fn6)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f);
-typedef int32_t(GAMEAPI *ph_fn7)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f, uint32_t g);
-typedef int32_t(GAMEAPI *ph_fn8)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f, uint32_t g,
-                                 uint32_t h);
-typedef int32_t(GAMEAPI *ph_fn9)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f, uint32_t g,
-                                 uint32_t h, uint32_t i);
-
-#define CALL0(a) (((ph_fn0)(a))())
-#define CALL1(a, x) (((ph_fn1)(a))(A(x)))
-#define CALL2(a, x, y) (((ph_fn2)(a))(A(x), A(y)))
-#define CALL3(a, x, y, z) (((ph_fn3)(a))(A(x), A(y), A(z)))
-#define CALL4(a, x, y, z, w) (((ph_fn4)(a))(A(x), A(y), A(z), A(w)))
-#define CALL5(a, x, y, z, w, v) (((ph_fn5)(a))(A(x), A(y), A(z), A(w), A(v)))
-#define CALL6(a, x, y, z, w, v, u) (((ph_fn6)(a))(A(x), A(y), A(z), A(w), A(v), A(u)))
-#define CALL7(a, x, y, z, w, v, u, t) (((ph_fn7)(a))(A(x), A(y), A(z), A(w), A(v), A(u), A(t)))
-#define CALL8(a, x, y, z, w, v, u, t, s) (((ph_fn8)(a))(A(x), A(y), A(z), A(w), A(v), A(u), A(t), A(s)))
-#define CALL9(a, x, y, z, w, v, u, t, s, r) (((ph_fn9)(a))(A(x), A(y), A(z), A(w), A(v), A(u), A(t), A(s), A(r)))
+#define AP(T, x) ((T)GMEM(A(x)))
 
 /* Callees outside the group. */
-#define trigger_effect_start(n) CALL1(0x441370, n)
-#define trigger_sound(n) CALL1(0x47dca0, n)
-#define bitmap_scan_ph(p, step, n, stride, m, pal) CALL6(0x443260, p, step, n, stride, m, pal)
-#define block_alloc_ph(n) CALL1(0x476bc0, n)
-#define block_free_size_ph(n) CALL1(0x476c00, n)
-#define mem_fill_ph(p, v, n) CALL3(0x476f50, p, v, n)
-#define mem_copy_ph(d, s, n) CALL3(0x476f30, d, s, n)
-#define image_load_ph(name, img, f) CALL3(0x477530, name, img, f)
-#define image_release_ph(img) CALL1(0x477810, img)
-#define texture_handle_new_ph() CALL0(0x428c80)
-#define texture_upload_ph(h, w, n, pix, pal, f) CALL6(0x428c90, h, w, n, pix, pal, f)
-#define fatal_error_ph(s) CALL1(0x41c970, s)
-#define text_width_printf(font, a, b, c, fmt, s) CALL6(0x42e8f0, font, a, b, c, fmt, s)
-#define sprite_gouraud_set(p, t, i, a, b, c, d, z) CALL8(0x430ea0, p, t, i, a, b, c, d, z)
-#define prim_flag2_set_ph(p, on) CALL2(0x4270e0, p, on)
-#define ot_add(ot, p) CALL2(0x427ab0, ot, p)
-#define fe_texture_width(i) CALL1(0x431670, i)
-#define fe_texture_height(i) CALL1(0x4316a0, i)
-#define colour_pulse(out, v, n, k) CALL4(0x4328c0, out, v, n, k)
-#define quad_link_ph(a, b, c, d, e) CALL5(0x457d10, a, b, c, d, e)
-#define flat_quad_set(p, col, a, b, c, d, z) CALL7(0x4314d0, p, col, a, b, c, d, z)
-#define sprite_512_set(p, t, i, x, y, w, h, z) CALL8(0x431300, p, t, i, x, y, w, h, z)
-#define dword_store_ph(p, v) CALL2(0x4290a0, p, v)
-#define ot_link_ph(ot, first, last) CALL3(0x429080, ot, first, last)
-#define string_printf_ph(a, b, c, d, e, f, g, h, i) CALL9(0x42e810, a, b, c, d, e, f, g, h, i)
-#define string_width_ph(h) CALL1(0x42f030, h)
-#define string_height_ph(h) CALL1(0x42f070, h)
-#define string_marks_ph(h) CALL1(0x42f0b0, h)
-#define string_clip_ph(h, a, b) CALL3(0x42f2d0, h, a, b)
-#define sprintf_ph(d, f, v) CALL3(0x4979f0, d, f, v)
+#define trigger_effect_start(n) GCALL(0x441370, light_slot_free)(n)
+#define trigger_sound(n) GCALL(0x47dca0, light_sprite_release)(n)
+#define bitmap_scan_ph(p, step, n, stride, m, pal) \
+    GCALL(0x443260, bitmap_scan)(AP(const uint8_t *, p), step, n, stride, m) /* pal: never read */
+#define block_alloc_ph(n) GCALL(0x476bc0, arena_alloc_high)(n)
+#define block_free_size_ph(n) GCALL(0x476c00, arena_free_high)(n)
+#define mem_fill_ph(p, v, n) GCALL(0x476f50, mem_fill)(AP(uint8_t *, p), (uint8_t)(v), A(n))
+#define mem_copy_ph(d, s, n) GCALL(0x476f30, mem_copy)(AP(uint8_t *, d), AP(const uint8_t *, s), A(n))
+#define image_load_ph(name, img, f) GCALL(0x477530, image_bmp_load)(AP(const char *, name), AP(uint8_t *, img), A(f))
+#define image_release_ph(img) GCALL(0x477810, image_release)(AP(uint8_t *, img))
+#define texture_handle_new_ph() GCALL(0x428c80, texture_handle_new)()
+#define texture_upload_ph(h, w, n, pix, pal, f) \
+    GCALL(0x428c90, texture_surface_upload)(A(h), A(w), A(n), A(pix), A(pal), A(f))
+#define fatal_error_ph(s) GCALL(0x41c970, fatal_error)(AP(const uint8_t *, s))
+#define text_width_printf(font, a, b, c, fmt, s) \
+    GCALL(0x42e8f0, string_width_printf)(A(font), A(a), A(b), A(c), AP(const char *, fmt), AP(const char *, s))
+#define sprite_gouraud_set(p, t, i, a, b, c, d, z) \
+    GCALL(0x430ea0, fe_sprite_gouraud_set)(AP(uint8_t *, p), t, AP(const uint8_t *, i), a, b, c, d, A(z))
+#define prim_flag2_set_ph(p, on) GCALL(0x4270e0, prim_flag2_set)(AP(uint8_t *, p), on)
+#define ot_add(ot, p) GCALL(0x427ab0, ot_add_prim)(A(ot), AP(uint32_t *, p))
+#define fe_texture_width(i) GCALL(0x431670, frontend_texture_width)(i)
+#define fe_texture_height(i) GCALL(0x4316a0, frontend_texture_height)(i)
+#define colour_pulse(out, v, n, k) GCALL(0x4328c0, colour_pulse_scale)(AP(uint8_t *, out), AP(const uint8_t *, v), n, A(k))
+#define quad_link_ph(a, b, c, d, e) \
+    GCALL(0x457d10, flame_texture_info)(AP(uint16_t *, a), AP(uint16_t *, b), AP(uint16_t *, c), AP(uint16_t *, d), \
+                                        AP(uint16_t *, e))
+#define flat_quad_set(p, col, a, b, c, d, z) \
+    GCALL(0x4314d0, fe_quad_flat_set)(AP(uint8_t *, p), AP(const uint8_t *, col), a, b, c, d, A(z))
+#define sprite_512_set(p, t, i, x, y, w, h, z) \
+    GCALL(0x431300, fe_sprite_set_512)(AP(uint8_t *, p), t, AP(const uint8_t *, i), x, y, w, h, A(z))
+#define dword_store_ph(p, v) GCALL(0x4290a0, dword_store)(AP(uint32_t *, p), A(v))
+#define ot_link_ph(ot, first, last) GCALL(0x429080, word_exchange)(A(ot), A(first), AP(uint32_t *, last))
+#define string_printf_ph(a, b, c, d, e, f, g, h, i) \
+    GCALL(0x42e810, string_printf)(A(a), A(b), A(c), A(d), AP(const char *, e), AP(const char *, f), \
+                                   AP(const char *, g), AP(const char *, h), AP(const char *, i))
+#define string_width_ph(h) GCALL(0x42f030, string_get_width)(h)
+#define string_height_ph(h) GCALL(0x42f070, string_get_height)(h)
+#define string_marks_ph(h) GCALL(0x42f0b0, string_has_marks)(h)
+#define string_clip_ph(h, a, b) GCALL(0x42f2d0, string_clip_x)(h, a, b)
+#define sprintf_ph(d, f, v) GCALL(0x4979f0, msvc_sprintf)(AP(char *, d), AP(const char *, f), v)
 #define CRT_FTOL 0x497a80
 
 /* This group's functions (also in build/groups/ph_protos.txt for physics.h). */
@@ -193,6 +182,7 @@ static inline uint32_t ph_cmp(uint32_t a, uint32_t b)
 /* fild w; fstp t; fld t; fmul frac; fdiv max; call _ftol. */
 static inline int32_t ph_bar_length(int32_t w, uint32_t frac, uint32_t max)
 {
+#if defined(__i386__)
     int32_t r;
     uint32_t t;
     __asm__ volatile("fildl %[w]\n\tfstps %[t]\n\tflds %[t]\n\tfmuls %[f]\n\tfdivs %[m]\n\tcall *%[ftol]"
@@ -200,6 +190,17 @@ static inline int32_t ph_bar_length(int32_t w, uint32_t frac, uint32_t max)
                      : [w] "m"(w), [f] "m"(frac), [m] "m"(max), [ftol] "S"(CRT_FTOL)
                      : "ecx", "edx", "memory", "cc", X87);
     return r;
+#else
+    /* single precision as the game's x87; _ftol truncates to 64 bits, eax
+     * is the low half */
+    float t = (float)w, f, m;
+
+    memcpy(&f, &frac, 4);
+    memcpy(&m, &max, 4);
+    t = t * f;
+    t = t / m;
+    return (int32_t)(uint32_t)(int64_t)t;
+#endif
 }
 
 /* Screen coordinates from the 640 x 480 layout (wrapping product, signed
@@ -810,12 +811,12 @@ void GAMEAPI menu_slider_bars_draw(uint32_t ot, int32_t slot)
 /* 0x447f00 / 0x447f10: thunks to the held-button resets 0x4474e0 / 0x447500. */
 void GAMEAPI menu_hold_clear_thunk(void)
 {
-    CALL0(0x4474e0);
+    GCALL(0x4474e0, menu_hold_clear)();
 }
 
 void GAMEAPI menu_hold_reset_thunk(void)
 {
-    CALL0(0x447500);
+    GCALL(0x447500, menu_hold_reset)();
 }
 
 /* 0x447f20: an on / off option's step: events 0xe..0x10 flip it; 0x4cb46c
@@ -833,7 +834,7 @@ uint32_t GAMEAPI option_onoff_step(uint32_t v, uint32_t unused, int32_t event)
 /* 0x447ff0: the winner's movie in language 6 (0x42dbf0). */
 void GAMEAPI movie_win_lang6(void)
 {
-    CALL1(0x42dbf0, 6);
+    GCALL(0x42dbf0, movie_win)(6);
 }
 
 /* 0x44ccf0: an item's size: its text (+0x50, if any) laid out with

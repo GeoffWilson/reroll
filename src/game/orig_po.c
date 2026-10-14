@@ -27,6 +27,7 @@
  * Windows, QMixer and COM calls go through winapi.h and com.h. Everything
  * outside the group is called by address. */
 #include "../runtime.h"
+#include "gamefn.h"
 #include "physics.h"
 #include "com.h"
 
@@ -45,51 +46,56 @@
 #define g_race G32(0x4b1960)
 #define g_config G32(0x4b2198)
 
-typedef int32_t(GAMEAPI *po_fn0)(void);
-typedef int32_t(GAMEAPI *po_fn1)(uint32_t a);
-typedef int32_t(GAMEAPI *po_fn2)(uint32_t a, uint32_t b);
-typedef int32_t(GAMEAPI *po_fn3)(uint32_t a, uint32_t b, uint32_t c);
-typedef int32_t(GAMEAPI *po_fn4)(uint32_t a, uint32_t b, uint32_t c, uint32_t d);
-typedef int32_t(GAMEAPI *po_fn5)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e);
-typedef int32_t(GAMEAPI *po_fn6)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f);
+/* 0x4722d0 (sound_mix) is void; 0x472040 passes on the eax it leaves. */
+typedef int32_t(GAMEAPI *po_mix_fn)(void);
 
-#define CALL0(a) (((po_fn0)(a))())
-#define CALL1(a, x) (((po_fn1)(a))(A(x)))
-#define CALL2(a, x, y) (((po_fn2)(a))(A(x), A(y)))
-#define CALL3(a, x, y, z) (((po_fn3)(a))(A(x), A(y), A(z)))
-#define CALL4(a, x, y, z, w) (((po_fn4)(a))(A(x), A(y), A(z), A(w)))
-#define CALL5(a, x, y, z, w, v) (((po_fn5)(a))(A(x), A(y), A(z), A(w), A(v)))
-#define CALL6(a, x, y, z, w, v, u) (((po_fn6)(a))(A(x), A(y), A(z), A(w), A(v), A(u)))
-
-/* Outside the group, by address. */
+/* Outside the group, by address. Game addresses may be passed as integers
+ * or pointers. */
+#if defined(__i386__)
 #define gte_rtps_float_at() __asm__ volatile("movl $0x4266d0, %%eax\n\tcall *%%eax" ::: "eax", "ecx", "edx", "cc", "memory", X87)
 #define gte_rt_float_at() __asm__ volatile("movl $0x426620, %%eax\n\tcall *%%eax" ::: "eax", "ecx", "edx", "cc", "memory", X87)
-#define gte_rotate_at() CALL0(0x428090)
-#define model_camera_matrix_set_at(b) CALL1(0x459e80, b)
-#define car_count_min_at() CALL0(0x486270)
-#define texture_surface_lock_at(h, a, bits, d, bpp, pitch) CALL6(0x428c30, h, a, bits, d, bpp, pitch)
-#define texture_surface_unlock_at(h, a, d) CALL3(0x428c60, h, a, d)
-#define snd_chan_busy_at(i) CALL1(0x46fec0, i)
-#define snd_channel_buffer_at(c) ((uint32_t)CALL1(0x46f8f0, c))
-#define sound_eax_first_at() ((uint32_t)CALL0(0x471700))
-#define sound_mix_at() CALL0(0x4722d0)
-#define chdir_path_at(p) CALL1(0x475030, p)
-#define reg_value_read_at(key, name, buf, n) CALL4(0x46b650, key, name, buf, n)
-#define reg_value_delete_at(key, name) CALL2(0x46b770, key, name)
-#define reg_key_delete_at(key) CALL1(0x46b2f0, key)
-#define text_line_get_at(buf, n, file, line) CALL4(0x42e6d0, buf, n, file, line)
-#define file_exists_at(p) CALL1(0x476f00, p)
-#define command_token_copy_at(d, s) CALL2(0x474dc0, d, s)
-#define replay_files_save_at() CALL0(0x41c550)
-#define boot_data_save_at() CALL0(0x474260)
-#define chain_event_close_at() CALL0(0x46b850)
-#define chain_event_create_at(out, name) CALL2(0x46b8b0, out, name)
-#define chain_event_set_at(e) CALL1(0x46b950, e)
-#define chain_event_free_at(e) CALL1(0x46b890, e)
-#define unquote_copy_at(d, s) CALL2(0x474e80, d, s)
-#define splitpath_at(p, dr, di, f, e) CALL5(0x4988c5, p, dr, di, f, e)
-#define makepath_at(p, dr, di, f, e) CALL5(0x498834, p, dr, di, f, e)
-#define getcwd_at(b, n) CALL2(0x498a0c, b, n)
+#else
+#define gte_rtps_float_at() GCALL(0x4266d0, gte_rtps_float)()
+#define gte_rt_float_at() GCALL(0x426620, gte_rt_float)()
+#endif
+#define gte_rotate_at() GCALL(0x428090, gte_rotate)()
+#define model_camera_matrix_set_at(b) GCALL(0x459e80, model_camera_matrix_set)((uint8_t *)GMEM(b))
+#define car_count_min_at() GCALL(0x486270, weather_level_lower)()
+#define texture_surface_lock_at(h, a, bits, d, bpp, pitch) \
+    GCALL(0x428c30, texture_surface_lock)(A(h), A(a), A(bits), A(d), A(bpp), A(pitch))
+#define texture_surface_unlock_at(h, a, d) GCALL(0x428c60, texture_surface_unlock)(A(h), A(a), A(d))
+#define snd_chan_busy_at(i) GCALL(0x46fec0, snd_chan_busy)(i)
+#define snd_channel_buffer_at(c) ((uint32_t)GCALL(0x46f8f0, snd_channel_buffer)((int32_t)(c)))
+#define sound_eax_first_at() ((uint32_t)GCALL(0x471700, sound_eax_first)())
+#define sound_mix_at() (((po_mix_fn)(uintptr_t)0x4722d0)())
+#define chdir_path_at(p) GCALL(0x475030, dir_change_unquoted)((const char *)GMEM(p))
+#define reg_value_read_at(key, name, buf, n) GCALL(0x46b650, reg_string_get)(key, name, A(buf), n)
+#define reg_value_delete_at(key, name) GCALL(0x46b770, reg_value_remove)(key, name)
+#define reg_key_delete_at(key) GCALL(0x46b2f0, reg_key_unload)(key)
+#define text_line_get_at(buf, n, file, line) \
+    GCALL(0x42e6d0, text_line_get)((uint8_t *)GMEM(buf), n, (const char *)GMEM(file), line)
+#define file_exists_at(p) GCALL(0x476f00, path_find_exists)((const char *)GMEM(p))
+#define command_token_copy_at(d, s) GCALL(0x474dc0, command_token_copy)((char *)GMEM(d), (const char *)GMEM(s))
+#define replay_files_save_at() GCALL(0x41c550, replay_files_save)()
+#define boot_data_save_at() GCALL(0x474260, boot_data_save)()
+#define chain_event_close_at() GCALL(0x46b850, app_mutex_close)()
+#define chain_event_create_at(out, name) GCALL(0x46b8b0, win_event_create)(A(out), name)
+#define chain_event_set_at(e) GCALL(0x46b950, win_event_reset)(e)
+#define chain_event_free_at(e) GCALL(0x46b890, win_handle_close_quiet)(e)
+#define unquote_copy_at(d, s) GCALL(0x474e80, unquote_copy)((char *)GMEM(d), (const char *)GMEM(s))
+#define splitpath_at(p, dr, di, f, e) \
+    GCALL(0x4988c5, msvc_splitpath)((const char *)GMEM(p), (char *)GMEM(dr), (char *)GMEM(di), (char *)GMEM(f), \
+                                    (char *)GMEM(e))
+#define makepath_at(p, dr, di, f, e) \
+    GCALL(0x498834, msvc_makepath)((char *)GMEM(p), (const char *)GMEM(dr), (const char *)GMEM(di), \
+                                   (const char *)GMEM(f), (const char *)GMEM(e))
+#define getcwd_at(b, n) GCALL(0x498a0c, msvc_getcwd)((char *)GMEM(b), n)
+
+#if !defined(__i386__)
+float subunit_transform_c(uint8_t *rec); /* 0x426a20: returns what the original leaves in st(0) (orig_wb.c) */
+void wide_project_c(float h);            /* 0x426b00: projects *0x6ccd74 with st(0) = h (src/widescreen.c) */
+float vec_facing_float_c(const uint8_t *a, const uint8_t *b, const uint8_t *c); /* 0x4278f0 (orig_pc.c) */
+#endif
 
 /* This group's functions (also in build/groups/po_protos.txt). */
 int32_t GAMEAPI shield_texture_animate(void); /* 0x46d0c0 */
@@ -100,7 +106,9 @@ void GAMEAPI shield_packets_build(uint8_t *rec); /* 0x46dd20 */
 void GAMEAPI shield_packets_link(const uint8_t *car, uint32_t ot_back, uint32_t ot_front); /* 0x46dff0 */
 void GAMEAPI car_trail_texture_set(uint8_t *trail, uint32_t tex); /* 0x46e450 */
 void GAMEAPI car_trail_draw(uint8_t *car, uint32_t ot); /* 0x46e4b0 */
+#if defined(__i386__)
 void car_trail_packets_build(void); /* 0x46e540: asm entry, (car, ot) + the caller's esi */
+#endif
 void GAMEAPI car_trail_packets_build_c(uint8_t *car, uint32_t ot, uint32_t caller_esi);
 void GAMEAPI car_trail_uv(const uint32_t *pos, uint8_t *u, uint8_t *v, const int32_t *rot); /* 0x46ea10 */
 void GAMEAPI skid_marks_draw(void); /* 0x46f230 */
@@ -140,7 +148,7 @@ static inline uint32_t po_fcmp(uint32_t a, uint32_t b)
 static inline uint32_t po_dcmp(uint32_t a, uint32_t b)
 {
     uint16_t sw;
-    __asm__ volatile("fldl (%1)\n\tfcompl (%2)\n\tfnstsw %0" : "=a"(sw) : "r"(a), "r"(b) : "st", "cc", "memory");
+    __asm__ volatile("fldl (%1)\n\tfcompl (%2)\n\tfnstsw %0" : "=a"(sw) : "r"(PTR(a)), "r"(PTR(b)) : "st", "cc", "memory");
     return (sw >> 8) & 0xff;
 }
 
@@ -203,10 +211,20 @@ static inline uint32_t po_sumsq(uint32_t x, uint32_t y, uint32_t z)
 static inline uint32_t po_sqrt_double(uint32_t hi, uint32_t lo)
 {
     uint32_t r;
+#if defined(__i386__)
     __asm__ volatile("pushl %1\n\tpushl %2\n\tmovl $0x4981d4, %%eax\n\tcall *%%eax\n\taddl $8, %%esp\n\tfstps %0"
                      : "=m"(r)
                      : "r"(hi), "r"(lo)
                      : "eax", "ecx", "edx", "cc", "memory", X87);
+#else
+    uint64_t q = (uint64_t)hi << 32 | lo;
+    double d;
+    float f;
+
+    memcpy(&d, &q, 8);
+    f = (float)__builtin_sqrt(d);
+    memcpy(&r, &f, 4);
+#endif
     return r;
 }
 
@@ -214,41 +232,49 @@ static inline uint32_t po_sqrt_double(uint32_t hi, uint32_t lo)
 static inline uint32_t po_sqrt_float(uint32_t f)
 {
     uint32_t r;
+#if defined(__i386__)
     __asm__ volatile("flds %1\n\tsubl $8, %%esp\n\tfstpl (%%esp)\n\tmovl $0x4981d4, %%eax\n\tcall *%%eax\n\t"
                      "addl $8, %%esp\n\tfstps %0"
                      : "=m"(r)
                      : "m"(f)
                      : "eax", "ecx", "edx", "cc", "memory", X87);
+#else
+    float v, s;
+
+    memcpy(&v, &f, 4);
+    s = (float)__builtin_sqrt((double)v);
+    memcpy(&r, &s, 4);
+#endif
     return r;
 }
 
 /* Double steps on memory: dst = a op b (fld qword a; fop qword b; fstp qword dst). */
 static inline void po_dadd(uint32_t dst, uint32_t a, uint32_t b)
 {
-    __asm__ volatile("fldl (%0)\n\tfaddl (%1)\n\tfstpl (%2)" : : "r"(a), "r"(b), "r"(dst) : "st", "memory");
+    __asm__ volatile("fldl (%0)\n\tfaddl (%1)\n\tfstpl (%2)" : : "r"(PTR(a)), "r"(PTR(b)), "r"(PTR(dst)) : "st", "memory");
 }
 
 static inline void po_ddiv(uint32_t dst, uint32_t a, uint32_t b)
 {
-    __asm__ volatile("fldl (%0)\n\tfdivl (%1)\n\tfstpl (%2)" : : "r"(a), "r"(b), "r"(dst) : "st", "memory");
+    __asm__ volatile("fldl (%0)\n\tfdivl (%1)\n\tfstpl (%2)" : : "r"(PTR(a)), "r"(PTR(b)), "r"(PTR(dst)) : "st", "memory");
 }
 
 static inline void po_dmul(uint32_t dst, uint32_t a, uint32_t b)
 {
-    __asm__ volatile("fldl (%0)\n\tfmull (%1)\n\tfstpl (%2)" : : "r"(a), "r"(b), "r"(dst) : "st", "memory");
+    __asm__ volatile("fldl (%0)\n\tfmull (%1)\n\tfstpl (%2)" : : "r"(PTR(a)), "r"(PTR(b)), "r"(PTR(dst)) : "st", "memory");
 }
 
 /* fild qword {lo, 0}; fstp qword dst. */
 static inline void po_dfild64(uint32_t dst, uint32_t lo)
 {
     uint32_t q[2] = {lo, 0};
-    __asm__ volatile("fildll (%0)\n\tfstpl (%1)" : : "r"(q), "r"(dst) : "st", "memory");
+    __asm__ volatile("fildll (%0)\n\tfstpl (%1)" : : "r"(q), "r"(PTR(dst)) : "st", "memory");
 }
 
 /* fild dword v; fstp qword dst. */
 static inline void po_dfild32(uint32_t dst, int32_t v)
 {
-    __asm__ volatile("fildl %0\n\tfstpl (%1)" : : "m"(v), "r"(dst) : "st", "memory");
+    __asm__ volatile("fildl %0\n\tfstpl (%1)" : : "m"(v), "r"(PTR(dst)) : "st", "memory");
 }
 
 /* if (src > dst) dst = src: fld src; fcomp dst; test ah, 0x41. */
@@ -264,21 +290,32 @@ static inline void po_dmax(uint32_t dst, uint32_t src)
  * which takes the transform's st(0). */
 static inline void po_transform_project(uint8_t *out)
 {
+#if defined(__i386__)
     __asm__ volatile("pushl %0\n\tcall *0x6ccd78\n\taddl $4, %%esp\n\tcall *0x6ccd80"
                      :
                      : "S"(out)
                      : "eax", "ecx", "edx", "cc", "memory", X87);
+#else
+    /* x86-64: the transform 0x426a20 and the projection 0x426b00 on its st(0). */
+    wide_project_c(subunit_transform_c(out));
+#endif
 }
 
 /* 0x4278f0 (a, b, c): the facing value it returns in st(0), fstp dword. */
 static inline uint32_t po_facing(const uint8_t *a, const uint8_t *b, const uint8_t *c)
 {
     uint32_t r;
+#if defined(__i386__)
     __asm__ volatile("pushl %3\n\tpushl %2\n\tpushl %1\n\tmovl $0x4278f0, %%eax\n\tcall *%%eax\n\t"
                      "addl $12, %%esp\n\tfstps %0"
                      : "=m"(r)
                      : "r"(a), "r"(b), "r"(c)
                      : "eax", "ecx", "edx", "cc", "memory", X87);
+#else
+    float f = vec_facing_float_c(a, b, c);
+
+    memcpy(&r, &f, 4);
+#endif
     return r;
 }
 
@@ -765,6 +802,7 @@ void GAMEAPI car_trail_packets_build_c(uint8_t *car, uint32_t ot, uint32_t calle
     } while (p < U32(car, 0x10fc));
 }
 
+#if defined(__i386__)
 __asm__(".text\n"
         ".globl car_trail_packets_build\n"
         "car_trail_packets_build:\n\t"
@@ -774,6 +812,7 @@ __asm__(".text\n"
         "call car_trail_packets_build_c\n\t"
         "addl $12, %esp\n\t"
         "ret\n");
+#endif
 
 /* ===== 0x46ea10: a trail vertex's texture coordinates: its position
  * through 0x426620; u = clamp((rot x >> 10) + (x >> 1) + 0x40, 0, 0x7f)
@@ -995,7 +1034,7 @@ uint32_t GAMEAPI snd_channel_eax_props(uint32_t chan)
 
     if (!buffer)
         return 0;
-    if (IDirectSoundBuffer_QueryInterface(buffer, GMEM(0x4a4330), (void **)&props) < 0)
+    if (IDirectSoundBuffer_QueryInterface(buffer, GMEM(0x4a4330), &props) < 0)
         return 0;
     if (!props)
         return 0;

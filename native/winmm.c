@@ -11,7 +11,10 @@
 #include <unistd.h>
 
 typedef unsigned int UINT;
-typedef void(WINAPI *timer_callback)(UINT id, UINT message, DWORD user, DWORD reserved1, DWORD reserved2);
+/* as the game's callbacks are declared (mm_timer_tick, tick_callback,
+ * movie_sound_timer: five uint32_t) */
+typedef void(WINAPI *timer_callback)(uint32_t id, uint32_t message, uint32_t user, uint32_t reserved1,
+                                     uint32_t reserved2);
 
 DWORD WINAPI timeGetTime(void)
 {

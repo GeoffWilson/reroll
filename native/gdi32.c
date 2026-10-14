@@ -37,5 +37,5 @@ HANDLE WINAPI CreatePalette(const void *palette)
 
 HANDLE WINAPI GetStockObject(int index)
 {
-    return (HANDLE)(uintptr_t)(0x40100 + index);
+    return (HANDLE)(uintptr_t)(uint32_t)(0x40100 + index);
 }

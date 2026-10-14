@@ -14,6 +14,7 @@
  * the value 0x450020 sits in the version resource (0x6d568c). */
 #include "../runtime.h"
 #include "physics.h"
+#include "gamefn.h"
 
 #define A(p) ((uint32_t)(uintptr_t)(p))
 #define PTR(a) ((uint8_t *)(uintptr_t)(a))
@@ -28,38 +29,32 @@
 #define g_config G32(0x4b2198)
 #define g_race G32(0x4b1960)
 
-typedef uint32_t(GAMEAPI *xb_fn0)(void);
-typedef uint32_t(GAMEAPI *xb_fn1)(uint32_t a);
-typedef uint32_t(GAMEAPI *xb_fn2)(uint32_t a, uint32_t b);
-typedef uint32_t(GAMEAPI *xb_fn3)(uint32_t a, uint32_t b, uint32_t c);
-typedef uint32_t(GAMEAPI *xb_fn4)(uint32_t a, uint32_t b, uint32_t c, uint32_t d);
-typedef uint32_t(GAMEAPI *xb_fn5)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e);
-typedef uint32_t(GAMEAPI *xb_fn6)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f);
-
-#define CALL0(f) ((xb_fn0)(f))()
-#define CALL1(f, a) ((xb_fn1)(f))(A(a))
-#define CALL2(f, a, b) ((xb_fn2)(f))(A(a), A(b))
-#define CALL3(f, a, b, c) ((xb_fn3)(f))(A(a), A(b), A(c))
-#define CALL4(f, a, b, c, d) ((xb_fn4)(f))(A(a), A(b), A(c), A(d))
-#define CALL5(f, a, b, c, d, e) ((xb_fn5)(f))(A(a), A(b), A(c), A(d), A(e))
-#define CALL6(f, a, b, c, d, e, g) ((xb_fn6)(f))(A(a), A(b), A(c), A(d), A(e), A(g))
-
-#define option_onoff_step(v, e) CALL3(0x447f20, v, 1, e)            /* (value, unused, event) -> new value */
-#define menu_text_get(buf, section, index) CALL4(0x4481a0, buf, -1, section, index)
-#define menu_pick_available(p, step) CALL2(0x448330, p, step)       /* steps *p past unavailable choices */
-#define config_mirror_flag() CALL0(0x448380)
-#define menu_choice_callback(e, buf, max, p, table) CALL5(0x450c00, e, buf, max, p, table)
-#define option_number_step(e, buf, v, def, lo, hi) CALL6(0x450050, e, buf, v, def, lo, hi)
-#define fe_repeat_select(on) CALL1(0x4475f0, on)
-#define fe_repeat_updown(on) CALL1(0x4475d0, on)
-#define fe_menu_goto(screen, mode) CALL2(0x4479d0, screen, mode)
-#define fe_menu_back() CALL0(0x447ab0)
-#define voice_play_plain(s, pitch, vol) CALL3(0x472a90, s, pitch, vol)
-#define race_setting_trim() CALL0(0x4503c0)
-#define blend_modes_choose() CALL0(0x41fda0)
-#define render_flags_apply(a, b, c, d, e) CALL5(0x428a50, a, b, c, d, e)
-#define gamma_refresh() CALL0(0x4219d0)
-#define crt_sprintf(buf, fmt, v) CALL3(0x4979f0, buf, fmt, v)
+#define option_onoff_step(v, e) GCALL(0x447f20, option_onoff_step)(v, 1, e) /* (value, unused, event) -> new value */
+#define menu_text_get(buf, section, index) \
+    GCALL(0x4481a0, menu_text_get)((char *)PTR(buf), -1, (const char *)PTR(section), index)
+#define menu_pick_available(p, step) GCALL(0x448330, menu_pick_available)(p, step) /* steps *p past unavailable choices */
+#define config_mirror_flag() GCALL(0x448380, config_mirror_flag)()
+#define menu_choice_callback(e, buf, max, p, table) \
+    GCALL(0x450c00, menu_choice_callback)(e, (int32_t)(buf), max, p, (int32_t)(table))
+#define option_number_step(e, buf, v, def, lo, hi) \
+    (uint32_t)GCALL(0x450050, option_number_step)(e, (char *)PTR(buf), v, (int32_t)(def), (int32_t)(lo), hi)
+#define fe_repeat_select(on) GCALL(0x4475f0, fe_repeat_select)(on)
+#define fe_repeat_updown(on) GCALL(0x4475d0, fe_repeat_updown)(on)
+#define fe_menu_goto(screen, mode) GCALL(0x4479d0, fe_menu_goto)((int32_t)(screen), mode)
+#define fe_menu_back() GCALL(0x447ab0, fe_menu_back)()
+#define voice_play_plain(s, pitch, vol) GCALL(0x472a90, voice_play_plain)(s, pitch, vol)
+#define race_setting_trim() GCALL(0x4503c0, race_setting_trim)()
+#define blend_modes_choose() GCALL(0x41fda0, blend_modes_choose)()
+#define render_flags_apply(a, b, c, d, e) GCALL(0x428a50, render_flags_set)(a, b, c, d, e)
+#define gamma_refresh() GCALL(0x4219d0, d3d_render_states_thunk)()
+#if defined(__i386__)
+/* the original pushes the whole track argument; the callee reads its low byte */
+typedef void(GAMEAPI *track_set_fn)(int32_t series, uint32_t track);
+#define series_track_set_at ((track_set_fn)(uintptr_t)0x448820)
+#else
+#define series_track_set_at GCALL(0x448820, series_track_set)
+#endif
+#define crt_sprintf(buf, fmt, v) GCALL(0x4979f0, msvc_sprintf)((char *)PTR(buf), (const char *)PTR(fmt), v)
 
 /* An on/off option byte at *base + off through option_onoff_step;
  * returns 1 when it is now off. */
@@ -180,7 +175,7 @@ int32_t GAMEAPI fecb_refuse_sound(int32_t event)
 {
     if (event < 6 || event > 7)
         return 0;
-    if (CALL0(0x45f4f0) >= 2)
+    if ((uint32_t)GCALL(0x45f4f0, net_player_count)() >= 2)
         return 0;
     if (!fe_repeat_select(1))
         return 0;
@@ -298,7 +293,7 @@ int32_t GAMEAPI fecb_chat_send(int32_t event)
     for (; *e; e++)
         ;
     xb_strcpy(e, PTR(c + 0x16c));
-    CALL1(0x48d270, buf);
+    GCALL(0x48d270, net_chat_send)((char *)buf);
     U8(g_config, 0x16c) = 0;
     G32(0x4cb58c) = 1;
     return 1;
@@ -350,7 +345,8 @@ void GAMEAPI fecb_value_60c(uint32_t value)
 void GAMEAPI fecb_world_pick(int32_t event, int32_t world)
 {
     U8(g_config, 0x41) = (uint8_t)world;
-    CALL2(0x44e560, event, world);
+    (void)event;
+    GCALL(0x44e560, series_validate)(); /* the original pushes (event, world) */
 }
 
 /* 0x44e7e0: entry draw hook: option +0x1d = value when 0xf..0x12. */
@@ -364,8 +360,9 @@ void GAMEAPI fecb_set_1d(int32_t value)
  * then track_menu_choice_fix (tail jump). */
 void GAMEAPI fecb_track_pick(int32_t event, int32_t track)
 {
-    CALL2(0x448820, U8(g_config, 0x41), track);
-    CALL2(0x44ea70, event, track);
+    (void)event;
+    series_track_set_at(U8(g_config, 0x41), track);
+    GCALL(0x44ea70, track_menu_choice_fix)(); /* the original pushes (event, track) */
 }
 
 /* 0x44eb20: track menu: accept (6/7) goes back (0x4cb0d0 == 2) or to screen
@@ -389,7 +386,7 @@ int32_t GAMEAPI fecb_track_menu(int32_t event)
     case 8:
     case 9:
         if (fe_repeat_select(1))
-            CALL2(0x44ebb0, 0x80, 0);
+            GCALL(0x44ebb0, menu_call_with_zero)(0x80, 0);
         return 1;
     }
     return 0;
@@ -410,7 +407,7 @@ int32_t GAMEAPI fecb_step_choice(int32_t dir)
         return 0;
     if (dir > 1) {
         if (dir == 10)
-            CALL0(0x448880);
+            GCALL(0x448880, name_entry_box_place)();
         return 0;
     }
     if (!fe_repeat_updown(1))
@@ -447,11 +444,11 @@ int32_t GAMEAPI fecb_step_choice(int32_t dir)
  * slot). */
 int32_t GAMEAPI fecb_profile_rename(void)
 {
-    uint32_t p = CALL1(0x4053e0, G32(0x4c291c) & 0xff);
+    uint32_t p = A(GCALL(0x4053e0, player_name_at)(G32(0x4c291c) & 0xff));
     U32(p, 0) = G32(0x4ca854);
     U32(p, 4) = G32(0x4ca858);
     U16(p, 8) = G16(0x4ca85c);
-    CALL2(0x405860, G8(0x4c24c5), G32(0x4c291c) & 0xff);
+    GCALL(0x405860, track_records_rename)(G8(0x4c24c5), G32(0x4c291c) & 0xff);
     return 1;
 }
 

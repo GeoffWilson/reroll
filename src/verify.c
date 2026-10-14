@@ -18,6 +18,7 @@
  * at any moment; its variables are neither compared nor rolled back
  * (timer_state). Nor is the stack below the verified call, where the two
  * versions' locals naturally differ, nor scratch memory (scratch_state). */
+#if defined(__i386__) /* checks against the original code: 32-bit only */
 #include "verify.h"
 #include "log.h"
 #include "coverage.h"
@@ -615,3 +616,5 @@ int32_t verify_call1(const char *name, verify_fn1 original, verify_fn1 ours, int
         return survey_call(ours, arg);
     return verify_call2(&world, (verify_fn2)(void *)original, (verify_fn2)(void *)ours, arg, 0);
 }
+
+#endif

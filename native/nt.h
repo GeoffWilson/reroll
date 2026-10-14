@@ -7,8 +7,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#if defined(__i386__)
 #define WINAPI __attribute__((stdcall))
 #define CDECL __attribute__((cdecl))
+#else /* one calling convention */
+#define WINAPI
+#define CDECL
+#endif
 
 typedef uint32_t DWORD;
 typedef int32_t LONG;

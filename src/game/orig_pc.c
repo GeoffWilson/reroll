@@ -34,7 +34,7 @@
  * register intermediates as the original); integer logic is C. Everything
  * outside the group is called by address. */
 #include "../runtime.h"
-#include "physics.h"
+#include "gamefn.h"
 
 #define U8(p, off) (*(uint8_t *)((uint8_t *)(uintptr_t)(p) + (off)))
 #define S16(p, off) (*(int16_t *)((uint8_t *)(uintptr_t)(p) + (off)))
@@ -52,22 +52,6 @@
 #define g_screen_width G32(0x4acc38)
 #define g_screen_height G32(0x4acc3c)
 #define g_render_flags G32(0x6cce40)
-
-typedef int32_t(GAMEAPI *pc_fn0)(void);
-typedef int32_t(GAMEAPI *pc_fn1)(uint32_t a);
-typedef int32_t(GAMEAPI *pc_fn2)(uint32_t a, uint32_t b);
-typedef int32_t(GAMEAPI *pc_fn3)(uint32_t a, uint32_t b, uint32_t c);
-typedef int32_t(GAMEAPI *pc_fn4)(uint32_t a, uint32_t b, uint32_t c, uint32_t d);
-typedef int32_t(GAMEAPI *pc_fn5)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e);
-typedef int32_t(GAMEAPI *pc_fn6)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f);
-
-#define CALL0(a) (((pc_fn0)(a))())
-#define CALL1(a, x) (((pc_fn1)(a))(A(x)))
-#define CALL2(a, x, y) (((pc_fn2)(a))(A(x), A(y)))
-#define CALL3(a, x, y, z) (((pc_fn3)(a))(A(x), A(y), A(z)))
-#define CALL4(a, x, y, z, w) (((pc_fn4)(a))(A(x), A(y), A(z), A(w)))
-#define CALL5(a, x, y, z, w, v) (((pc_fn5)(a))(A(x), A(y), A(z), A(w), A(v)))
-#define CALL6(a, x, y, z, w, v, u) (((pc_fn6)(a))(A(x), A(y), A(z), A(w), A(v), A(u)))
 
 /* This group's functions (also in build/groups/pc_protos.txt for physics.h). */
 void GAMEAPI cars_view_flags_update(void); /* 0x4231f0 */
@@ -88,9 +72,20 @@ void GAMEAPI view_rect_saved_get(uint32_t *out); /* 0x426590 */
 void GAMEAPI view_saved_get(uint32_t *out); /* 0x4265b0 */
 void gte_rt_float(void); /* 0x426620: asm */
 void gte_rtps_float(void); /* 0x4266d0: asm */
+#if defined(__i386__)
 void gte_rtps_3dnow(void); /* 0x4268c0: asm, 3DNow!, (record) through 0x6ccd78 / 0x6ccd7c */
 void gte_rt_depth(void); /* 0x426cd0: asm, (record) returns z; leaves st(0) for gte_project_pending when z >= 0 */
 void gte_project_pending(void); /* 0x426dc0: asm, takes st(0) from gte_rt_depth */
+#else
+/* x86-64: C bodies with the prototypes their callers use (nothing calls
+ * them with registers / the x87 stack): what the original leaves in st(0)
+ * is the result, or the argument of its consumer. */
+float gte_rtps_3dnow(uint8_t *rec); /* 0x4268c0, through 0x6ccd78 / 0x6ccd7c */
+int32_t gte_rt_depth_c(uint8_t *rec, float *st0); /* 0x426cd0: returns z; *st0 its st(0) when z >= 0 */
+void gte_project_pending_c(float st0);              /* 0x426dc0 */
+int32_t gte_rt_depth(uint8_t *rec, float *st0);   /* 0x426cd0's hook: gte_rt_depth_c */
+void gte_project_pending(float st0);               /* 0x426dc0's hook: gte_project_pending_c */
+#endif
 void GAMEAPI matrix_rotate_vec(const uint8_t *m, const int16_t *v, int32_t *out); /* 0x426e10 */
 void GAMEAPI matrix_mul_into(const uint8_t *a, uint8_t *b); /* 0x426e90 */
 void GAMEAPI matrix_translation_set(uint8_t *m, const int32_t *v); /* 0x426f60 */
@@ -98,7 +93,12 @@ void GAMEAPI gte_light_colour(void); /* 0x427100 */
 void gte_light_colour_3dnow(void); /* 0x427250: asm, 3DNow!, through 0x6cce3c */
 void gte_light_colour_float(void); /* 0x427400: asm, through 0x6cce3c */
 int32_t GAMEAPI gte_nclip(void); /* 0x4278a0 */
+#if defined(__i386__)
 void vec_facing_float(void); /* 0x4278f0: asm, (a, b, c) returns its float in st(0) */
+#else
+float vec_facing_float_c(const uint8_t *a, const uint8_t *b, const uint8_t *c); /* 0x4278f0 */
+float vec_facing_float(const uint8_t *a, const uint8_t *b, const uint8_t *c);   /* its hook */
+#endif
 int32_t GAMEAPI ot_clear_forward(uint32_t *ot, uint32_t n); /* 0x427a40 */
 int32_t GAMEAPI ot_clear_reverse(uint32_t *ot, uint32_t n); /* 0x427a70 */
 uint32_t GAMEAPI ot_add_prim(uint32_t entry, uint32_t *prim); /* 0x427ab0 */
@@ -111,35 +111,107 @@ int32_t GAMEAPI clear_colour_store(uint32_t r, uint32_t g, uint32_t b); /* 0x428
 int32_t GAMEAPI depth_range_set(int32_t near, int32_t far, uint32_t c); /* 0x4283d0 */
 void GAMEAPI view_border_draw(const int16_t *r, const int16_t *in, uint32_t fill); /* 0x4284b0 */
 void GAMEAPI view_viewport_apply(const uint8_t *view, int32_t border); /* 0x428770 */
+#if defined(__i386__)
 void vertex_project_codes(void); /* 0x4288c0: asm, (record); st(0) handed to 0x426b00 */
 void vertex_project_float(void); /* 0x428900: asm, (record) */
+#else
+void vertex_project_codes(uint8_t *rec); /* 0x4288c0 */
+void vertex_project_float(uint8_t *rec); /* 0x428900 */
+#endif
 void GAMEAPI light_matrix_load(const uint32_t *m); /* 0x428940 */
 void GAMEAPI render_flags_set(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e); /* 0x428a50 */
 void GAMEAPI projection_push(void); /* 0x428a80 */
 void GAMEAPI projection_pop(void); /* 0x428b00 */
 void GAMEAPI far_plane_set(uint32_t f); /* 0x428b90 */
+#if defined(__i386__)
 void far_plane_get(void); /* 0x428bd0: asm, returns the float in st(0) */
+#else
+float far_plane_get(void); /* 0x428bd0 */
+#endif
 void GAMEAPI matrix_transpose_s16(const uint8_t *src, int16_t *dst); /* 0x428be0 */
 int32_t GAMEAPI texture_surface_lock(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f); /* 0x428c30 */
 int32_t GAMEAPI texture_surface_unlock(uint32_t a, uint32_t b, uint32_t c); /* 0x428c60 */
 int32_t GAMEAPI texture_handle_new(void); /* 0x428c80 */
 int32_t GAMEAPI texture_surface_upload(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f); /* 0x428c90 */
 void GAMEAPI dword_store(uint32_t *p, uint32_t v); /* 0x4290a0 */
+#if defined(__i386__)
 void vec_normalise_x87(void); /* 0x4290b0: asm, (in, out) returns 0 */
+#else
+int32_t vec_normalise_x87(const int32_t *in, int32_t *out); /* 0x4290b0 */
+#endif
 void GAMEAPI dx_error_ignore(void); /* 0x4291f0 */
 void GAMEAPI light_colour_at(const uint8_t *pos, const uint32_t *rgb, uint32_t *out); /* 0x4292b0 */
 int32_t GAMEAPI textures_unusable_thunk(void); /* 0x429340 */
 void GAMEAPI smoke_clouds_draw(void); /* 0x42b9a0 */
 
-#define draw_otag(ot) CALL1(0x428470, ot)
-#define draw_prim(p) CALL1(0x428460, p)
-#define viewport_set(x, y, w, h) CALL4(0x41f2d0, x, y, w, h)
-#define projection_set(x, y, w, h, d) CALL5(0x417ed0, x, y, w, h, d)
+#define draw_otag(ot) GCALL(0x428470, capture_draw_otag)((uint32_t)(ot))
+#define draw_prim(p) GCALL(0x428460, capture_draw_prim)(A(p))
+#define viewport_set(x, y, w, h) GCALL(0x41f2d0, viewport_body)((int32_t)(x), (int32_t)(y), (int32_t)(w), (int32_t)(h))
+/* The frustum's arguments are floats (bit patterns here). */
+#define projection_set(x, y, w, h, d) \
+    GCALL(0x417ed0, frustum_body)(pc_float(x), pc_float(y), pc_float(w), pc_float(h), pc_float(d))
 
 /* Every x87 register, for asm blocks that call out or use the FPU stack. */
 #define X87 "st", "st(1)", "st(2)", "st(3)", "st(4)", "st(5)", "st(6)", "st(7)"
 
 /* ---- x87 helpers: the original's instructions ---- */
+
+/* A float's bit pattern as a float. */
+static inline float pc_float(uint32_t bits)
+{
+    float f;
+
+    memcpy(&f, &bits, 4);
+    return f;
+}
+
+#if !defined(__i386__)
+/* x86-64: long double arithmetic is x87 arithmetic (rounded by the control
+ * word, as the original's register intermediates). */
+typedef long double pc_ld;
+
+/* A float in game memory, widened (exact, as fld dword). */
+#define PC_F(a) ((pc_ld)pc_float(G32(a)))
+/* An int16 in game memory (fild word). */
+#define PC_W(a) ((pc_ld)GS16(a))
+
+/* fistp dword: rounded by the control word. */
+static inline int32_t pc_fistp32(pc_ld v)
+{
+    int32_t r;
+    __asm__ volatile("fistpl %0" : "=m"(r) : "t"(v) : "st");
+    return r;
+}
+
+/* fistp word. */
+static inline int16_t pc_fistp16(pc_ld v)
+{
+    int16_t r;
+    __asm__ volatile("fistps %0" : "=m"(r) : "t"(v) : "st");
+    return r;
+}
+
+/* fstp dword: rounded to a float by the control word. */
+static inline uint32_t pc_fstp32(pc_ld v)
+{
+    uint32_t r;
+    __asm__ volatile("fstps %0" : "=m"(r) : "t"(v) : "st");
+    return r;
+}
+
+/* The C runtime's _ftol (0x497a80): st(0) truncated (control word's
+ * rounding set to chop around a fistp qword), the low dword. */
+static inline int32_t pc_ftol(pc_ld v)
+{
+    uint16_t cw, chop;
+    int64_t r;
+
+    __asm__ volatile("fnstcw %0" : "=m"(cw));
+    chop = (uint16_t)(cw | 0xc00);
+    __asm__ volatile("fldcw %1\n\tfistpll %0\n\tfldcw %2" : "=m"(r) : "m"(chop), "m"(cw), "t"(v) : "st");
+    return (int32_t)r;
+}
+#endif
 
 /* fild dword; fstp dword: an integer to float, rounded by the control word. */
 static inline uint32_t x87_from_int(uint32_t v)
@@ -219,40 +291,58 @@ static inline uint32_t x87_cmp_diff(uint32_t a, uint32_t t, uint32_t b)
 /* fld dword a; call _ftol (0x497a80, truncating): the low dword. */
 static inline int32_t ftol_f(uint32_t a)
 {
+#if defined(__i386__)
     int32_t r;
     __asm__ volatile("flds %1\n\tmovl $0x497a80, %%eax\n\tcall *%%eax"
                      : "=a"(r)
                      : "m"(a)
                      : "ecx", "edx", "cc", "memory", X87);
     return r;
+#else
+    return pc_ftol((pc_ld)pc_float(a));
+#endif
 }
 
 /* fld dword a; fmul qword k; call _ftol. */
 static inline int32_t ftol_mul_d(uint32_t a, const void *k)
 {
+#if defined(__i386__)
     int32_t r;
     __asm__ volatile("flds %1\n\tfmull (%2)\n\tmovl $0x497a80, %%eax\n\tcall *%%eax"
                      : "=a"(r)
                      : "m"(a), "r"(k)
                      : "ecx", "edx", "cc", "memory", X87);
     return r;
+#else
+    double d;
+
+    memcpy(&d, k, 8);
+    return pc_ftol((pc_ld)pc_float(a) * (pc_ld)d);
+#endif
 }
 
 /* fld a; fdiv b; fmul c; call _ftol. */
 static inline int32_t ftol_div_mul(uint32_t a, uint32_t b, uint32_t c)
 {
+#if defined(__i386__)
     int32_t r;
     __asm__ volatile("flds %1\n\tfdivs %2\n\tfmuls %3\n\tmovl $0x497a80, %%eax\n\tcall *%%eax"
                      : "=a"(r)
                      : "m"(a), "m"(b), "m"(c)
                      : "ecx", "edx", "cc", "memory", X87);
     return r;
+#else
+    pc_ld v = (pc_ld)pc_float(a) / (pc_ld)pc_float(b);
+
+    return pc_ftol(v * (pc_ld)pc_float(c));
+#endif
 }
 
 /* The transform pointer *0x6ccd78 (out) then the projection *0x6ccd80,
  * which takes the transform's st(0); between them, *byte = 0 (if given). */
 static inline void gte_transform_project(uint32_t *out, uint8_t *byte)
 {
+#if defined(__i386__)
     if (byte)
         __asm__ volatile("pushl %0\n\tcall *0x6ccd78\n\taddl $4, %%esp\n\tmovb $0, (%1)\n\tcall *0x6ccd80"
                          :
@@ -263,6 +353,16 @@ static inline void gte_transform_project(uint32_t *out, uint8_t *byte)
                          :
                          : "S"(out)
                          : "eax", "ecx", "edx", "cc", "memory", X87);
+#else
+    /* x86-64: the transform (*0x6ccd78: 0x426a20 / 0x4268c0) returns what
+     * the original leaves in st(0); the projection (*0x6ccd80: 0x426b00 /
+     * 0x4291f0) takes it as its argument. */
+    float h = ((float(GAMEAPI *)(uint8_t *))(uintptr_t)G32(0x6ccd78))((uint8_t *)out);
+
+    if (byte)
+        *byte = 0;
+    ((void(GAMEAPI *)(float))(uintptr_t)G32(0x6ccd80))(h);
+#endif
 }
 
 /* ===================================================================== */
@@ -383,7 +483,7 @@ void GAMEAPI view_lod_set(uint32_t zoom)
     int32_t z = (int16_t)zoom;
     int32_t r, e;
 
-    G32(0x6cce44) = (uint32_t)CALL2(0x444490, (uint32_t)z << 8, 0x6800);
+    G32(0x6cce44) = (uint32_t)GCALL(0x444490, fix_div8)((int32_t)((uint32_t)z << 8), 0x6800);
     r = ftol_div_mul(x87_from_int(g_screen_width), G32(0x4a3350), x87_from_int(G32(0x6cce44)));
     G32(0x6cce44) = (uint32_t)r;
     e = r >> 8;
@@ -430,10 +530,10 @@ int32_t GAMEAPI view_full_screen(void)
         buf[5] = (uint16_t)h;
         buf[2] = 0;
         buf[3] = 0;
-        CALL1(0x426600, 0x4bde18);
-        CALL1(0x4265d0, &buf[2]);
+        GCALL(0x426600, view_keep)((const uint32_t *)GMEM(0x4bde18));
+        GCALL(0x4265d0, viewport_apply)((int16_t *)&buf[2]);
     } else {
-        CALL1(0x4265d0, G32(0x6ce60c) + 0x5c);
+        GCALL(0x4265d0, viewport_apply)((int16_t *)GMEM(G32(0x6ce60c) + 0x5c));
     }
     return (int32_t)(h << 16 | w);
 }
@@ -704,48 +804,49 @@ uint32_t GAMEAPI ot_add_prim(uint32_t entry, uint32_t *prim)
  * fog off render state setters. ===== */
 void GAMEAPI filter_set_thunk(void)
 {
-    CALL0(0x41dd90);
+    GCALL(0x41dd90, d3d_filter_set)();
 }
 
 void GAMEAPI fog_on_thunk(void)
 {
-    CALL0(0x41de40);
+    GCALL(0x41de40, d3d_fog_on)();
 }
 
 void GAMEAPI fog_off_thunk(void)
 {
-    CALL0(0x41de60);
+    GCALL(0x41de60, d3d_fog_off)();
 }
 
 /* ===== 0x428c80: jump to 0x4205f0 (a new texture handle). ===== */
 int32_t GAMEAPI texture_handle_new(void)
 {
-    return CALL0(0x4205f0);
+    return GCALL(0x4205f0, texture_page_next)();
 }
 
 /* ===== 0x429340: jump to 0x4219c0. ===== */
 int32_t GAMEAPI textures_unusable_thunk(void)
 {
-    return CALL0(0x4219c0);
+    return (int32_t)GCALL(0x4219c0, flag_4bcd54_clear)();
 }
 
 /* ===== 0x428c30: 0x41fef0 with the same six arguments (texture surface
  * lock). ===== */
 int32_t GAMEAPI texture_surface_lock(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f)
 {
-    return CALL6(0x41fef0, a, b, c, d, e, f);
+    return GCALL(0x41fef0, texture_lock)((int32_t)a, b, (uint32_t *)GMEM(c), (uint32_t *)GMEM(d), (uint32_t *)GMEM(e),
+                                         (uint32_t *)GMEM(f));
 }
 
 /* ===== 0x428c60: 0x420000 with the same three arguments (unlock). ===== */
 int32_t GAMEAPI texture_surface_unlock(uint32_t a, uint32_t b, uint32_t c)
 {
-    return CALL3(0x420000, a, b, c);
+    return GCALL(0x420000, texture_unlock)((int32_t)a, b, (const uint32_t *)GMEM(c));
 }
 
 /* ===== 0x428c90: 0x41e710 with the same six arguments (upload). ===== */
 int32_t GAMEAPI texture_surface_upload(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f)
 {
-    return CALL6(0x41e710, a, b, c, d, e, f);
+    return GCALL(0x41e710, texture_upload_body)((int32_t)a, (int32_t)b, (int32_t)c, d, e, f);
 }
 
 /* ===== 0x4290a0: *p = v. ===== */
@@ -769,7 +870,7 @@ int32_t GAMEAPI zbuffer_restore(void)
 {
     if (G32(0x6cce7c) == 0)
         return 0;
-    CALL0(0x41de80);
+    GCALL(0x41de80, d3d_zbuffer_on)();
     G32(0x6cce80) = 1;
     G32(0x6cce84) = 1;
     return 1;
@@ -788,7 +889,13 @@ int32_t GAMEAPI debug_line_print(char *s)
         s[n - 1] = 0;
     if (n >= 2 && s[n - 2] == '\r')
         s[n - 2] = 0;
-    return CALL1(0x496340, s);
+#if defined(__i386__)
+    /* A tail call: eax as the printf leaves it. */
+    return ((int32_t(GAMEAPI *)(const char *))(uintptr_t)0x496340)(s);
+#else
+    GCALL(0x496340, debug_log_printf)(s);
+    return 0;
+#endif
 }
 
 /* ===== 0x428390: clear colour: 0x6ccd8c = b << 16 | g << 8 | r (bytes),
@@ -799,7 +906,13 @@ int32_t GAMEAPI clear_colour_store(uint32_t r, uint32_t g, uint32_t b)
     g &= 0xff;
     b &= 0xff;
     G32(0x6ccd8c) = ((b << 8 | g) << 8) | r;
-    return CALL3(0x41ec40, r, g, b);
+#if defined(__i386__)
+    /* A tail call: eax as the callee leaves it. */
+    return ((int32_t(GAMEAPI *)(uint32_t, uint32_t, uint32_t))(uintptr_t)0x41ec40)(r, g, b);
+#else
+    GCALL(0x41ec40, background_colour_set)((int32_t)r, (int32_t)g, (int32_t)b);
+    return 0;
+#endif
 }
 
 /* ===== 0x4283d0: depth range: 0x6ccd98 = near, 0x6ccd9c = far, 0x6ccd94
@@ -851,9 +964,13 @@ void GAMEAPI projection_push(void)
     G32(0x4be108) = G32(0x6ccd98);
     G32(0x4bde94) = G32(0x6ccd9c);
     G32(0x4bdef4) = G32(0x6ccd94);
+#if defined(__i386__)
     __asm__ volatile("call far_plane_get\n\tfstps %0" : "=m"(G32(0x4bdef8)) : : "eax", "ecx", "edx", "cc", "memory", X87);
+#else
+    G32(0x4bdef8) = pc_fstp32((pc_ld)far_plane_get());
+#endif
     g_render_flags |= 0x42;
-    slot = (uint32_t)CALL0(0x48cf20);
+    slot = (uint32_t)GCALL(0x48cf20, net_local_slot)();
     g_render_flags = ((slot & 0xf) << 7) | (g_render_flags & 0xfffff87fu);
     G32(0x6cce94) = G8(g_race + 0x58b) ^ 1;
 }
@@ -954,9 +1071,9 @@ void GAMEAPI view_viewport_apply(const uint8_t *view, int32_t border)
     }
     viewport_set((int32_t)S16(view, 0), (int32_t)S16(view, 2), (int32_t)S16(view, 4), (int32_t)S16(view, 6));
     if (border && G32(0x6cce7c)) {
-        CALL0(0x41e190);
-        CALL1(0x41e040, 1);
-        CALL0(0x41e170);
+        GCALL(0x41e190, d3d_scene_end)();
+        GCALL(0x41e040, viewport_clear)(1);
+        GCALL(0x41e170, d3d_scene_begin)();
     }
 }
 
@@ -1008,8 +1125,8 @@ void GAMEAPI smoke_clouds_draw(void)
         y = (uint32_t)(I32(rec, 4) >> 16) & 0xffff;
         cx = I32(rec, 0);
         for (step = 0; step < 32; step++) {
-            int32_t s = CALL1(0x480b10, angle);
-            int32_t c = CALL1(0x480bc0, angle);
+            int32_t s = GCALL(0x480b10, sin_table)((int32_t)angle);
+            int32_t c = GCALL(0x480bc0, cos_table)((int32_t)angle);
 
             G32(0x6ccc64) = ((uint32_t)((s * r1 + cx) >> 16) & 0xffff) | y << 16;
             G32(0x6ccc68) = (uint32_t)((c * r1 + cz) >> 16) & 0xffff;
@@ -1086,6 +1203,7 @@ void GAMEAPI smoke_clouds_draw(void)
 
 /* ===================================================================== */
 /* The x87 / 3DNow! transforms: the original's instructions. */
+#if defined(__i386__)
 __asm__(".intel_syntax noprefix\n"
         ".text\n"
 
@@ -1151,7 +1269,7 @@ __asm__(".intel_syntax noprefix\n"
         /* 0x4266d0: the same, then the GTE-style screen point: x / y saturated to
          * int16 at 0x6ccc88 / 8c, z at 0x6ccc90 (and 1..0xffff at 0x6cccac / b0);
          * screen x / y = offset (0x6ccc42 / 46) + x * H / z (z > 2, else * H),
-         * clamped to -1024..1023.75 and stored as words 0x6ccc9c / 9e (first set
+         * clamped to -1024..1023 (0x447fc000 is 1023.0) and stored as words 0x6ccc9c / 9e (first set
          * to x / y clamped to -0x400..0x3ff). */
         ".globl gte_rtps_float\n"
         ".type gte_rtps_float,@function\n"
@@ -1961,3 +2079,322 @@ __asm__(".intel_syntax noprefix\n"
         "    ret\n" /* 429164 */
 
         ".att_syntax prefix\n");
+#else
+/* x86-64: the same in C. Each x87 step is long double arithmetic in the
+ * original's order (rounded by the control word as the registers were);
+ * stores and integer conversions are the original's fstp / fistp. The
+ * 3DNow! pair (never selected without 3DNow!) is single-precision C with an
+ * exact reciprocal for pfrcp. */
+
+/* fstp qword: rounded to a double by the control word. */
+static inline double pc_fstp64(pc_ld v)
+{
+    double r;
+    __asm__ volatile("fstpl %0" : "=m"(r) : "t"(v) : "st");
+    return r;
+}
+
+/* A float at p + off, widened. */
+#define PC_FP(p, off) ((pc_ld)pc_float(U32(p, off)))
+
+/* One row of the float rotate-translate of the GTE vector: ((t + a * x) +
+ * b * y) + c * z with t at tr, a / b / c at row. */
+static inline pc_ld pc_rt_row(uint32_t tr, uint32_t row)
+{
+    pc_ld r = PC_F(tr) + PC_F(row) * PC_W(0x6ccc64);
+
+    r = r + PC_F(row + 4) * PC_W(0x6ccc66);
+    return r + PC_F(row + 8) * PC_W(0x6ccc68);
+}
+
+/* 0x426620. */
+void gte_rt_float(void)
+{
+    GI32(0x6cccd0) = pc_fistp32(pc_rt_row(0x6ccd14, 0x6ccd3c));
+    GI32(0x6cccc8) = pc_fistp32(pc_rt_row(0x6ccd0c, 0x6ccd1c));
+    GI32(0x6ccccc) = pc_fistp32(pc_rt_row(0x6ccd10, 0x6ccd2c));
+}
+
+/* A screen coordinate: offset + v * h, below -1024 (or NaN) -1024, from
+ * 1023.0 (0x447fc000) 1023.0, fistp word. */
+static inline int16_t pc_screen(uint32_t offset, int32_t v, pc_ld h)
+{
+    pc_ld s = PC_W(offset) + (pc_ld)v * h;
+
+    if (!(s >= -1024.0L))
+        s = -1024.0L;
+    if (s >= 1023.0L)
+        s = 1023.0L;
+    return pc_fistp16(s);
+}
+
+static inline int32_t pc_clamp(int32_t v, int32_t lo, int32_t hi)
+{
+    if (v > hi)
+        v = hi;
+    if (v < lo)
+        v = lo;
+    return v;
+}
+
+/* 0x4266d0. */
+void gte_rtps_float(void)
+{
+    pc_ld h;
+    int32_t v;
+
+    gte_rt_float();
+    h = PC_F(0x6ccd00);
+    if (GI32(0x6cccd0) > 2)
+        h = h / (pc_ld)GI32(0x6cccd0);
+    v = pc_clamp(GI32(0x6cccc8), -0x8000, 0x7fff);
+    GI32(0x6ccc88) = v;
+    G16(0x6ccc9c) = (uint16_t)pc_clamp(v, -0x400, 0x3ff);
+    v = pc_clamp(GI32(0x6ccccc), -0x8000, 0x7fff);
+    GI32(0x6ccc8c) = v;
+    G16(0x6ccc9e) = (uint16_t)pc_clamp(v, -0x400, 0x3ff);
+    v = pc_clamp(GI32(0x6cccd0), -0x8000, 0x7fff);
+    GI32(0x6ccc90) = v;
+    v = pc_clamp(v, 1, 0xffff);
+    GI32(0x6cccac) = v;
+    GI32(0x6cccb0) = v;
+    GS16(0x6ccc9c) = pc_screen(0x6ccc42, GI32(0x6ccc88), h);
+    GS16(0x6ccc9e) = pc_screen(0x6ccc46, GI32(0x6ccc8c), h);
+}
+
+static inline float pc_gf(uint32_t a)
+{
+    return pc_float(G32(a));
+}
+
+static inline uint32_t pc_bits(float f)
+{
+    uint32_t r;
+
+    memcpy(&r, &f, 4);
+    return r;
+}
+
+/* 0x4268c0 (3DNow!): the vertex record (code, z, x, y, view x, view y);
+ * leaves nothing for the projection (0x4291f0, a no-op on this path). */
+float gte_rtps_3dnow(uint8_t *rec)
+{
+    float x = (float)GS16(0x6ccc64), y = (float)GS16(0x6ccc66), z = (float)GS16(0x6ccc68);
+    float tx = (float)GI32(0x6ccbf4), ty = (float)GI32(0x6ccbf8), tz = (float)GI32(0x6ccbfc);
+    uint32_t code = 0x10, zb;
+
+    U32(rec, 4) = pc_bits((x * pc_gf(0x6ccd3c) + z * pc_gf(0x6ccd44)) + (y * pc_gf(0x6ccd40) + tz * pc_gf(0x6ccd48)));
+    U32(rec, 0x10) = pc_bits((x * pc_gf(0x6ccd1c) + z * pc_gf(0x6ccd24)) + (y * pc_gf(0x6ccd20) + tx * pc_gf(0x6ccd28)));
+    U32(rec, 0x14) = pc_bits((x * pc_gf(0x6ccd2c) + z * pc_gf(0x6ccd34)) + (y * pc_gf(0x6ccd30) + ty * pc_gf(0x6ccd38)));
+    zb = U32(rec, 4);
+    if ((int32_t)zb >= GI32(0x6ccd08))
+        code |= 0x20;
+    if ((int32_t)zb >= GI32(0x6ccd04)) {
+        float k = 1.0f / pc_float(zb) * pc_gf(0x6ccd00);
+        int32_t sx, sy;
+
+        code &= ~0x10u;
+        U32(rec, 8) = pc_bits(pc_float(U32(rec, 0x10)) * k + pc_gf(0x6ccd5c));
+        U32(rec, 0xc) = pc_bits(pc_float(U32(rec, 0x14)) * k + pc_gf(0x6ccd60));
+        sx = I32(rec, 8);
+        sy = I32(rec, 0xc);
+        if (sx < GI32(0x6ccd64))
+            code |= 1;
+        else if (sx >= GI32(0x6ccd68))
+            code |= 2;
+        if (sy < GI32(0x6ccd6c))
+            code |= 4;
+        else if (sy >= GI32(0x6ccd70))
+            code |= 8;
+    }
+    U32(rec, 0) = code;
+    return 0.0f;
+}
+
+/* 0x426cd0. */
+int32_t gte_rt_depth_c(uint8_t *rec, float *st0)
+{
+    pc_ld z, r;
+    int32_t zi, zb;
+
+    G32(0x6ccbc0) = 0x10;
+    z = pc_rt_row(0x6ccd14, 0x6ccd3c);
+    G32(0x6ccbc4) = pc_fstp32(z); /* fst */
+    zi = pc_fistp32(z);
+    if (!((uint32_t)zi & 0x80000000u)) {
+        G32(0x6ccbd0) = pc_fstp32(pc_rt_row(0x6ccd0c, 0x6ccd1c));
+        G32(0x6ccbd4) = pc_fstp32(pc_rt_row(0x6ccd10, 0x6ccd2c));
+        r = PC_F(0x6ccbc4);
+        zb = GI32(0x6ccbc4);
+        if (zb >= GI32(0x6ccd08))
+            G32(0x6ccbc0) |= 0x20;
+        if (zb >= GI32(0x6ccd04)) {
+            r = PC_F(0x6ccd00) / r;
+            G32(0x6ccbc0) &= ~0x10u;
+        }
+        *st0 = pc_float(pc_fstp32(r));
+    }
+    G32(0x6ccd74) = A(rec);
+    return zi;
+}
+
+int32_t gte_rt_depth(uint8_t *rec, float *st0)
+{
+    return gte_rt_depth_c(rec, st0);
+}
+
+/* 0x426dc0. */
+void gte_project_pending_c(float st0)
+{
+    if (!(G32(0x6ccbc0) & 0x10)) {
+        uint32_t p = G32(0x6ccd74);
+        pc_ld h = st0;
+
+        *(int16_t *)GMEM(p) = pc_fistp16(PC_F(0x6ccbd0) * h + PC_F(0x6ccd4c));
+        *(int16_t *)GMEM(p + 2) = pc_fistp16(PC_F(0x6ccbd4) * h + PC_F(0x6ccd50));
+    }
+}
+
+void gte_project_pending(float st0)
+{
+    gte_project_pending_c(st0);
+}
+
+/* 0x427250 (3DNow!). The back colour's three loads go to one slot, so
+ * every channel adds blue's (sic). */
+void gte_light_colour_3dnow(void)
+{
+    float x = (float)GS16(0x6ccc64), y = (float)GS16(0x6ccc66), z = (float)GS16(0x6ccc68);
+    float c[3], back = pc_gf(0x6cce38);
+    uint32_t i;
+
+    for (i = 0; i < 3; i++) {
+        uint32_t m = 0x6ccdd0 + i * 0x10;
+        float v = (x * pc_gf(m) + z * pc_gf(m + 8)) + (y * pc_gf(m + 4) + 0.0f * pc_gf(m + 0xc));
+
+        c[i] = v > 0.0f ? v : 0.0f; /* pfmax */
+    }
+    for (i = 0; i < 3; i++) {
+        uint32_t m = 0x6cce00 + i * 0x10;
+        float v = (c[0] * pc_gf(m) + c[2] * pc_gf(m + 8)) + (c[1] * pc_gf(m + 4) + back * pc_gf(m + 0xc));
+
+        if (!(v < 4095.0f)) /* pfmin */
+            v = 4095.0f;
+        G8(0x6cccbc + i) = (uint8_t)((uint32_t)(int32_t)v >> 4); /* pf2id truncates */
+    }
+    G8(0x6cccbf) = G8(0x6ccc7f);
+}
+
+/* 0x427400. */
+void gte_light_colour_float(void)
+{
+    pc_ld x = PC_W(0x6ccc64), y = PC_W(0x6ccc66), z = PC_W(0x6ccc68), c[3];
+    int32_t v[3];
+    uint32_t i;
+
+    for (i = 0; i < 3; i++) {
+        uint32_t m = 0x6ccdd0 + i * 0x10;
+        pc_ld r = PC_F(m) * x + PC_F(m + 8) * z;
+        uint32_t f = pc_fstp32(r + PC_F(m + 4) * y);
+
+        if ((int32_t)f < 0)
+            f = 0;
+        c[i] = (pc_ld)pc_float(f);
+    }
+    for (i = 0; i < 3; i++) {
+        uint32_t m = 0x6cce00 + i * 0x10;
+        pc_ld r = PC_F(m) * c[0] + PC_F(m + 8) * c[2];
+
+        r = r + PC_F(m + 4) * c[1];
+        v[i] = pc_fistp32(r + PC_F(0x6cce30 + i * 4));
+    }
+    for (i = 0; i < 3; i++)
+        G8(0x6cccbc + i) = (uint8_t)((v[i] < 0xfff ? v[i] : 0xfff) >> 4);
+    G8(0x6cccbf) = G8(0x6ccc7f);
+}
+
+/* 0x4278f0. */
+float vec_facing_float_c(const uint8_t *a, const uint8_t *b, const uint8_t *c)
+{
+    pc_ld p = (PC_FP(c, 0xc) - PC_FP(a, 0xc)) * (PC_FP(b, 8) - PC_FP(a, 8));
+    pc_ld q = (PC_FP(b, 0xc) - PC_FP(a, 0xc)) * (PC_FP(c, 8) - PC_FP(a, 8));
+
+    return pc_float(pc_fstp32(p - q));
+}
+
+float vec_facing_float(const uint8_t *a, const uint8_t *b, const uint8_t *c)
+{
+    return vec_facing_float_c(a, b, c);
+}
+
+/* 0x4288c0: the projection 0x426b00 takes what the original leaves in
+ * st(0). */
+void vertex_project_codes(uint8_t *rec)
+{
+    pc_ld v = PC_FP(rec, 4);
+    int32_t zb = I32(rec, 4);
+
+    U32(rec, 0) = 0x10;
+    if (zb >= GI32(0x6ccd08))
+        U32(rec, 0) |= 0x20;
+    if (zb >= GI32(0x6ccd04)) {
+        v = PC_F(0x6ccd00) / v;
+        U32(rec, 0) &= ~0x10u;
+    }
+    G32(0x6ccd74) = A(rec);
+    GCALL(0x426b00, wide_project_c)(pc_float(pc_fstp32(v)));
+}
+
+/* 0x428900. */
+void vertex_project_float(uint8_t *rec)
+{
+    pc_ld k = PC_F(0x6ccd00) / PC_FP(rec, 4);
+
+    U32(rec, 8) = pc_fstp32(PC_FP(rec, 0x10) * k + PC_F(0x6ccd5c));
+    U32(rec, 0xc) = pc_fstp32(PC_FP(rec, 0x14) * k + PC_F(0x6ccd60));
+}
+
+/* 0x428bd0. */
+float far_plane_get(void)
+{
+    return pc_float(G32(0x6ccd08));
+}
+
+/* The C runtime's sqrt (0x4981d4) of a double: fsqrt at the caller's
+ * precision, rounded to nearest, the result through a double. */
+static inline pc_ld pc_crt_sqrt(double d)
+{
+    uint16_t cw, near;
+    pc_ld r;
+
+    __asm__ volatile("fnstcw %0" : "=m"(cw));
+    near = (uint16_t)((cw & 0x300) | 0x7f);
+    __asm__ volatile("fldcw %2\n\tfsqrt\n\tfldcw %3" : "=t"(r) : "0"((pc_ld)d), "m"(near), "m"(cw));
+    return (pc_ld)pc_fstp64(r);
+}
+
+/* 0x4290b0. */
+int32_t vec_normalise_x87(const int32_t *in, int32_t *out)
+{
+    pc_ld f[3], len, k;
+    uint32_t i;
+
+    for (i = 0; i < 3; i++)
+        f[i] = (pc_ld)pc_float(pc_fstp32((pc_ld)(int32_t)((uint32_t)in[i] << 8)));
+    {
+        pc_ld s = f[2] * f[2] + f[1] * f[1];
+
+        s = s + f[0] * f[0];
+        len = (pc_ld)pc_float(pc_fstp32(pc_crt_sqrt(pc_fstp64(s))));
+    }
+    {
+        double d;
+
+        memcpy(&d, (const void *)0x4a3378, 8);
+        k = (pc_ld)d;
+    }
+    for (i = 0; i < 3; i++)
+        out[i] = pc_fistp32((pc_ld)pc_float(pc_fstp32(f[i] * k / len)));
+    return 0;
+}
+#endif

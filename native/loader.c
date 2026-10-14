@@ -81,19 +81,33 @@ __attribute__((used)) static void unresolved_called(uint32_t index)
 }
 
 void nt_unresolved_entry(void);
+#if defined(__i386__)
 __asm__(".text\n"
         "nt_unresolved_entry:\n"
         "    andl $-16, %esp\n"
         "    subl $12, %esp\n"
         "    pushl %eax\n"
         "    call unresolved_called\n");
+#else
+__asm__(".text\n"
+        "nt_unresolved_entry:\n"
+        "    andq $-16, %rsp\n"
+        "    movl %eax, %edi\n"
+        "    call unresolved_called\n");
+#endif
 
 static void *unresolved_thunk(const char *dll, const char *name)
 {
     uint8_t *t;
     int32_t rel;
     if (!thunks) {
-        thunks = mmap(0, MAX_UNRESOLVED * 16, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        /* within a jmp rel32 of our code (and low, as the slots are 32-bit) */
+        thunks = mmap(0, MAX_UNRESOLVED * 16, PROT_READ | PROT_WRITE | PROT_EXEC,
+                      MAP_PRIVATE | MAP_ANONYMOUS
+#if !defined(__i386__)
+                          | MAP_32BIT
+#endif
+                      , -1, 0);
         if (thunks == MAP_FAILED)
             nt_fatal("no memory for import thunks");
     }
@@ -249,6 +263,9 @@ static void configure(int argc, char **argv)
             nt_no_exe = atoi(no_exe) != 0;
         else
             nt_no_exe = !(verify && verify[0] && verify[0] != '0');
+#if !defined(__i386__)
+        nt_no_exe = 1; /* a 64-bit program can't run the exe's 32-bit code */
+#endif
     }
     {
         /* the game's folder: the exe's, whether or not the exe is there */
@@ -369,13 +386,22 @@ int main(int argc, char **argv)
         extern uint32_t nt_profile_stack_top;
         if (!stack)
             nt_fatal("no memory for the game's stack");
-        nt_profile_stack_top = (uint32_t)(stack + size);
+        nt_profile_stack_top = (uint32_t)(uintptr_t)(stack + size);
+#if defined(__i386__)
         __asm__ volatile("movl %0, %%esp\n"
                          "call start_game\n"
                          "ud2\n"
                          :
                          : "r"(stack + size - 64)
                          : "memory");
+#else
+        __asm__ volatile("movq %0, %%rsp\n"
+                         "call start_game\n"
+                         "ud2\n"
+                         :
+                         : "r"(stack + size - 64)
+                         : "memory");
+#endif
     }
     return 0;
 }

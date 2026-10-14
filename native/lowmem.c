@@ -10,6 +10,7 @@
 
 #include <pthread.h>
 #include <string.h>
+#include <stdio.h>
 #include <sys/mman.h>
 
 #define REGION_START 0x20000000u
@@ -32,11 +33,38 @@ static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 static uint32_t search_from;
 static int ready;
 
+#if !defined(__i386__)
+/* A 64-bit program's heap (brk) starts anywhere in the first GB above its
+ * image, which would land in the region. So the region is part of the image:
+ * a section with no file contents, linked at REGION_START (the Makefile's
+ * --section-start=.lowmem); the heap then starts above it. */
+__asm__(".section .lowmem,\"aw\",@nobits\n"
+        ".p2align 16\n"
+        "nt_lowmem_image:\n"
+        ".zero 0x5f000000\n" /* REGION_END - REGION_START */
+        ".previous\n");
+#define RESERVE_FLAGS MAP_FIXED /* over our own section */
+#else
+#define RESERVE_FLAGS MAP_FIXED_NOREPLACE
+#endif
+
 void nt_lowmem_init(void)
 {
     if (mmap((void *)REGION_START, REGION_END - REGION_START, PROT_NONE,
-             MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE | MAP_FIXED_NOREPLACE, -1, 0) != (void *)REGION_START)
+             MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE | RESERVE_FLAGS, -1, 0) != (void *)REGION_START)
+    {
+        /* what is in the way */
+        FILE *maps = fopen("/proc/self/maps", "r");
+        char line[256];
+        while (maps && fgets(line, sizeof line, maps)) {
+            unsigned long lo, hi;
+            if (sscanf(line, "%lx-%lx", &lo, &hi) == 2 && lo < REGION_END && hi > REGION_START)
+                nt_log("lowmem: in the way: %s", line);
+        }
+        if (maps)
+            fclose(maps);
         nt_fatal("cannot reserve the game's memory below 2 GB");
+    }
     ready = 1;
 }
 

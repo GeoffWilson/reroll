@@ -18,46 +18,34 @@
 #include "../runtime.h"
 #include "physics.h"
 #include "winapi.h"
+#include "gamefn.h"
 
 #define U8(p, off) (*(uint8_t *)((uint8_t *)(p) + (off)))
 #define U16(p, off) (*(uint16_t *)((uint8_t *)(p) + (off)))
 #define I32(p, off) (*(int32_t *)((uint8_t *)(p) + (off)))
 #define U32(p, off) (*(uint32_t *)((uint8_t *)(p) + (off)))
-#define G8(a) (*(uint8_t *)(a))
-#define G16(a) (*(uint16_t *)(a))
-#define G32(a) (*(uint32_t *)(a))
-#define GI32(a) (*(int32_t *)(a))
-#define PTR(a) ((uint8_t *)(a))
+#define G8(a) (*(uint8_t *)(uintptr_t)(a))
+#define G16(a) (*(uint16_t *)(uintptr_t)(a))
+#define G32(a) (*(uint32_t *)(uintptr_t)(a))
+#define GI32(a) (*(int32_t *)(uintptr_t)(a))
+#define PTR(a) ((uint8_t *)(uintptr_t)(a))
 
-#define g_config (*(uint8_t **)0x4b2198)
-#define g_race (*(uint8_t **)0x4b1960)
+#define g_config GP(0x4b2198)
+#define g_race GP(0x4b1960)
 
 #define STDCALL __attribute__((stdcall))
 
 
 /* Original functions called by address. */
-typedef int32_t(GAMEAPI *f0)(void);
-typedef int32_t(GAMEAPI *f1)(uint32_t a);
-typedef int32_t(GAMEAPI *f2)(uint32_t a, uint32_t b);
-typedef int32_t(GAMEAPI *f3)(uint32_t a, uint32_t b, uint32_t c);
-typedef int32_t(GAMEAPI *f4)(uint32_t a, uint32_t b, uint32_t c, uint32_t d);
-typedef int32_t(GAMEAPI *f6)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f);
-typedef int32_t(GAMEAPI *f7)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f, uint32_t g);
-#define CALL0(a) ((f0)(a))()
-#define CALL1(a, x) ((f1)(a))((uint32_t)(x))
-#define CALL2(a, x, y) ((f2)(a))((uint32_t)(x), (uint32_t)(y))
-#define CALL3(a, x, y, z) ((f3)(a))((uint32_t)(x), (uint32_t)(y), (uint32_t)(z))
-#define CALL4(a, x, y, z, w) ((f4)(a))((uint32_t)(x), (uint32_t)(y), (uint32_t)(z), (uint32_t)(w))
-
-#define game_time() ((uint32_t)CALL0(0x43692a))
-#define fatal_exit() CALL0(0x43699c)
-#define present_frame() CALL0(0x436a52)
-#define text_entry(dst, size, section, index) CALL4(0x42e6d0, dst, size, section, index)
-#define crt_free(p) CALL1(0x49827a, p)
-#define time_entry_405480(out, slot, lap, kind) CALL4(0x405480, out, slot, lap, kind)
-#define held_by_405380(track, slot) CALL2(0x405380, track, slot)
-#define binding_449bf0(set, n) ((uint8_t *)(uintptr_t)CALL2(0x449bf0, set, n))
-#define nop_4291f0() CALL0(0x4291f0)
+#define game_time() ((uint32_t)GCALL(0x43692a, game_time_get)())
+#define fatal_exit() GCALL(0x43699c, quit_request)()
+#define present_frame() GCALL(0x436a52, present_frame)()
+#define text_entry(dst, size, section, index) GCALL(0x42e6d0, text_line_get)((uint8_t *)GMEM(dst), size, (const char *)GMEM(section), index)
+#define crt_free(p) GCALL(0x49827a, msvc_free)(GMEM(p))
+#define time_entry_405480(out, slot, lap, kind) GCALL(0x405480, time_entry_fill)(out, slot, lap, kind)
+#define held_by_405380(track, slot) GCALL(0x405380, track_record_held_by)(track, slot)
+#define binding_449bf0(set, n) ((uint8_t *)(uintptr_t)GCALL(0x449bf0, binding_get)(set, n))
+#define nop_4291f0() GCALL(0x4291f0, dx_error_ignore)()
 
 #define g_window G32(0x6c8000)
 #define g_instance G32(0x6c7ffc)
@@ -81,15 +69,15 @@ char *GAMEAPI stristr(char *hay, const char *needle)
         return 0;
     if (!(uint8_t)needle[0])
         return hay;
-    upper = (uint8_t)CALL1(0x49867b, (uint8_t)needle[0]);
-    lower = (uint8_t)CALL1(0x498540, (uint8_t)needle[0]);
+    upper = (uint8_t)GCALL(0x49867b, msvc_tolower)((uint8_t)needle[0]);
+    lower = (uint8_t)GCALL(0x498540, msvc_toupper)((uint8_t)needle[0]);
     for (; (uint8_t)*hay; hay++) {
         if ((uint8_t)*hay != upper && (uint8_t)*hay != lower)
             continue;
         for (i = 1;; i++) {
             if (!(uint8_t)needle[i])
                 return hay;
-            if (CALL1(0x498540, (uint8_t)hay[i]) != CALL1(0x498540, (uint8_t)needle[i]))
+            if (GCALL(0x498540, msvc_toupper)((uint8_t)hay[i]) != GCALL(0x498540, msvc_toupper)((uint8_t)needle[i]))
                 break;
         }
     }
@@ -323,8 +311,8 @@ void GAMEAPI strings_load_entry(int32_t entry)
     uint32_t i;
 
     strings_free();
-    G32(0x4be2f0) = U32((uintptr_t)CALL1(0x496570, entry), 8);
-    p = (uint8_t *)(uintptr_t)CALL2(0x496590, entry, 0);
+    G32(0x4be2f0) = U32((uintptr_t)GCALL(0x496570, archive_get_record)(entry), 8);
+    p = (uint8_t *)(uintptr_t)GCALL(0x496590, archive_entry_load)(entry, 0);
     G32(0x4be2ec) = (uint32_t)(uintptr_t)p;
     for (i = 0; i < G32(0x4be2f0); i++) {
         if (p[i] < 0x20 && p[i] != 9) {
@@ -439,11 +427,11 @@ int32_t GAMEAPI joystick_usable(int32_t device)
 {
     if (device < 0)
         return 0;
-    if (device >= CALL0(0x48a010))
+    if (device >= GCALL(0x48a010, joy_device_count_thunk)())
         return 0;
-    if (CALL1(0x489fa0, device))
+    if (GCALL(0x489fa0, device_usable)(device))
         return 0;
-    if (CALL1(0x48a040, device) < 10)
+    if (GCALL(0x48a040, fe_joy_button_count)(device) < 10)
         return 0;
     return 1;
 }
@@ -606,7 +594,7 @@ uint32_t GAMEAPI language_from_registry(void)
 {
     uint32_t value = 0;
 
-    if (CALL3(0x46b690, 0x4ac754, 0x4b22d4, &value) == -1 || value > 4)
+    if (GCALL(0x46b690, reg_dword_get)(0x4ac754, 0x4b22d4, (uint32_t)(uintptr_t)&value) == -1 || value > 4)
         return 0;
     return value;
 }
@@ -696,7 +684,7 @@ void GAMEAPI config_defaults(void)
     records_defaults();
     U8(g_config, 0x6) = 0;
     config_default_texts(1);
-    CALL0(0x4745d0);
+    GCALL(0x4745d0, settings_table_load)();
     U16(g_race, 0xa7c) = 12000;
     U16(g_race, 0xa7e) = 0xffff;
     U8(g_race, 0x720) |= 1;
@@ -744,8 +732,8 @@ int32_t GAMEAPI config_load(void)
     uint8_t *c;
     int32_t n;
 
-    G32(0x4d4664) = CALL3(0x474030, g_config, 0x1854, 0x4b22b0) != -1;
-    G32(0x4d4668) = CALL3(0x474030, g_race, 0xaa0, 0x4b22a8) != -1;
+    G32(0x4d4664) = GCALL(0x474030, registry_load)(g_config, 0x1854, 0x4b22b0) != -1;
+    G32(0x4d4668) = GCALL(0x474030, registry_load)(g_race, 0xaa0, 0x4b22a8) != -1;
     config_display_apply();
     bindings_reset_all();
     U8(g_race, 0x57b) = 1;
@@ -782,21 +770,21 @@ int32_t GAMEAPI config_load(void)
 /* 0x4745e0: 0x474500(0x65, 0x4b21a0). */
 void GAMEAPI settings_load_65(void)
 {
-    CALL2(0x474500, 0x65, 0x4b21a0);
+    GCALL(0x474500, table_copy)(0x65, (const uint32_t *)GMEM(0x4b21a0));
 }
 
 /* 0x4743e0: delete the six replay files named in the options (+0xccc,
  * 0x20 apart, 0x474360) and, with `registry`, the DataReplay value. */
 void GAMEAPI replays_delete(int32_t registry)
 {
-    CALL1(0x474360, g_config + 0xccc);
-    CALL1(0x474360, g_config + 0xcec);
-    CALL1(0x474360, g_config + 0xd0c);
-    CALL1(0x474360, g_config + 0xd2c);
-    CALL1(0x474360, g_config + 0xd4c);
-    CALL1(0x474360, g_config + 0xd6c);
+    GCALL(0x474360, replay_file_delete)(g_config + 0xccc);
+    GCALL(0x474360, replay_file_delete)(g_config + 0xcec);
+    GCALL(0x474360, replay_file_delete)(g_config + 0xd0c);
+    GCALL(0x474360, replay_file_delete)(g_config + 0xd2c);
+    GCALL(0x474360, replay_file_delete)(g_config + 0xd4c);
+    GCALL(0x474360, replay_file_delete)(g_config + 0xd6c);
     if (registry)
-        CALL2(0x46b770, 0x4b2284, 0x4b22b8);
+        GCALL(0x46b770, reg_value_remove)(0x4b2284, 0x4b22b8);
 }
 
 /* 0x474cb0: signal the "ATDGFXCHAINING" event, if it exists. */
@@ -804,9 +792,9 @@ void GAMEAPI chain_event_signal(void)
 {
     uint32_t event = 0; /* written by 0x46b900 */
 
-    if (CALL2(0x46b900, &event, 0x4b2390) != -1) {
-        CALL1(0x46b940, event);
-        CALL1(0x46b890, event);
+    if (GCALL(0x46b900, win_event_open)((uint32_t)(uintptr_t)&event, 0x4b2390) != -1) {
+        GCALL(0x46b940, win_event_set)(event);
+        GCALL(0x46b890, win_handle_close_quiet)(event);
     }
 }
 
@@ -846,9 +834,9 @@ int32_t GAMEAPI cpu_detect_amd(void)
 {
     G32(0x4b5e44) = 0;
     G32(0x4b5e48) = 0;
-    if (CALL0(0x41c8c0) && CALL0(0x401050) && CALL0(0x4010c0)) {
+    if (GCALL(0x41c8c0, cpuid_available)() && GCALL(0x401050, cpu_is_amd)() && GCALL(0x4010c0, cpu_has_3dnow)()) {
         G32(0x4b5e44) = 1;
-        G32(0x4b5e48) = CALL0(0x4010f0);
+        G32(0x4b5e48) = GCALL(0x4010f0, cpu_ext_level)();
     }
     return 1;
 }
@@ -858,9 +846,9 @@ int32_t GAMEAPI cpu_detect_intel(void)
 {
     G32(0x4beb30) = 0;
     G32(0x4beb34) = 0;
-    if (CALL0(0x41c8c0) && CALL0(0x43c370) && CALL0(0x43c3e0)) {
+    if (GCALL(0x41c8c0, cpuid_available)() && GCALL(0x43c370, cpu_is_intel)() && GCALL(0x43c3e0, cpu_feature_none)()) {
         G32(0x4beb30) = 1;
-        G32(0x4beb34) = CALL0(0x4010f0);
+        G32(0x4beb34) = GCALL(0x4010f0, cpu_ext_level)();
     }
     return 1;
 }
@@ -1209,7 +1197,7 @@ int32_t GAMEAPI command_line_parse(char *line)
 {
     char *p;
 
-    CALL1(0x4a1d70, line);
+    GCALL(0x4a1d70, crt_strupr)(line);
     if (stristr(line, (const char *)0x4ace2c))
         G32(0x4be3f0) = 1;
     p = stristr(line, (const char *)0x4ace38);
@@ -1218,7 +1206,7 @@ int32_t GAMEAPI command_line_parse(char *line)
         if (p) {
             p++;
             unquote_copy((char *)0x5ff0c0, p);
-            CALL1(0x4962c0, 0x5ff0c0);
+            GCALL(0x4962c0, debug_log_set_path)((const char *)GMEM(0x5ff0c0));
         }
     }
     if (stristr(line, (const char *)0x4ace44))
@@ -1233,11 +1221,11 @@ int32_t GAMEAPI command_line_parse(char *line)
     }
     if (stristr(line, (const char *)0x4ace60))
         G32(0x4be4a0) = 1;
-    if (CALL2(0x4980d0, line, 0x4ace68)) {
+    if (GCALL(0x4980d0, msvc_strstr)(line, (const char *)GMEM(0x4ace68))) {
         g_windowed = 0;
         G32(0x4acc60) = 0;
     }
-    if (CALL2(0x4980d0, line, 0x4ace6c))
+    if (GCALL(0x4980d0, msvc_strstr)(line, (const char *)GMEM(0x4ace6c)))
         G32(0x4be45c) = 1;
     return 1;
 }
@@ -1251,26 +1239,26 @@ int32_t GAMEAPI startup_init(char *line)
     char path[0x204];
     char source[0x204];
 
-    G32(0x4b494c) = CALL1(0x46b9e0, 0x4acc70);
+    G32(0x4b494c) = GCALL(0x46b9e0, env_var_exists)(0x4acc70);
     if (G32(0x4b494c))
-        CALL1(0x4962c0, 0x4acc88);
+        GCALL(0x4962c0, debug_log_set_path)((const char *)GMEM(0x4acc88));
     if (((uint32_t)GetUserDefaultLangID() & 0xffff & 0x3ff) == 0x11) {
         MessageBoxA(0, GMEM(0x4acc90), GMEM(0x4acc24), 0x10);
         return 0;
     }
-    if (CALL1(0x46b870, 0x4accd0) == 1)
+    if (GCALL(0x46b870, app_mutex_create)(0x4accd0) == 1)
         return 0;
-    CALL1(0x474fa0, 0x5fefa0);
-    CALL1(0x475030, 0x4acce0);
-    CALL2(0x498450, path, 0x4accec);
-    if (!CALL1(0x475070, path) && CALL4(0x46b650, 0x4acd04, 0x4accfc, source, 0x104) != -1) {
-        CALL2(0x474ed0, source, source);
-        CALL2(0x498460, source, 0x4acd2c);
-        CALL2(0x498460, source, 0x4acd40);
-        if (CALL1(0x475070, source))
-            CALL2(0x498450, path, source);
+    GCALL(0x474fa0, cwd_path_quoted)((uint8_t *)GMEM(0x5fefa0));
+    GCALL(0x475030, dir_change_unquoted)((const char *)GMEM(0x4acce0));
+    GCALL(0x498450, msvc_strcpy)(path, (const char *)GMEM(0x4accec));
+    if (!GCALL(0x475070, path_access_ok)(path) && GCALL(0x46b650, reg_string_get)(0x4acd04, 0x4accfc, (uint32_t)(uintptr_t)source, 0x104) != -1) {
+        GCALL(0x474ed0, path_dir_make)((uint8_t *)source, (const uint8_t *)source);
+        GCALL(0x498460, msvc_strcat)(source, (const char *)GMEM(0x4acd2c));
+        GCALL(0x498460, msvc_strcat)(source, (const char *)GMEM(0x4acd40));
+        if (GCALL(0x475070, path_access_ok)(source))
+            GCALL(0x498450, msvc_strcpy)(path, source);
     }
-    CALL2(0x496430, path, 0x158);
+    GCALL(0x496430, archive_open)(path, 0x158);
     command_line_parse(line);
     strings_load_once();
 #ifdef REROLL_NATIVE
@@ -1280,7 +1268,7 @@ int32_t GAMEAPI startup_init(char *line)
      * the game reads, and the music comes from the CD image. */
     G32(0x4acc54) = 2;
 #else
-    G32(0x4acc54) = CALL1(0x474840, g_frontend_mode);
+    G32(0x4acc54) = GCALL(0x474840, cd_find_data_path)(g_frontend_mode);
 #endif
     if (!G32(0x4acc54))
         return 0;
@@ -1292,13 +1280,13 @@ int32_t GAMEAPI startup_init(char *line)
     config_load();
     language_set(U8(g_config, 0x36));
     config_default_texts(0);
-    CALL0(0x476a50);
+    GCALL(0x476a50, arena_init)();
     if (CoInitialize(0))
         return 0;
-    CALL0(0x41c930);
+    GCALL(0x41c930, cpu_check)();
     cpu_detect_amd();
     cpu_detect_intel();
-    CALL0(0x426090);
+    GCALL(0x426090, projection_init)();
     return 1;
 }
 
@@ -1308,10 +1296,10 @@ int32_t GAMEAPI startup_window(uint32_t previous)
 {
     if (!previous) {
         uint32_t brush = (uint32_t)(uintptr_t)GetStockObject(4);
-        if (!(CALL3(0x477130, 0x435ed1, 0x65, brush) & 0xffff))
+        if (!(GCALL(0x477130, window_class_register)(0x435ed1, 0x65, brush) & 0xffff))
             return 0;
     }
-    g_window = (uint32_t)((f6)0x4771c0)(1, 0, 0, g_screen_w, g_screen_h, g_windowed);
+    g_window = (uint32_t)GCALL(0x4771c0, create_window_body)(1, 0, 0, g_screen_w, g_screen_h, g_windowed);
     if (!g_window)
         return 0;
     SetForegroundWindow(GMEM(g_window));
@@ -1333,7 +1321,7 @@ int32_t GAMEAPI startup_options(void)
         G32(0x4be440) = 1;
     } else {
         replays_delete(1);
-        CALL0(0x474470);
+        GCALL(0x474470, replay_files_delete_all)();
         U8(g_config, 0x410) = (uint8_t)G32(0x4be4a0);
         U8(g_config, 0x3b) = 0;
         U32(g_config, 0x48) = 0xffffffff;
@@ -1348,7 +1336,7 @@ int32_t GAMEAPI startup_sound(void)
 {
     settings_load_65();
     G32(0x4d4538) = g_window;
-    CALL0(0x46f4f0);
+    GCALL(0x46f4f0, snd_init)();
     return 1;
 }
 
@@ -1358,20 +1346,20 @@ int32_t GAMEAPI startup_direct3d(void)
     int32_t rect[4];
 
     GetClientRect(GMEM(g_window), rect);
-    CALL3(0x4877d0, g_window, rect[2], rect[3]);
-    if (!((f7)0x487e10)(g_windowed, G32(0x4acc60), g_screen_w, g_screen_h, 1, G32(0x4be45c), g_screen_bpp)) {
-        CALL0(0x487210);
+    GCALL(0x4877d0, dd_window_origin)(g_window, rect[2], rect[3]);
+    if (!GCALL(0x487e10, dd_start_3d)(g_windowed, G32(0x4acc60), g_screen_w, g_screen_h, 1, G32(0x4be45c), g_screen_bpp)) {
+        GCALL(0x487210, dd_shutdown)();
         return 0;
     }
-    if (!CALL2(0x41ced0, G32(0x4be45c), G32(0x6cce7c))) {
-        CALL0(0x41d130);
-        CALL0(0x487210);
+    if (!GCALL(0x41ced0, d3d_init)(G32(0x4be45c), G32(0x6cce7c))) {
+        GCALL(0x41d130, d3d_shutdown)();
+        GCALL(0x487210, dd_shutdown)();
         return 0;
     }
-    CALL0(0x41eeb0);
-    CALL1(0x41e040, 0);
-    CALL0(0x4876f0);
-    CALL0(0x428270);
+    GCALL(0x41eeb0, surfaces_clear)();
+    GCALL(0x41e040, viewport_clear)(0);
+    GCALL(0x4876f0, flip_body)();
+    GCALL(0x428270, zbuffer_restore)();
     return 1;
 }
 
@@ -1388,7 +1376,7 @@ int32_t GAMEAPI startup_mode_dialog(void)
 #endif
     if (G32(0x4be440))
         return 1;
-    CALL0(0x487d70);
+    GCALL(0x487d70, dd_probe)();
     if (!G32(0x4be440)) {
         result = (uint32_t)DialogBoxParamA(GMEM(g_instance), GMEM(0x81), GMEM(g_window), (void *)(uintptr_t)0x437171, 0);
         if (result != 0xffffffff && result != 0xfffffffe) {
@@ -1397,9 +1385,9 @@ int32_t GAMEAPI startup_mode_dialog(void)
             g_screen_bpp = G32(0x4d5fec + (result >> 16) * 0xc);
         }
     }
-    CALL0(0x487210);
+    GCALL(0x487210, dd_shutdown)();
     if (result == 0xfffffffe) {
-        CALL0(0x474b90);
+        GCALL(0x474b90, setup_program_launch)();
         return 0;
     }
     if (result == 0xffffffff)
@@ -1425,7 +1413,7 @@ int32_t GAMEAPI timer_stop(void)
 {
     uint32_t start = game_time();
 
-    CALL1(0x477090, 0x4be458);
+    GCALL(0x477090, mm_timer_stop_default)((uint32_t *)GMEM(0x4be458));
     while (G32(0x4be468) && game_time() < start + 1000)
         ;
     G32(0x4be46c) = 0;
@@ -1441,20 +1429,20 @@ void GAMEAPI shutdown_all(int32_t quit)
         return;
     G32(0x4be4a8) = 1;
     timer_stop();
-    CALL0(0x496700);
-    CALL0(0x46fb00);
-    CALL0(0x46f610);
+    GCALL(0x496700, cdaudio_close)();
+    GCALL(0x46fb00, snd_waves_free)();
+    GCALL(0x46f610, snd_shutdown)();
     frontend_free_all();
     nop_4291f0();
-    CALL0(0x48a8b0);
+    GCALL(0x48a8b0, dplay_shutdown)();
     nop_4291f0();
-    CALL0(0x489560);
-    CALL0(0x41e190);
-    CALL0(0x41d130);
-    CALL0(0x487210);
-    CALL0(0x476a90);
+    GCALL(0x489560, input_shutdown)();
+    GCALL(0x41e190, d3d_scene_end)();
+    GCALL(0x41d130, d3d_shutdown)();
+    GCALL(0x487210, dd_shutdown)();
+    GCALL(0x476a90, arena_shutdown)();
     if (quit)
-        CALL0(0x496410);
+        GCALL(0x496410, debug_log_close)();
     else
         error_dialog();
 }
@@ -1466,10 +1454,10 @@ void GAMEAPI shutdown_restart(void)
     if (G32(0x4d4660)) {
         G32(0x4acc34) = 0;
         shutdown_all(1);
-        CALL0(0x474cf0);
+        GCALL(0x474cf0, chain_launch_and_wait)();
     } else {
         replays_delete(1);
-        CALL0(0x474470);
+        GCALL(0x474470, replay_files_delete_all)();
     }
 }
 
@@ -1481,10 +1469,10 @@ void GAMEAPI shutdown_final(void)
 
     network_average(&average);
     CoUninitialize();
-    CALL1(0x475030, 0x5fefa0);
+    GCALL(0x475030, dir_change_unquoted)((const char *)GMEM(0x5fefa0));
     if (G32(0x4acc34))
         ShowCursor(1);
-    CALL0(0x46b850);
+    GCALL(0x46b850, app_mutex_close)();
 }
 
 /* --------------------------------------------------------------- main loop */
@@ -1493,7 +1481,7 @@ static void frame_failed(void)
 {
     int32_t i;
 
-    CALL3(0x428390, 0, 0, 0);
+    GCALL(0x428390, clear_colour_store)(0, 0, 0);
     for (i = 0; i < 2; i++)
         present_frame();
     fatal_exit();
@@ -1536,16 +1524,16 @@ int32_t STDCALL game_main(uint32_t instance, uint32_t previous, char *line, int3
         if (g_windowed)
             ShowCursor(0);
     }
-    if (!startup_sound() || !CALL0(0x4359f1) || !startup_direct3d()) {
+    if (!startup_sound() || !GCALL(0x4359f1, startup_movies)() || !startup_direct3d()) {
         error_dialog();
         return 0;
     }
     for (;;) {
-        CALL1(0x436b9d, 0);
+        GCALL(0x436b9d, loading_screen_show)(0);
         start = game_time();
-        if (!CALL0(0x435b64))
+        if (!GCALL(0x435b64, game_load_step)())
             fatal_exit();
-        if (!CALL0(0x41e170))
+        if (!GCALL(0x41e170, d3d_scene_begin)())
             fatal_exit();
         while (game_time() < start + 3000)
             ;
@@ -1556,29 +1544,29 @@ int32_t STDCALL game_main(uint32_t instance, uint32_t previous, char *line, int3
                 TranslateMessage(msg);
                 DispatchMessageA(msg);
             }
-            CALL0(0x43c420);
+            GCALL(0x43c420, keyboard_update)();
             if (G32(0x4af444))
-                CALL1(0x43605a, G32(0x4af440));
+                GCALL(0x43605a, debug_key_event)(G32(0x4af440));
             if (G32(0x4be484) && !G32(0x4be488))
                 continue;
             G32(0x4be488) = 0;
             if (!G32(0x4be460) && !G32(0x4be48c)) {
-                CALL0(0x4369b5);
+                GCALL(0x4369b5, controls_gather)();
                 if (G32(0x4ac984)) {
-                    if (!CALL0(0x4302d0))
+                    if (!GCALL(0x4302d0, frontend_frame)())
                         frame_failed();
                 } else {
-                    if (!CALL0(0x4440b0))
+                    if (!GCALL(0x4440b0, race_frame)())
                         frame_failed();
                 }
                 if (G32(0x4be464)) {
-                    CALL4(0x428850, 0, 0, g_screen_w, g_screen_h);
-                    if (!CALL1(0x41efe0, G32(0x4be478)))
+                    GCALL(0x428850, view_rect_set)(0, 0, g_screen_w, g_screen_h);
+                    if (!GCALL(0x41efe0, texture_page_show)(G32(0x4be478)))
                         G32(0x4be478) = 0;
                 }
                 if (!present_frame())
                     fatal_exit();
-                CALL0(0x435552);
+                GCALL(0x435552, frame_net_step)();
             }
             if (G32(0x4be48c)) {
                 shutdown_restart();
@@ -1586,7 +1574,7 @@ int32_t STDCALL game_main(uint32_t instance, uint32_t previous, char *line, int3
                 G32(0x4be48c) = 0;
             }
         }
-        if (G32(0x4be450) != 1 || !CALL0(0x435607))
+        if (G32(0x4be450) != 1 || !GCALL(0x435607, front_end_return)())
             break;
     }
     shutdown_final();

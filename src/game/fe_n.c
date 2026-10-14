@@ -25,42 +25,33 @@
  * and ordering-table helpers (0x426b80, 0x427ab0, 0x4290a0); the debug log
  * and its file writing (0x476ec0, 0x4772e0, 0x428310, 0x43b760, 0x43b7b0). */
 #include "../runtime.h"
+#include "gamefn.h"
 #include "physics.h"
 
-#define g_options (*(uint8_t **)0x4b2198)
-#define g_race (*(uint8_t **)0x4b1960)
+#define g_options GP(0x4b2198)
+#define g_race GP(0x4b1960)
 
 /* Not ours. */
-typedef uint32_t(GAMEAPI *menu_open_fn)(int32_t menu);
-typedef uint32_t(GAMEAPI *option_fn)(const char *name, int32_t a, const char *label, int32_t b, uint32_t handler,
-                                     int32_t c);
-typedef uint32_t(GAMEAPI *title_fn)(const char *name, int32_t a);
-typedef uint32_t(GAMEAPI *item_fn)(int32_t a, int32_t b, int32_t text, int32_t c, int32_t d);
-typedef uint32_t(GAMEAPI *select_fn)(uint32_t item);
-typedef uint32_t(GAMEAPI *list_fn)(const char *text, int32_t a, int32_t b, int32_t c, int32_t d, int32_t e,
-                                   int32_t f, const void *g, int32_t h);
-typedef uint32_t(GAMEAPI *list_show_fn)(uint32_t list, int32_t a, const char *text);
-typedef int32_t(GAMEAPI *string_fn)(char *out, int32_t size, const char *name, int32_t index);
-typedef int32_t(__cdecl *sprintf_fn)(char *out, const char *format, ...);
-typedef uint32_t(GAMEAPI *text_fn)(const char *text);
-typedef uint32_t(GAMEAPI *toggle_fn)(uint32_t value, int32_t step, int32_t event);
-typedef int32_t(GAMEAPI *count_fn)(int32_t event, int32_t arg, uint32_t value, int32_t max, int32_t step,
-                                   int32_t text);
-typedef uint32_t(GAMEAPI *value_text_fn)(int32_t arg, int32_t a, const char *name, uint32_t value);
-#define menu_open ((menu_open_fn)0x447650)
-#define option_onoff ((option_fn)0x44c6d0)
-#define option_choice ((option_fn)0x44c9d0)
-#define menu_title ((title_fn)0x448a00)
-#define menu_item ((item_fn)0x448140)
-#define menu_select ((select_fn)0x448b50)
-#define text_list ((list_fn)0x448a50)
-#define text_list_show ((list_show_fn)0x44a1c0)
-#define string_get ((string_fn)0x42e6d0)
-#define crt_sprintf ((sprintf_fn)0x4979f0)
-#define network_text_set ((text_fn)0x45d150)
-#define option_toggle ((toggle_fn)0x447f20)
-#define option_count ((count_fn)0x450050)
-#define option_value_text ((value_text_fn)0x4481a0)
+/* The option handlers' type as the menu code calls them (fe_z.c). */
+typedef int32_t(GAMEAPI *option_handler_fn)(int32_t command, char *text);
+#define HANDLER(a) ((option_handler_fn)(uintptr_t)(a))
+/* 0x44a1c0 (menu_text_slot_set) is void; the original passes on what it
+ * leaves in eax. */
+typedef uint32_t(GAMEAPI *list_show_fn)(int32_t item, uint32_t slot, const char *text);
+#define menu_open GCALL(0x447650, fe_menu_action)
+#define option_onoff GCALL(0x44c6d0, menu_add_choice)
+#define option_choice GCALL(0x44c9d0, menu_add_slider)
+#define menu_title GCALL(0x448a00, menu_set_title)
+#define menu_item GCALL(0x448140, menu_add_item)
+#define menu_select GCALL(0x448b50, menu_entry_select)
+#define text_list GCALL(0x448a50, menu_text_add)
+#define text_list_show ((list_show_fn)(uintptr_t)0x44a1c0)
+#define string_get GCALL(0x42e6d0, text_line_get)
+#define crt_sprintf GCALL(0x4979f0, msvc_sprintf)
+#define network_text_set GCALL(0x45d150, network_chat_post)
+#define option_toggle GCALL(0x447f20, option_onoff_step)
+#define option_count GCALL(0x450050, option_number_step)
+#define option_value_text GCALL(0x4481a0, menu_text_get)
 
 /* --- which menu after a race --- */
 
@@ -100,7 +91,7 @@ uint32_t GAMEAPI menu_return(void)
 
     if (menu == -1)
         return (uint32_t)-1;
-    return menu_open(menu);
+    return (uint32_t)menu_open(menu);
 }
 
 /* --- menu builders --- */
@@ -111,7 +102,7 @@ char *GAMEAPI network_messages_title(void)
 {
     char format[0x80];
 
-    if (string_get(format, 0x80, (const char *)0x4b0e34, 7) != -1) {
+    if (string_get((uint8_t *)format, 0x80, (const char *)0x4b0e34, 7) != -1) {
         crt_sprintf((char *)0x4d07f8, format, *(uint32_t *)0x5d2cc4);
         network_text_set((const char *)0x4d07f8);
     }
@@ -122,9 +113,9 @@ char *GAMEAPI network_messages_title(void)
 uint32_t GAMEAPI network_messages_menu(void)
 {
     const char *title = network_messages_title();
-    uint32_t list = text_list(title, 0, 1, 0x3e, 0x1ad, 0, 0, (const void *)0x4aca1c, -1);
+    uint32_t list = (uint32_t)text_list(title, 0, 1, 0x3e, 0x1ad, 0, 0, 0x4aca1c, -1);
 
-    return text_list_show(list, 0, title);
+    return text_list_show((int32_t)list, 0, title);
 }
 
 /* 0x4518a0: the multiplayer menu (two items; the first is selected when
@@ -140,16 +131,16 @@ uint32_t GAMEAPI multiplayer_menu(void)
     *(uint32_t *)0x4cb48c = 1;
     g_options[0x75] = 0;
     menu_title((const char *)0x4affb4, 0);
-    first = menu_item(0, -1, 0x2d, 1, 0x33);
+    first = (uint32_t)menu_item(0, -1, 0x2d, 1, 0x33);
     *(uint8_t *)0x4c9dfd = 1; /* the next item greyed out */
     menu_item(0, -1, 0x44, 1, 0x33);
-    return menu_select(first);
+    return (uint32_t)menu_select((int32_t)first);
 }
 
 /* 0x44ffd0: a laps menu with the given handler. */
 uint32_t GAMEAPI laps_menu(uint32_t handler, int32_t arg)
 {
-    return option_choice((const char *)0x4b021c, 0, (const char *)0x4b021c, 0, handler, arg);
+    return option_choice((const char *)0x4b021c, 0, (const char *)0x4b021c, 0, HANDLER(handler), (uint32_t)arg);
 }
 
 /* 0x4500f0, 0x4501a0: the two laps menus. */
@@ -166,43 +157,43 @@ uint32_t GAMEAPI laps_menu_other(int32_t arg)
 /* 0x44fed0: the meteors option (0, 1, 2 at options +0x2d). */
 uint32_t GAMEAPI option_meteors_add(void)
 {
-    return option_choice((const char *)0x4b01fc, 0, (const char *)0x4b01fc, 1, 0x44fef0, 1);
+    return option_choice((const char *)0x4b01fc, 0, (const char *)0x4b01fc, 1, HANDLER(0x44fef0), 1);
 }
 
 /* The on/off options of the setup menu. */
 uint32_t GAMEAPI option_shield_texture_add(void) /* 0x450680 */
 {
-    return option_onoff((const char *)0x4b02d4, 0, (const char *)0x4b02d4, 1, 0x4506a0, 1);
+    return option_onoff((const char *)0x4b02d4, 0, (const char *)0x4b02d4, 1, HANDLER(0x4506a0), 1);
 }
 
 uint32_t GAMEAPI option_water_reflections_add(void) /* 0x4506e0 */
 {
-    return option_onoff((const char *)0x4b02fc, 0, (const char *)0x4b02fc, 1, 0x450700, 1);
+    return option_onoff((const char *)0x4b02fc, 0, (const char *)0x4b02fc, 1, HANDLER(0x450700), 1);
 }
 
 uint32_t GAMEAPI option_rubble_add(void) /* 0x450810 */
 {
-    return option_onoff((const char *)0x4b0344, 0, (const char *)0x4b0344, 1, 0x450830, 1);
+    return option_onoff((const char *)0x4b0344, 0, (const char *)0x4b0344, 1, HANDLER(0x450830), 1);
 }
 
 uint32_t GAMEAPI option_ice_sheet_add(void) /* 0x450870 */
 {
-    return option_onoff((const char *)0x4b0364, 0, (const char *)0x4b0364, 1, 0x450890, 1);
+    return option_onoff((const char *)0x4b0364, 0, (const char *)0x4b0364, 1, HANDLER(0x450890), 1);
 }
 
 uint32_t GAMEAPI option_speed_glow_add(void) /* 0x4508d0 */
 {
-    return option_onoff((const char *)0x4b0384, 0, (const char *)0x4b0384, 1, 0x4508f0, 1);
+    return option_onoff((const char *)0x4b0384, 0, (const char *)0x4b0384, 1, HANDLER(0x4508f0), 1);
 }
 
 uint32_t GAMEAPI option_lov_add(void) /* 0x450ba0 */
 {
-    return option_onoff((const char *)0x4b0408, 0, (const char *)0x4b0408, 1, 0x450bc0, 1);
+    return option_onoff((const char *)0x4b0408, 0, (const char *)0x4b0408, 1, HANDLER(0x450bc0), 1);
 }
 
 uint32_t GAMEAPI option_catch_up_add(void) /* 0x450e90 */
 {
-    return option_onoff((const char *)0x4b0444, 0, (const char *)0x4b0444, 1, 0x450eb0, 1);
+    return option_onoff((const char *)0x4b0444, 0, (const char *)0x4b0444, 1, HANDLER(0x450eb0), 1);
 }
 
 /* --- option handlers (event, arg): 1 when handled --- */
@@ -215,7 +206,7 @@ uint32_t GAMEAPI option_meteors(int32_t event, int32_t arg)
     case 0x12:
         if (g_options[0x2d] > 2)
             g_options[0x2d] = 2;
-        option_value_text(arg, -1, (const char *)0x4b01fc, (uint32_t)g_options[0x2d] + 2);
+        option_value_text((char *)(uintptr_t)(uint32_t)arg, -1, (const char *)0x4b01fc, (int32_t)((uint32_t)g_options[0x2d] + 2));
         return 1;
     case 0x13:
         return 1;
@@ -237,53 +228,53 @@ uint32_t GAMEAPI option_meteors(int32_t event, int32_t arg)
 /* An on/off setting byte (at `offset` in the block `*base`) stepped by
  * 0x447f20; 1 when it is now off. The block pointer is read again after
  * the call, as the original does. */
-static uint32_t option_flag(uint8_t *const *base, uint32_t offset, int32_t event)
+static uint32_t option_flag(uint32_t base, uint32_t offset, int32_t event)
 {
-    uint8_t value = (uint8_t)option_toggle((*base)[offset], 1, event);
+    uint8_t value = (uint8_t)option_toggle(GP(base)[offset], 1, event);
 
-    (*base)[offset] = value;
-    return (*base)[offset] == 0;
+    GP(base)[offset] = value;
+    return GP(base)[offset] == 0;
 }
 
 uint32_t GAMEAPI option_shield_texture(int32_t event) /* 0x4506a0 */
 {
-    return option_flag(&g_options, 0x2a, event);
+    return option_flag(0x4b2198, 0x2a, event);
 }
 
 uint32_t GAMEAPI option_water_reflections(int32_t event) /* 0x450700 */
 {
-    return option_flag(&g_options, 0x2b, event);
+    return option_flag(0x4b2198, 0x2b, event);
 }
 
 uint32_t GAMEAPI option_rubble(int32_t event) /* 0x450830 */
 {
-    return option_flag(&g_options, 0x2e, event);
+    return option_flag(0x4b2198, 0x2e, event);
 }
 
 uint32_t GAMEAPI option_ice_sheet(int32_t event) /* 0x450890 */
 {
-    return option_flag(&g_options, 0x32, event);
+    return option_flag(0x4b2198, 0x32, event);
 }
 
 uint32_t GAMEAPI option_speed_glow(int32_t event) /* 0x4508f0 */
 {
-    return option_flag(&g_options, 0x30, event);
+    return option_flag(0x4b2198, 0x30, event);
 }
 
 uint32_t GAMEAPI option_lov(int32_t event) /* 0x450bc0 */
 {
-    return option_flag(&g_options, 0x31, event);
+    return option_flag(0x4b2198, 0x31, event);
 }
 
 uint32_t GAMEAPI option_catch_up(int32_t event) /* 0x450eb0 (race setting +0xa87) */
 {
-    return option_flag(&g_race, 0xa87, event);
+    return option_flag(0x4b1960, 0xa87, event);
 }
 
 /* A laps count (1..3, text 0x32) stepped by 0x450050; 0 when unchanged. */
 static uint32_t option_laps(uint32_t offset, int32_t event, int32_t arg)
 {
-    int32_t laps = option_count(event, arg, g_options[offset], 3, 1, 0x32);
+    int32_t laps = option_count(event, (char *)(uintptr_t)(uint32_t)arg, g_options[offset], 3, 1, 0x32);
 
     if (laps != -1)
         g_options[offset] = (uint8_t)laps;
@@ -317,7 +308,7 @@ int32_t GAMEAPI network_menu_mode(int32_t mode)
  * (+0), 2 weight (+0xc), 3 acceleration (+4). */
 int32_t GAMEAPI car_stat_bar(uint32_t stat, int32_t car)
 {
-    const int32_t *stats = (const int32_t *)(0x4a7910 + (uint32_t)car * 0x10);
+    const int32_t *stats = (const int32_t *)(uintptr_t)(0x4a7910 + (uint32_t)car * 0x10);
     int32_t value = 0, low = 0, high = 10;
 
     switch (stat) {

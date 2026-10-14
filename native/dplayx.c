@@ -4,7 +4,8 @@
 
 #define DPERR_UNAVAILABLE 0x88770000u + 220
 
-LONG WINAPI DirectPlayLobbyCreateA(void *guid, void **out, void *outer, void *data, DWORD size)
+/* out: a 4-byte slot in game memory */
+LONG WINAPI DirectPlayLobbyCreateA(void *guid, uint32_t *out, void *outer, void *data, DWORD size)
 {
     (void)guid;
     (void)outer;
@@ -15,7 +16,7 @@ LONG WINAPI DirectPlayLobbyCreateA(void *guid, void **out, void *outer, void *da
     return (LONG)DPERR_UNAVAILABLE;
 }
 
-LONG WINAPI DirectPlayCreate(void *guid, void **out, void *outer)
+LONG WINAPI DirectPlayCreate(void *guid, uint32_t *out, void *outer)
 {
     (void)guid;
     (void)outer;
@@ -41,10 +42,10 @@ struct dplay {
     LONG refs;
 };
 
-static LONG WINAPI dp_query(struct dplay *d, const void *iid, void **out)
+static LONG WINAPI dp_query(struct dplay *d, const void *iid, uint32_t *out)
 {
     (void)iid;
-    *out = d;
+    *out = (uint32_t)(uintptr_t)d; /* low memory */
     d->refs++;
     return 0;
 }
@@ -173,11 +174,11 @@ static LONG WINAPI dp_message_queue(struct dplay *d, DWORD from, DWORD to, DWORD
 void *nt_dplay_create(void)
 {
     static void **vtable;
-    struct dplay *d = nt_lowmem_calloc(1, sizeof *d);
+    struct dplay *d = nt_lowmem_calloc(1, (uint32_t)sizeof *d);
     int i;
     if (!vtable) {
         int arena = nt_lowmem_arena(0);
-        vtable = nt_lowmem_calloc(53, sizeof *vtable);
+        vtable = nt_lowmem_calloc(53, (uint32_t)sizeof *vtable);
         for (i = 0; i < 53; i++) {
             char name[64];
             snprintf(name, sizeof name, "IDirectPlay4A method %d (+0x%x)", i, i * 4);

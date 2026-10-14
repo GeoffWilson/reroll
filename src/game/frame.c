@@ -17,30 +17,27 @@
 #include "game.h"
 #include "interp.h"
 #include "../capture.h"
+#include "gamefn.h"
 
-typedef void(GAMEAPI *void_fn)(void);
-typedef int32_t(GAMEAPI *int_fn)(void);
-typedef uint32_t(GAMEAPI *time_fn)(void);
-typedef int32_t(GAMEAPI *sim_step_fn)(int32_t network, int32_t step, int32_t count);
-typedef void(GAMEAPI *rect_fn)(int32_t x, int32_t y, int32_t w, int32_t h);
-typedef void(GAMEAPI *int_arg_fn)(int32_t arg);
+void GAMEAPI viewport_body(int32_t x, int32_t y, int32_t w, int32_t h); /* 0x41f2d0 (src/widescreen.c's viewport) */
+int32_t GAMEAPI flip_body(void); /* 0x4876f0 (src/capture.c's capture_flip) */
 
-#define focus_and_poll_input ((void_fn)0x4368f0)
-#define sim_network_mode ((int_fn)0x45eed0)
-#define sim_steps_due ((int_fn)0x436958)
-#define sim_pause_check ((int_fn)0x463b70)
-#define sim_step ((sim_step_fn)0x444120)
-#define game_time ((time_fn)0x43692a) /* timeGetTime() */
-#define present_prepare_a ((void_fn)0x41e190)
-#define present_prepare_b ((void_fn)0x429070)
-#define present_after_wait ((void_fn)0x4876f0)
-#define present_pending_fn ((void_fn)0x405c10)
-#define present_rect ((rect_fn)0x41f2d0)
-#define present_fn_41e040 ((int_arg_fn)0x41e040)
-#define present_flip ((int_fn)0x41e170)
+#define focus_and_poll_input GCALL(0x4368f0, input_focus_poll)
+#define sim_network_mode GCALL(0x45eed0, net_state_host)
+#define sim_steps_due GCALL(0x436958, sim_steps_due)
+#define sim_pause_check GCALL(0x463b70, pause_frame)
+#define sim_step GCALL(0x444120, sim_step)
+#define game_time GCALL(0x43692a, game_time_get) /* timeGetTime() */
+#define present_prepare_a GCALL(0x41e190, d3d_scene_end)
+#define present_prepare_b GCALL(0x429070, texture_palettes_apply) /* src/vkgame.c's texture_queue_flush */
+#define present_after_wait GCALL(0x4876f0, flip_body)
+#define present_pending_fn GCALL(0x405c10, screenshot_dump)
+#define present_rect GCALL(0x41f2d0, viewport_body)
+#define present_fn_41e040 GCALL(0x41e040, viewport_clear)
+#define present_flip GCALL(0x41e170, d3d_scene_begin)
 
-#define g_race_data (*(uint8_t **)0x4b1960)
-#define g_settings (*(uint8_t **)0x4b2198)
+#define g_race_data GP(0x4b1960)
+#define g_settings GP(0x4b2198)
 #define g_frontend (*(int32_t *)0x4ac984)
 #define g_network (*(int32_t *)0x4be47c)
 #define g_render_enabled (*(int32_t *)0x4af5ac)

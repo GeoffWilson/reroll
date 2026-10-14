@@ -28,16 +28,17 @@
 #include "../runtime.h"
 #include "body.h"
 #include "physics.h"
+#include "gamefn.h"
 
 #define U8(p, off) (*(uint8_t *)((uint8_t *)(p) + (off)))
 #define U16(p, off) (*(uint16_t *)((uint8_t *)(p) + (off)))
 #define S16(p, off) (*(int16_t *)((uint8_t *)(p) + (off)))
-#define PTR(p, off) (*(uint8_t **)((uint8_t *)(p) + (off)))
-#define G32(a) (*(uint32_t *)(a))
-#define GI32(a) (*(int32_t *)(a))
+#define PTR(p, off) GP((uint8_t *)(p) + (off))
+#define G32(a) (*(uint32_t *)(uintptr_t)(a))
+#define GI32(a) (*(int32_t *)(uintptr_t)(a))
 
-#define g_race (*(uint8_t **)0x4b1960)
-#define g_config (*(uint8_t **)0x4b2198)
+#define g_race GP(0x4b1960)
+#define g_config GP(0x4b2198)
 #define g_camera_seed (*(uint32_t *)0x4b11d8)
 #define g_spot_count (*(int32_t *)0x4b65f4)
 #define g_race_ticks (*(uint32_t *)0x6c0a50)
@@ -47,30 +48,30 @@
 #define SLOT(i) ((uint8_t *)0x6bfb80 + (uint32_t)(i) * 0x274)
 #define SLOT_CAR(i) PTR(SLOT(i), 0)
 #define SLOT_CAMERA(i) PTR(SLOT(i), 0x28)
-#define VIEW_VEC(base, view) ((int32_t *)((base) + (view) * 12))
-#define VIEW_INT(base, view) ((int32_t *)((base) + (view) * 4))
+#define VIEW_VEC(base, view) ((int32_t *)(uintptr_t)((base) + (view) * 12))
+#define VIEW_INT(base, view) ((int32_t *)(uintptr_t)((base) + (view) * 4))
 
-#define find_trackside_at ((int32_t(GAMEAPI *)(uint16_t *, uint8_t **, int32_t))0x40b310)
-#define check_events_at ((void(GAMEAPI *)(int32_t))0x407fa0)
-#define choose_shot_at ((void(GAMEAPI *)(const void *, int32_t))0x40a9b0)
-#define isqrt_at ((int32_t(GAMEAPI *)(int32_t))0x40d9d0)
-#define line_distance_at ((int32_t(GAMEAPI *)(const int32_t *, const int32_t *, const int32_t *, int32_t *))0x40b180)
-#define upside_down_at ((int32_t(GAMEAPI *)(const uint8_t *))0x408240)
-#define probe_at ((int32_t(GAMEAPI *)(const uint8_t *, const uint8_t *))0x40a8f0)
-#define direction_fit_at ((int32_t(GAMEAPI *)(int32_t *))0x407e90)
-#define look_or_keep_at ((void(GAMEAPI *)(const void *, const void *, void *, int32_t))0x40a940)
-#define spot_nearest_at ((void(GAMEAPI *)(const int32_t *, int32_t, uint8_t **, int32_t))0x40a570)
-#define zoom_for_at ((int32_t(GAMEAPI *)(const int32_t *, const int32_t *, uint32_t, int32_t))0x40add0)
-#define speed_zoom_at ((void(GAMEAPI *)(uint8_t *, uint8_t *))0x40b000)
-#define factorials_init_at ((void(GAMEAPI *)(void))0x40c940)
-#define points_scale_at ((void(GAMEAPI *)(uint8_t *, int32_t))0x40cad0)
-#define bezier_at ((void(GAMEAPI *)(const int32_t *, int32_t, int32_t *, int32_t))0x40c9e0)
-#define gte_rotate_at ((void(GAMEAPI *)(void))0x428090)
-#define normalise_at ((void(GAMEAPI *)(int32_t *))0x480c70)
-#define length_at ((int32_t(GAMEAPI *)(const int32_t *))0x480cd0)
-#define vec_div_at ((void(GAMEAPI *)(int32_t *, int32_t))0x486e90)
-#define side_axis_at ((void(GAMEAPI *)(int32_t *, const uint8_t *, int32_t))0x4081f0)
-#define matrix_look_at ((int32_t(GAMEAPI *)(const int32_t *, const int32_t *, void *))0x407220)
+#define find_trackside_at GCALL(0x40b310, camera_find_trackside) /* writes the spot as 32 bits */
+#define check_events_at GCALL(0x407fa0, camera_check_events)
+#define choose_shot_at(p, view) GCALL(0x40a9b0, camera_choose_shot)(p, (uint32_t)(view))
+#define isqrt_at GCALL(0x40d9d0, fix_isqrt)
+#define line_distance_at GCALL(0x40b180, point_line_distance)
+#define upside_down_at GCALL(0x408240, car_is_upside_down)
+#define probe_at GCALL(0x40a8f0, camera_probe)
+#define direction_fit_at GCALL(0x407e90, direction_fit)
+#define look_or_keep_at(from, to, m, view) GCALL(0x40a940, camera_look_or_keep)(from, to, (uint32_t *)(m), view)
+#define spot_nearest_at GCALL(0x40a570, camera_spot_nearest)
+#define zoom_for_at GCALL(0x40add0, camera_zoom_for)
+#define speed_zoom_at(slot, at) GCALL(0x40b000, camera_speed_zoom)(slot, (int32_t *)(at))
+#define factorials_init_at GCALL(0x40c940, factorials_init)
+#define points_scale_at GCALL(0x40cad0, points_scale_for_mode)
+#define bezier_at GCALL(0x40c9e0, bezier_point)
+#define gte_rotate_at GCALL(0x428090, gte_rotate)
+#define normalise_at GCALL(0x480c70, vec_normalise)
+#define length_at GCALL(0x480cd0, vec_length)
+#define vec_div_at GCALL(0x486e90, vec_div)
+#define side_axis_at GCALL(0x4081f0, body_side_axis)
+#define matrix_look_at(dir, up, m) GCALL(0x407220, matrix_look)(dir, up, (int16_t *)(m))
 
 #define CRT_FTOL 0x497a80
 #define CRT_POW 0x497cc9
@@ -80,6 +81,7 @@
 /* __ftol of the zoom float 0x6cce6c (fld dword; call __ftol). */
 static int32_t zoom_ftol(void)
 {
+#if defined(__i386__)
     int32_t r;
 
     __asm__ volatile("flds %[z]\n\t"
@@ -88,6 +90,11 @@ static int32_t zoom_ftol(void)
                      : [z] "m"(*(const float *)0x6cce6c), [ftol] "S"(CRT_FTOL)
                      : "ecx", "edx", "memory", "cc", X87_CLOBBERS);
     return r;
+#else
+    /* _ftol truncates to 64 bits (0x8000000000000000 when out of range, as
+     * cvttss2si); eax is the low half */
+    return (int32_t)(int64_t) * (const volatile float *)0x6cce6c;
+#endif
 }
 
 /* The float copy (0x6ccd1c, rows 0x10 apart, * 1/4096 from 0x4a3310) of
@@ -191,6 +198,7 @@ void GAMEAPI camera_place_offset(uint8_t *car, int32_t ox, int32_t oy, int32_t o
  * truncated, x from 25 by 0x4a3320. One entry, advancing x. */
 static int32_t curve_entry(uint32_t *x_and_tmp)
 {
+#if defined(__i386__)
     int32_t r;
 
     __asm__ volatile("flds (%[x])\n\t"
@@ -211,6 +219,23 @@ static int32_t curve_entry(uint32_t *x_and_tmp)
                      : [x] "D"(x_and_tmp), [pow] "b"(CRT_POW), [ftol] "S"(CRT_FTOL)
                      : "ecx", "edx", "memory", "cc", X87_CLOBBERS);
     return r;
+#else
+    /* The x87 runs at single precision: t = x * k rounded to float, pow(t,
+     * 2) (t * t is exact in double) rounded to float, then _ftol's
+     * truncation; x advances by the step in float. */
+    float x, k, t, step;
+    int32_t r;
+
+    memcpy(&x, &x_and_tmp[0], 4);
+    memcpy(&k, (const void *)0x4a3324, 4);
+    memcpy(&step, (const void *)0x4a3320, 4);
+    t = x * k;
+    memcpy(&x_and_tmp[1], &t, 4);
+    r = (int32_t)(int64_t)(float)((double)t * (double)t);
+    x = x + step;
+    memcpy(&x_and_tmp[0], &x, 4);
+    return r;
+#endif
 }
 
 /* 0x428e90: the analogue response curve: a stick value (0..255, 0x80
@@ -410,7 +435,7 @@ static void sweep_start(int32_t view, uint8_t **camera, uint8_t **car)
     uint16_t index = (uint16_t)G32(0x6c0a40 + view * 4);
     uint8_t *c;
     int32_t *start = VIEW_VEC(0x4b6248, view), *eased = VIEW_VEC(0x4b65c0, view), *up = VIEW_VEC(0x4b6550, view);
-    int32_t *point = (int32_t *)(0x4b6298 + view * 0x3c);
+    int32_t *point = (int32_t *)(uintptr_t)(0x4b6298 + view * 0x3c);
     const uint32_t *control;
 
     U16(VIEW(view), 0x36) = index;
@@ -455,7 +480,7 @@ static void sweep_step(int32_t view, uint8_t *v, uint8_t *cam, uint8_t *camera, 
     if (*grounded > 10) {
         int32_t tx = I32(car, 0x34) + I32(camera, 0x2c), ty = I32(car, 0x38) + I32(camera, 0x30);
         int32_t tz = I32(car, 0x3c) + I32(camera, 0x34), dx, dy, dz;
-        uint8_t *p = (uint8_t *)(0x4b6298 + view * 0x3c);
+        uint8_t *p = (uint8_t *)(uintptr_t)(0x4b6298 + view * 0x3c);
 
         eased[0] = ((tx - eased[0]) >> 4) + eased[0];
         eased[1] = ((ty - eased[1]) >> 4) + eased[1];
@@ -474,7 +499,7 @@ static void sweep_step(int32_t view, uint8_t *v, uint8_t *cam, uint8_t *camera, 
         up[2] = up[2] * 15 + I32(camera, 0x1c);
         normalise_at(up);
     }
-    bezier_at((const int32_t *)(0x4b6298 + view * 0x3c), 5, offset, *t);
+    bezier_at((const int32_t *)(uintptr_t)(0x4b6298 + view * 0x3c), 5, offset, *t);
     I32(cam, 4) = start[1] + offset[1];
     I32(cam, 8) = start[2] + offset[2];
     I32(cam, 0) = start[0] + offset[0];
@@ -507,7 +532,7 @@ static void node_shot(int32_t view, uint8_t *v, uint8_t *cam, const uint8_t *car
 
         while (PTR(node, 0x1b0))
             node = PTR(node, 0x1b0);
-        PTR(v, 0x140) = node;
+        U32(v, 0x140) = (uint32_t)(uintptr_t)node;
         do {
             uint8_t *p = PTR(node, 0x10);
 
@@ -590,7 +615,7 @@ static int32_t orbit_shot(int32_t view, uint8_t *v, uint8_t *cam, uint8_t *car, 
     U16(v, 0x2c) += U16(v, 0x2e);
     if (kind5)
         I32(v, 0x20) += 2;
-    return probe_at(PTR(G32(0x6bfba8), 0), cam) != 0;
+    return probe_at(PTR(GP(0x6bfba8), 0), cam) != 0;
 }
 
 /* Kinds 2 and 3: looking straight down from above the car (refused, -1,
@@ -631,7 +656,7 @@ static int32_t overhead_shot(int32_t view, uint8_t *v, uint8_t *cam, uint8_t *ca
         up[2] = 0x1000;
     }
     look_or_keep_at(dir, up, cam + 0x90, view);
-    return probe_at(PTR(G32(0x6bfba8), 0), cam) != 0;
+    return probe_at(PTR(GP(0x6bfba8), 0), cam) != 0;
 }
 
 /* 0x408360: the chase/replay camera director, once per viewport per step.
@@ -667,7 +692,7 @@ void GAMEAPI camera_director(int32_t view)
         int replaced = 0;
 
         if (kind == 0xb && event == 3) {
-            uint8_t *object = *(uint8_t **)(0x6b9ce0 + S16(v, 0x38) * 4);
+            uint8_t *object = GP(0x6b9ce0 + S16(v, 0x38) * 4);
             uint8_t *owner = PTR(object, 0x190);
 
             if (I32(object, 0x188) == 0x10 && I32(v, 0x20) == 0)
@@ -685,7 +710,7 @@ void GAMEAPI camera_director(int32_t view)
             int32_t e = I32(v, 0x3c);
 
             if (e == 4) {
-                uint8_t *object = *(uint8_t **)(0x5d1fc0 + S16(v, 0x38) * 4);
+                uint8_t *object = GP(0x5d1fc0 + S16(v, 0x38) * 4);
 
                 if (U8(object, 0x188) & 0x40) {
                     uint8_t *owner = PTR(object, 0x198);
@@ -783,7 +808,7 @@ void GAMEAPI camera_director(int32_t view)
                 look[2] = ((z - look[2]) >> 3) + look[2];
             }
             copy3((int32_t *)cam, look);
-            if (probe_at(PTR(G32(0x6bfba8), 0), cam) == 0) {
+            if (probe_at(PTR(GP(0x6bfba8), 0), cam) == 0) {
                 choose_shot_at(pos, view);
                 replaced = 1;
                 target = SLOT_CAR(*car_index);
@@ -811,7 +836,7 @@ void GAMEAPI camera_director(int32_t view)
                     pos[1] = shl16(ry - 0x28) + I32(car, 0x38);
                 copy_body(cam, car + 0x34);
                 copy3((int32_t *)cam, pos);
-                if (probe_at(PTR(G32(0x6bfba8), 0), cam) == 0) {
+                if (probe_at(PTR(GP(0x6bfba8), 0), cam) == 0) {
                     choose_shot_at(pos, view);
                     replaced = 1;
                     car = SLOT_CAR(*car_index);
@@ -868,7 +893,7 @@ void GAMEAPI camera_director(int32_t view)
         }
 
         case 0xb: {
-            uint8_t *object = *(uint8_t **)(0x6b9ce0 + S16(v, 0x38) * 4);
+            uint8_t *object = GP(0x6b9ce0 + S16(v, 0x38) * 4);
 
             event_shot(view, v, cam, car, object);
             if (I32(v, 0x20) > 0)
@@ -877,11 +902,11 @@ void GAMEAPI camera_director(int32_t view)
         }
 
         case 0xc:
-            event_shot(view, v, cam, car, *(uint8_t **)(0x6b9cc0 + S16(v, 0x38) * 4));
+            event_shot(view, v, cam, car, GP(0x6b9cc0 + S16(v, 0x38) * 4));
             goto done;
 
         case 0xd:
-            event_shot(view, v, cam, car, *(uint8_t **)(0x5d1fc0 + S16(v, 0x38) * 4));
+            event_shot(view, v, cam, car, GP(0x5d1fc0 + S16(v, 0x38) * 4));
             goto done;
 
         case 0xe:

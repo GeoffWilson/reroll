@@ -17,9 +17,10 @@
  * for the new renderer. */
 #include "../runtime.h"
 #include "physics.h"
+#include "gamefn.h"
 
-#define g_opts (*(uint8_t **)0x4b2198)
-#define g_race (*(uint8_t **)0x4b1960)
+#define g_opts GP(0x4b2198)
+#define g_race GP(0x4b1960)
 
 #define I32(p, off) (*(int32_t *)((p) + (off)))
 #define U32(p, off) (*(uint32_t *)((p) + (off)))
@@ -29,7 +30,7 @@
 /* Front end globals. */
 #define g_text_count (*(int32_t *)0x4cb550)  /* text items in use */
 #define g_texts ((uint8_t *)0x4c30e0)         /* 0x40 of 0x1a0 */
-#define g_entries (*(uint8_t **)0x4cb4b8)    /* menu entries, 0x730 each */
+#define g_entries GP(0x4cb4b8)    /* menu entries, 0x730 each */
 #define g_menu_slot (*(int32_t *)0x4af64c)   /* this menu's index in the options' memory */
 #define g_select_enabled (*(int32_t *)0x4cb590)
 #define g_selected (*(int8_t *)0x4cb588)
@@ -39,43 +40,30 @@
 #define g_entry_draw (*(uint32_t *)0x4ca300)
 #define g_menu_back (*(uint32_t *)0x4cb524)   /* the screen's back / continue handler */
 
-/* Still original. */
-typedef int32_t(GAMEAPI *entry_add_fn)(const char *table, int32_t index, int32_t a, int32_t b, int32_t c);
-typedef void(GAMEAPI *string_fn)(char *buf, int32_t size, const char *table, int32_t index);
-typedef void(GAMEAPI *text_set_fn)(uint8_t *text, const char *s);
-typedef void(GAMEAPI *name_fn)(char *buf, int32_t index);
-typedef int32_t(GAMEAPI *int_int_fn)(int32_t a);
-typedef void(GAMEAPI *menu_begin_fn)(const char *name, int32_t a);
-typedef void(GAMEAPI *name_edit_fn)(const uint8_t *field, int32_t size, int32_t a, uint32_t b);
-typedef void(GAMEAPI *name_entry_fn)(int32_t a, uint8_t *buf, int32_t size, int32_t b, int32_t c, uint32_t done,
-                                     int32_t d);
-typedef void(GAMEAPI *text_append_fn)(int32_t text, int32_t a, const char *s);
-typedef int32_t(GAMEAPI *option6_fn)(const char *t1, int32_t i1, const char *t2, int32_t i2, uint32_t action,
-                                     int32_t a);
-typedef int32_t(GAMEAPI *option8_fn)(int32_t a, int32_t b, int32_t c, int32_t d, const char *t1, int32_t i1,
-                                     const char *t2, int32_t i2);
-typedef void(GAMEAPI *void_fn)(void);
-typedef int32_t(GAMEAPI *submenu_fn)(uint32_t action, int32_t a);
-typedef int32_t(__cdecl *sprintf_fn)(char *buf, const char *format, ...);
+/* Called by address (gamefn.h; menu_add_* in physics.h, fe_z.c). */
+typedef int32_t(GAMEAPI *option_fn)(int32_t command, char *text); /* an option item's callback */
+#define OPTION_FN(a) ((option_fn)(uintptr_t)(uint32_t)(a))
 
-#define string_lookup ((string_fn)0x42e6d0)
-#define game_time ((int32_t(GAMEAPI *)(void))0x436935)
-#define entry_add ((entry_add_fn)0x448140)
-#define menu_string ((string_fn)0x4481a0)
-#define text_set ((text_set_fn)0x448260)
-#define car_name ((name_fn)0x448430)
-#define car_kind_name ((name_fn)0x4484a0)
-#define world_entry_action ((int_int_fn)0x448770)
-#define menu_begin ((menu_begin_fn)0x448a00)
-#define name_edit ((name_edit_fn)0x448ec0)
-#define name_entry ((name_entry_fn)0x449060)
-#define text_append ((text_append_fn)0x44a1c0)
-#define option_cycle ((option6_fn)0x44c6d0)
-#define option_toggle ((option8_fn)0x44c850)
-#define option_list ((option6_fn)0x44c9d0)
-#define worlds_prepare ((void_fn)0x44e560)
-#define submenu_open ((submenu_fn)0x44ffd0)
-#define fe_sprintf ((sprintf_fn)0x4979f0)
+#define string_lookup(buf, size, table, index) GCALL(0x42e6d0, text_line_get)((uint8_t *)(buf), size, table, index)
+#define game_time GCALL(0x436935, fe_time)
+#define entry_add GCALL(0x448140, menu_add_item)
+#define menu_string GCALL(0x4481a0, menu_text_get)
+#define text_set GCALL(0x448260, menu_item_label)
+#define car_name GCALL(0x448430, menu_player_title)
+#define car_kind_name GCALL(0x4484a0, driver_name)
+#define world_entry_action GCALL(0x448770, series_menu_kind)
+#define menu_begin GCALL(0x448a00, menu_set_title)
+#define name_edit(field, size, a, b) GCALL(0x448ec0, name_entry_text)((const char *)(field), size, a, (int32_t)(b))
+#define name_entry(a, buf, size, b, c, done, d) \
+    GCALL(0x449060, name_entry_setup)(a, (uint32_t)(uintptr_t)(buf), size, b, c, done, d)
+#define text_append GCALL(0x44a1c0, menu_text_slot_set)
+#define option_cycle(t1, i1, t2, i2, action, a) GCALL(0x44c6d0, menu_add_choice)(t1, i1, t2, i2, OPTION_FN(action), a)
+#define option_toggle(a, b, c, d, t1, i1, t2, i2) \
+    GCALL(0x44c850, menu_add_toggle)((const char *)(uintptr_t)(uint32_t)(a), b, OPTION_FN(c), d, t1, i1, t2, i2)
+#define option_list(t1, i1, t2, i2, action, a) GCALL(0x44c9d0, menu_add_slider)(t1, i1, t2, i2, OPTION_FN(action), a)
+#define worlds_prepare GCALL(0x44e560, series_validate)
+#define submenu_open GCALL(0x44ffd0, laps_menu)
+#define fe_sprintf GCALL(0x4979f0, msvc_sprintf)
 
 static void copy_string(char *dst, const char *src)
 {

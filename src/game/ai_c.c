@@ -11,30 +11,30 @@
 #include "../runtime.h"
 #include "body.h"
 #include "fixed.h"
+#include "gamefn.h"
 #include "physics.h"
 
-#define g_race (*(uint8_t **)0x4b1960)
+#define g_race (GP(0x4b1960))
 #define g_race_ticks (*(uint32_t *)0x6c0a50)
 #define g_ai_seed (*(uint32_t *)0x4a7148)
 #define g_ai_difficulty_mode (*(int32_t *)0x4a714c)
 #define g_difficulty (*(uint32_t *)0x6d0ed0)
-#define g_lines (*(uint8_t **)(*(uint8_t **)0x6c1e30 + 0x60))
+#define g_lines (GP(GP(0x6c1e30) + 0x60))
 #define g_time_warp (*(int32_t *)0x5d9b20)
 #define g_no_leader_missiles (*(uint8_t *)0x6b9d42)
 #define g_car_slots ((uint8_t *)0x6bfb80)
 #define CAR_SLOT_SIZE 0x274
 
 #define LINE(i) (g_lines + (uint16_t)(i) * 0xc)
-#define NODE(line, i) (*(uint8_t **)((line) + 8) + (uint16_t)(i) * 0x10)
+#define NODE(line, i) (GP((line) + 8) + (uint16_t)(i) * 0x10)
 #define S16(p, off) (*(int16_t *)((p) + (off)))
 #define SLOT(i) (g_car_slots + (i) * CAR_SLOT_SIZE)
-#define SLOT_CAR(slot) (*(uint8_t **)(slot))
+#define SLOT_CAR(slot) (GP(slot))
 #define SLOT_AT(slot) ((int32_t)((uint32_t)(slot)[0x2c] << 16) + I32(slot, 0x34))
 #define MY_INDEX(car) (*(const uint16_t *)((car) + 0x64e))
 #define BUTTONS 0x700
 
-typedef int32_t(GAMEAPI *slot_fn)(uint8_t *slot);
-#define slot_on_pad ((slot_fn)0x480030) /* group A */
+#define slot_on_pad GCALL(0x480030, ai_may_attack) /* group A */
 
 static uint32_t ai_random(void)
 {
@@ -108,8 +108,8 @@ void GAMEAPI scenery_position(const int32_t *entry, int16_t *out)
 {
     const int32_t *shape = (const int32_t *)(uintptr_t)entry[0];
     const uint8_t *object = (const uint8_t *)(uintptr_t)entry[1];
-    int32_t cos_yaw = *(const int16_t *)(0x4b2578 + object[0x199] * 2) >> 6;
-    int32_t sin_yaw = *(const int16_t *)(0x4b24f8 + object[0x199] * 2) >> 6;
+    int32_t cos_yaw = *(const int16_t *)(uintptr_t)(0x4b2578 + object[0x199] * 2) >> 6;
+    int32_t sin_yaw = *(const int16_t *)(uintptr_t)(0x4b24f8 + object[0x199] * 2) >> 6;
     int32_t x, z, a, b, c, d;
 
     out[0] = (int16_t)shape[0];
@@ -201,12 +201,12 @@ int32_t GAMEAPI ai_weapon3_ready(uint8_t *car, int32_t last_lap, int32_t time)
     uint32_t me = MY_INDEX(car), i, count;
     const uint8_t *slot = SLOT(me);
     uint8_t skill = car[0x6e1], laps = g_race[0x586], my_lap = slot[0x2c];
-    uint16_t threshold = *(const uint16_t *)(0x4a7c68 + (U32(car, 0x6e8) >> 12 & 7) * 2);
+    uint16_t threshold = *(const uint16_t *)(uintptr_t)(0x4a7c68 + (U32(car, 0x6e8) >> 12 & 7) * 2);
     const uint16_t *seen = (const uint16_t *)(car + 0x6ec);
     int32_t forward[3], dir[3], at, ahead_near = 0, behind_near = 0, fire_ahead = 0, fire_behind = 0;
 
     body_forward(forward, car);
-    line_direction(dir, (*(uint8_t **)(slot + 0x64))[5], *(const uint16_t *)(slot + 0x68));
+    line_direction(dir, (GP(slot + 0x64))[5], *(const uint16_t *)(slot + 0x68));
     if (vec_dot(dir, forward) < 0xd1b4)
         return 0;
     if (I32(g_race, 0x57c) >= 6 && (int16_t)time > 100)
@@ -279,7 +279,7 @@ int32_t GAMEAPI ai_weapon7_ready(uint8_t *car, int32_t last_lap, int32_t time)
         only_mask = 1;
     }
     body_forward(forward, car);
-    line_direction(dir, (*(uint8_t **)(slot + 0x64))[5], *(const uint16_t *)(slot + 0x68));
+    line_direction(dir, (GP(slot + 0x64))[5], *(const uint16_t *)(slot + 0x68));
     if (vec_dot(dir, forward) < 0xd1b4)
         return 0;
     if (I32(g_race, 0x57c) >= 6 && (int16_t)time > 100)
@@ -346,7 +346,7 @@ int32_t GAMEAPI ai_weapon1_ready(uint8_t *car, int32_t time)
     if (I32(slot, 0x8c) != 4)
         return 0;
     for (i = 0; i < 0x18; i++) {
-        const uint8_t *p = ((uint8_t **)0x6b9ce0)[i];
+        const uint8_t *p = GP(0x6b9ce0 + i * 4);
 
         if (I32(p, 0x184) != 1 || !I32(p, 0x188))
             continue;
@@ -360,13 +360,13 @@ int32_t GAMEAPI ai_weapon1_ready(uint8_t *car, int32_t time)
     }
     on_pad = slot_on_pad(slot);
     if (kind == 1) {
-        const uint8_t *rules = *(uint8_t **)0x6c1eb0;
+        const uint8_t *rules = GP(0x6c1eb0);
         int32_t j;
 
         for (j = rules[0xf6] - 1; j >= 0; j--) {
-            const uint8_t *e = *(uint8_t **)(rules + 0xf8) + j * 8;
+            const uint8_t *e = GP(rules + 0xf8) + j * 8;
 
-            if (e[4] != 1 || U32(e, 0) != *(const uint16_t *)(*(uint8_t **)(slot + 0x84) + 0x192))
+            if (e[4] != 1 || U32(e, 0) != *(const uint16_t *)(GP(slot + 0x84) + 0x192))
                 continue;
             if (e[5] == 1 && on_pad == 1)
                 return 0;
@@ -425,8 +425,8 @@ int32_t GAMEAPI ai_weapon2_ready(uint8_t *car, int32_t time)
     at = SLOT_AT(SLOT(me));
     body_forward(forward, car);
     for (i = 0; i < (int32_t)g_race[0x54d]; i++) {
-        const uint8_t *other_slot = SLOT(i), *line = *(uint8_t **)(other_slot + 0x64), *other;
-        int32_t threshold = *(const int32_t *)(0x4a7c18 + odds * 4), gap, dist, shift, aim[3], lead[3];
+        const uint8_t *other_slot = SLOT(i), *line = GP(other_slot + 0x64), *other;
+        int32_t threshold = *(const int32_t *)(uintptr_t)(0x4a7c18 + odds * 4), gap, dist, shift, aim[3], lead[3];
         uint32_t steps;
         uint16_t node;
         int16_t d[3];
@@ -487,20 +487,20 @@ int32_t GAMEAPI ai_weapon2_ready(uint8_t *car, int32_t time)
         return 0;
     {
         int32_t on_pad = slot_on_pad(SLOT(me)), count = *(int32_t *)0x5f72a4;
-        const int32_t *entry = *(int32_t **)(*(uint8_t **)0x6c1eb0 + 0xec);
+        const int32_t *entry = ((int32_t *)GP(GP(0x6c1eb0) + 0xec));
 
         forward[1] = 0;
         vec_set_length(forward, 0x10000);
         for (i = 0; i < count; i++, entry += 5) {
-            const uint8_t *rules = *(uint8_t **)0x6c1eb0;
+            const uint8_t *rules = GP(0x6c1eb0);
             uint32_t k = rules[0xf6];
-            const uint8_t *e = *(uint8_t **)(rules + 0xf8) + k * 8 - 8;
-            int32_t threshold = *(const int32_t *)(0x4a7bf8 + odds * 4), v[3];
+            const uint8_t *e = GP(rules + 0xf8) + k * 8 - 8;
+            int32_t threshold = *(const int32_t *)(uintptr_t)(0x4a7bf8 + odds * 4), v[3];
             const uint8_t *object = (const uint8_t *)(uintptr_t)entry[1];
             const uint8_t *shape = (const uint8_t *)(uintptr_t)entry[0];
             int16_t pos[3], rel[3];
 
-            if ((U32(*(uint8_t **)(object + 0x194), (U32(shape, 0xc) & 0xf) * 4) & 0xf000000) == 0x5000000)
+            if ((U32(GP(object + 0x194), (U32(shape, 0xc) & 0xf) * 4) & 0xf000000) == 0x5000000)
                 continue;
             scenery_position(entry, pos);
             rel[0] = (int16_t)(pos[0] - (I32(car, POSITION) >> 16));
@@ -525,8 +525,8 @@ int32_t GAMEAPI ai_weapon2_ready(uint8_t *car, int32_t time)
         }
     }
     for (i = 0; i < (int32_t) * (uint8_t *)0x4b5e54; i++) {
-        const uint8_t *target = *(uint8_t **)(*(uint8_t **)0x600664 + ((uint8_t *)0x6d0e00)[i] * 8);
-        int32_t threshold = *(const int32_t *)(0x4a7bd8 + odds * 4), d[3];
+        const uint8_t *target = GP(GP(0x600664) + ((uint8_t *)0x6d0e00)[i] * 8);
+        int32_t threshold = *(const int32_t *)(uintptr_t)(0x4a7bd8 + odds * 4), d[3];
 
         if (((int32_t *)0x6d0e40)[i] > 0x895440)
             continue;
@@ -557,7 +557,7 @@ static void node_direction(int32_t *out, const int16_t *node, const int32_t *a)
 int32_t GAMEAPI ai_weapon4_ready(uint8_t *car, int32_t last_laps)
 {
     const uint8_t *slot = SLOT(MY_INDEX(car)), *line;
-    uint8_t line_index = (*(uint8_t **)(slot + 0x64))[5], skill = car[0x6e1];
+    uint8_t line_index = (GP(slot + 0x64))[5], skill = car[0x6e1];
     uint16_t node = *(const uint16_t *)(slot + 0x68), next;
     uint32_t laps = g_race[0x586], my_lap = slot[0x2c];
     int32_t forward[3], dir[3], v[3], at[3], threshold;

@@ -7,11 +7,11 @@
 #include "body.h"
 #include "fixed.h"
 #include "physics.h"
+#include "gamefn.h"
 
-typedef void(GAMEAPI *car_fn)(uint8_t *car);
-#define car_wheel_dust ((car_fn)0x4219e0)
+#define car_wheel_dust GCALL(0x4219e0, car_wheel_dust)
 
-#define g_race (*(uint8_t **)0x4b1960)
+#define g_race GP(0x4b1960)
 #define g_car_slots ((uint8_t *)0x6bfb80)
 #define CAR_SLOT_SIZE 0x274
 
@@ -74,7 +74,7 @@ void GAMEAPI cars_wheel_forces(void)
     uint32_t i;
 
     for (i = 0; i < g_race[0x54d]; i++) {
-        uint8_t *car = *(uint8_t **)(g_car_slots + i * CAR_SLOT_SIZE);
+        uint8_t *car = GP(g_car_slots + i * CAR_SLOT_SIZE);
         int32_t push[3] = {0, 0, 0}, turn[3] = {0, 0, 0}, w;
 
         for (w = 0; w < 4; w++) {
@@ -102,5 +102,5 @@ void GAMEAPI cars_wheel_forces(void)
         I32(car, MOMENTUM + 8) += push[2];
     }
     for (i = 0; i < g_race[0x54d]; i++)
-        car_wheel_dust(*(uint8_t **)(g_car_slots + i * CAR_SLOT_SIZE));
+        car_wheel_dust(GP(g_car_slots + i * CAR_SLOT_SIZE));
 }

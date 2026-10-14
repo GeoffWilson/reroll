@@ -53,6 +53,12 @@
 #include "log.h"
 #include "runtime.h"
 
+/* game memory: 32-bit words and pointers */
+#define WS_U(a) (*(const uint32_t *)(uintptr_t)(a))
+#define WS_P(a) ((uint8_t *)(uintptr_t)WS_U(a))
+/* the track's sections: a table of 32-bit pointers */
+#define G_SECTION(i) WS_P(WS_U(0x6bfac0) + 4 * (uint32_t)(i))
+
 #define G_SCREEN_W (*(int32_t *)0x4acc38)
 #define G_SCREEN_H (*(int32_t *)0x4acc3c)
 #define G_CLIP_LEFT (*(float *)0x6ccd64)
@@ -158,7 +164,7 @@ static uint32_t extra_lists, extra_runs_total;
 
 static const uint8_t *visibility_entries(uint32_t offset)
 {
-    return *(const uint8_t **)0x6bfacc + offset * 2;
+    return WS_P(0x6bfacc) + offset * 2;
 }
 
 static const uint8_t *next_entry(const uint8_t *p)
@@ -218,7 +224,7 @@ static void add_section_gaps(void)
 
     for (i = 0; i < count; i++) {
         struct section_spans *ss = &sections[i];
-        const uint8_t *section = (*(const uint8_t ***)0x6bfac0)[ss->section];
+        const uint8_t *section = G_SECTION(ss->section);
         uint32_t rows, at = 0;
 
         if (!section || !ss->count)
@@ -315,10 +321,9 @@ static void add_edge_sections(uint32_t camera_offset)
 
 /* ---- the far track (longer draw distance) ---- */
 
-#define G_SECTIONS (*(uint8_t ***)0x6bfac0)
 #define G_SECTION_COUNT (*(uint32_t *)0x6bfad0)
-#define G_TRACK_ROWS (*(uint8_t **)0x6bfad4)
-#define G_TRACK_CELLS (*(uint8_t **)0x6bfaf8)
+#define G_TRACK_ROWS WS_P(0x6bfad4)
+#define G_TRACK_CELLS WS_P(0x6bfaf8)
 #define MAX_ROWS 0x800
 
 static const void *scanned; /* the PVS data the tables below were built from */
@@ -350,7 +355,7 @@ static void scan_list(uint32_t offset)
  * +4 four (s16 x, s16 y), +0x14 four u16 z). */
 static void row_centre(uint32_t section, uint32_t row, int32_t *c)
 {
-    const uint8_t *b = *(const uint8_t *const *)(G_SECTIONS[section] + 0x4c) + row * 0x1c;
+    const uint8_t *b = WS_P(G_SECTION(section) + 0x4c) + row * 0x1c;
     int k;
     c[0] = c[1] = c[2] = 0;
     for (k = 0; k < 4; k++) {
@@ -375,7 +380,7 @@ static int readable(const void *p, uint32_t len)
     uint32_t a = (uint32_t)(uintptr_t)p;
     if (a < 0x10000 || a + len < a || !VirtualQuery(p, &info, sizeof info) || info.state != MEM_COMMIT)
         return 0;
-    return a + len <= (uint32_t)info.base_address + info.region_size;
+    return a + len <= (uint32_t)(uintptr_t)info.base_address + (uint32_t)info.region_size;
 }
 
 static uint32_t check_levels(const uint8_t *section)
@@ -384,10 +389,10 @@ static uint32_t check_levels(const uint8_t *section)
     uint32_t rows = *(const uint32_t *)(section + 0xc), lod, ok = 1, row, k;
 
     for (lod = 2; lod <= 4; lod++) {
-        const uint8_t *quads = *(const uint8_t *const *)(section + 0x4c + 4 * lod);
+        const uint8_t *quads = ((const uint8_t *)(uintptr_t)*(const uint32_t *)(section + 0x4c + 4 * lod));
         uint32_t q, good = 1;
-        const uint32_t *steps = *(const uint32_t *const *)(section + 0x20 + 4 * lod);
-        if (!readable(steps, 4) || !readable(*(const void *const *)(section + 0x34 + 4 * lod), 4))
+        const uint32_t *steps = ((const uint32_t *)(uintptr_t)*(const uint32_t *)(section + 0x20 + 4 * lod));
+        if (!readable(steps, 4) || !readable(((const void *)(uintptr_t)*(const uint32_t *)(section + 0x34 + 4 * lod)), 4))
             continue;
         q = quads_per_row(section, lod);
         if (!q || q > 80 || !readable(quads, (rows >> (lod - 1)) * q * 8))
@@ -421,7 +426,7 @@ static void scan_track(void)
     memset(list_seen, 0, sizeof list_seen);
     for (z = 0; z < 256; z++) {
         const uint8_t *row = G_TRACK_ROWS + z * 0x10;
-        const uint16_t *cells = *(const uint16_t *const *)(row + 0xc);
+        const uint16_t *cells = ((const uint16_t *)(uintptr_t)*(const uint32_t *)(row + 0xc));
         uint32_t count = 0, n;
         if (!cells)
             continue;
@@ -447,7 +452,7 @@ static void scan_track(void)
         }
     }
     for (i = 0; i < G_SECTION_COUNT && i < MAX_SECTIONS; i++) {
-        const uint8_t *section = G_SECTIONS[i];
+        const uint8_t *section = G_SECTION(i);
         uint32_t n = *(const uint32_t *)(section + 0xc);
         rows += n;
         quads += n * *(const uint32_t *)(section + 8);
@@ -456,7 +461,7 @@ static void scan_track(void)
     }
     memset(extra_off, 0, sizeof extra_off);
     for (i = 0; i < G_SECTION_COUNT && i < MAX_SECTIONS; i++)
-        if ((lod_ok[i] = (uint8_t)check_levels(G_SECTIONS[i])) != 0xf)
+        if ((lod_ok[i] = (uint8_t)check_levels(G_SECTION(i))) != 0xf)
             log_printf("fartrack: section %u detail levels %x", i, lod_ok[i]);
     log_printf("fartrack: %u sections, %u rows (%u reached by %u lists), %u quads", G_SECTION_COUNT, rows, reached,
                lists, quads);
@@ -480,7 +485,7 @@ static void add_far_sections(void)
     float limit = far_distance * far_distance;
 
     for (i = 0; i < count && extra[0] < MAX_RUNS - 64; i++) {
-        const uint8_t *section = G_SECTIONS[i];
+        const uint8_t *section = G_SECTION(i);
         uint32_t rows, row = 0, run_lod = 0, run_first = 0;
 
         if (!section || find_section(i))
@@ -538,8 +543,8 @@ static uint8_t pool[POOL_SIZE];
 void widescreen_log_pools(void);
 void widescreen_log_pools(void)
 {
-    log_printf("leak: pool %x-%x; object buffers %x (+limit %x), %x (+limit %x)", (uint32_t)pool,
-               (uint32_t)pool + POOL_SIZE,
+    log_printf("leak: pool %x-%x; object buffers %x (+limit %x), %x (+limit %x)", (uint32_t)(uintptr_t)pool,
+               (uint32_t)(uintptr_t)pool + POOL_SIZE,
                *(uint32_t *)0x4beb84, *(uint32_t *)0x6c1e34, *(uint32_t *)0x6c1e1c, *(uint32_t *)0x6c1e38);
 }
 /* One pool for the whole frame, emptied once it has been presented: the
@@ -610,7 +615,7 @@ static void detach_table(uint32_t *ot, const uint32_t *saved)
         if (word == saved[i])
             continue;
         while (word != saved[i] && !(word & 0x80000000u)) {
-            const uint8_t *packet = (const uint8_t *)word;
+            const uint8_t *packet = (const uint8_t *)(uintptr_t)word;
             uint32_t size = packet_bytes(packet), next = *(const uint32_t *)packet;
             uint8_t *copy;
             if (seen_before(word) || --guard <= 0) {
@@ -624,7 +629,7 @@ static void detach_table(uint32_t *ot, const uint32_t *saved)
             copy = pool + pool_used;
             pool_used += (size + 3) & ~3u;
             memcpy(copy, packet, size);
-            *link = (uint32_t)copy;
+            *link = (uint32_t)(uintptr_t)copy;
             link = (uint32_t *)copy;
             word = next;
         }
@@ -657,7 +662,7 @@ static uint32_t quads_per_row(const uint8_t *section, uint32_t lod)
 {
     if (lod == 1)
         return *(const uint32_t *)(section + 8);
-    return (**(const uint32_t *const *)(section + 0x20 + 4 * lod) & 0xffff) - 1;
+    return (*((const uint32_t *)(uintptr_t)*(const uint32_t *)(section + 0x20 + 4 * lod)) & 0xffff) - 1;
 }
 
 /* Whether lod row `row` (in that level's rows) uses a record already used;
@@ -665,8 +670,8 @@ static uint32_t quads_per_row(const uint8_t *section, uint32_t lod)
 static int row_records(const uint8_t *section, uint32_t lod, uint32_t row, int mark)
 {
     uint32_t q = quads_per_row(section, lod), k, first = row * q;
-    const uint8_t *quads = *(const uint8_t *const *)(section + 0x4c + 4 * lod);
-    const uint32_t *flags = lod > 1 ? *(const uint32_t *const *)(section + 0x34 + 4 * lod) : 0;
+    const uint8_t *quads = ((const uint8_t *)(uintptr_t)*(const uint32_t *)(section + 0x4c + 4 * lod));
+    const uint32_t *flags = lod > 1 ? ((const uint32_t *)(uintptr_t)*(const uint32_t *)(section + 0x34 + 4 * lod)) : 0;
 
     for (k = first; k < first + q; k++) {
         uint32_t record = *(const uint16_t *)(quads + k * 8), overlay, r;
@@ -734,7 +739,7 @@ static void draw_extra(void)
     for (i = 0; i < extra[0]; i++) {
         uint16_t *run = (uint16_t *)&extra[1 + 2 * i];
         uint32_t lod, base, start = 0, r;
-        const uint8_t *section = G_SECTIONS[run[0]];
+        const uint8_t *section = G_SECTION(run[0]);
 
         if (extra_off[run[0]])
             continue;
@@ -772,8 +777,8 @@ static uint32_t *visibility(void *cell)
 {
     if ((extra_width() > 0.0f || far_distance > 0.0f) && cell) {
         uint32_t offset = *(uint32_t *)((uint8_t *)cell + 4) & 0xffff;
-        if (scanned != *(const void **)0x6bfacc) {
-            scanned = *(const void **)0x6bfacc;
+        if (scanned != WS_P(0x6bfacc)) {
+            scanned = WS_P(0x6bfacc);
             scan_track();
         }
         extra[0] = 0;
@@ -785,7 +790,7 @@ static uint32_t *visibility(void *cell)
             add_far_sections();
         extra_runs_total += extra[0];
         if (extra[0]) {
-            uint32_t *previous = *(uint32_t **)(G_VIEW == 0x6cd4a0 ? 0x5d9454 : 0x5d9458);
+            uint32_t *previous = (uint32_t *)WS_P(G_VIEW == 0x6cd4a0 ? 0x5d9454 : 0x5d9458);
             draw_extra();
             /* the extra sections overwrote shared records' texture words:
              * the original's list (next) must treat all its rows as newly
@@ -933,7 +938,7 @@ static int list_leaks(void)
             return 1;
         if (a < 0x10000)
             return 0;
-        word = *(const uint32_t *)a;
+        word = *(const uint32_t *)(uintptr_t)a;
     }
     return 0;
 }
@@ -953,7 +958,7 @@ static void leak_report(void)
         if (a < 0x10000)
             return;
         hist[n++ & 63] = a;
-        word = *(const uint32_t *)a;
+        word = *(const uint32_t *)(uintptr_t)a;
     }
     if (reports++ >= 20 || !(word & 0x7fffffffu))
         return;
@@ -961,18 +966,18 @@ static void leak_report(void)
         uint32_t base0 = *(uint32_t *)0x4beb84, lim0 = *(uint32_t *)0x6c1e34, base1 = *(uint32_t *)0x6c1e1c,
                  lim1 = *(uint32_t *)0x6c1e38, k;
         uint32_t first = n;
-        while (first > 0 && n - first < 63 && hist[(first - 1) & 63] >= (uint32_t)pool &&
-               hist[(first - 1) & 63] < (uint32_t)pool + POOL_SIZE)
+        while (first > 0 && n - first < 63 && hist[(first - 1) & 63] >= (uint32_t)(uintptr_t)pool &&
+               hist[(first - 1) & 63] < (uint32_t)(uintptr_t)pool + POOL_SIZE)
             first--;
         log_printf("leak: %u far copies at the end", n - first);
         for (k = first > 4 ? first - 4 : 0; k < first + 1 && k < n; k++) {
             uint32_t a = hist[k & 63];
-            const char *where = a >= (uint32_t)pool && a < (uint32_t)pool + POOL_SIZE ? "far copy"
+            const char *where = a >= (uint32_t)(uintptr_t)pool && a < (uint32_t)(uintptr_t)pool + POOL_SIZE ? "far copy"
                                 : a >= base0 && a < lim0                               ? "shared buffer 0"
                                 : a >= base1 && a < lim1                               ? "shared buffer 1"
                                 : a >= 0x6cdd80 && a < 0x6ce580                        ? "list entry"
                                                                                        : "elsewhere";
-            log_printf("leak:   %x code %x (%s%s)", a, a >= 0x10000 ? (uint32_t)((const uint8_t *)a)[7] : 0u, where,
+            log_printf("leak:   %x code %x (%s%s)", a, a >= 0x10000 ? (uint32_t)((const uint8_t *)(uintptr_t)a)[7] : 0u, where,
                        (where[0] == 's' && a < far_buffer_end) ? ", below the far call's end" : "");
         }
         log_printf("leak: -> world entry %x; shared buffers %x-%x / %x-%x, far call ended at %x, view %x",
@@ -984,8 +989,8 @@ static uint32_t leak_counts[4];
 static void objects(void)
 {
     uint32_t n = 0, i, own;
-    const uint8_t *cells = *(const uint8_t **)0x6bfaf8;
-    const uint16_t *cell_list = *(const uint16_t **)0x6bfae4;
+    const uint8_t *cells = WS_P(0x6bfaf8);
+    const uint16_t *cell_list = (const uint16_t *)WS_P(0x6bfae4);
 
     if (far_diff < 0)
         far_diff = getenv("REROLL_DEBUG_FARDIFF") != 0;
@@ -1014,7 +1019,7 @@ static void objects(void)
     for (i = 0; i < extra[0] && n < STATIC_MAX; i++) {
         const uint16_t *run = (const uint16_t *)&extra[1 + 2 * i];
         uint32_t step = 1u << (run[3] - 1), row = run[1], end = run[1] + ((uint32_t)run[2] << (run[3] - 1));
-        const uint16_t *row_cells = *(const uint16_t *const *)(G_SECTIONS[run[0]] + 0x48);
+        const uint16_t *row_cells = (const uint16_t *)WS_P(G_SECTION(run[0]) + 0x48);
         for (; row < end && n < STATIC_MAX; row += step) {
             uint32_t c, c_end = row_cells[row + step];
             for (c = row_cells[row]; c < c_end && n < STATIC_MAX; c++) {
@@ -1096,6 +1101,11 @@ static const struct hook objects_hook = {"far_objects", 0x459b20, objects,
  * *0x6ccd74 with st(0) = H / z from the transform, sets its outcodes and
  * pops st(0) into 0x4bdf00. The original's instructions, with each integer
  * compare of a coordinate with a clip bound made an x87 compare. */
+/* C on x86-64; on i386 the asm below, with the same arguments (h in st(0) for
+ * 0x426b00) */
+void wide_project_c(float h); /* 0x426b00: projects *0x6ccd74 with h = H / z */
+void wide_outcodes_c(uint8_t *r); /* 0x426b80: a projected record's outcodes */
+#if defined(__i386__)
 void wide_project(void);
 __asm__(".text\n"
         ".globl " ASM_SYM("wide_project") "\n"
@@ -1189,6 +1199,51 @@ __asm__(".text\n"
         "    jnz 6f\n"
         "    orl $8, (%edx)\n"
         "6:  ret\n");
+#else
+/* x86-64: the same in C. The game runs the x87 at single precision, so each
+ * product and sum rounds to float as here; an x87 compare's C0 also covers
+ * unordered, hence the !(a >= b) forms. */
+#define CLIP_F(a) (*(const float *)(uintptr_t)(a))
+static uint32_t xy_outcodes(const uint8_t *r, uint32_t c)
+{
+    float x = *(const float *)(r + 8), y = *(const float *)(r + 0xc);
+    if (!(x >= CLIP_F(0x6ccd64)))
+        c |= 1;
+    else if (x >= CLIP_F(0x6ccd68))
+        c |= 2;
+    if (!(y >= CLIP_F(0x6ccd6c)))
+        return c | 4; /* bottom not checked */
+    if (y >= CLIP_F(0x6ccd70))
+        c |= 8;
+    return c;
+}
+
+void wide_project_c(float h)
+{
+    uint8_t *r = (uint8_t *)(uintptr_t)*(const uint32_t *)0x6ccd74;
+    if (!(*(uint32_t *)r & 0x10)) {
+        *(float *)(r + 8) = *(const float *)(r + 0x10) * h + CLIP_F(0x6ccd5c);
+        *(float *)(r + 0xc) = *(const float *)(r + 0x14) * h + CLIP_F(0x6ccd60);
+        *(uint32_t *)r = xy_outcodes(r, *(uint32_t *)r);
+    }
+    *(float *)0x4bdf00 = h;
+}
+
+void wide_outcodes_c(uint8_t *r)
+{
+    int32_t z = *(const int32_t *)(r + 4);
+    uint32_t c = 0;
+    if (z >= *(const int32_t *)0x6ccd08)
+        c |= 0x20;
+    if (z < *(const int32_t *)0x6ccd04) {
+        *(uint32_t *)r = c | 0x10;
+        return;
+    }
+    *(uint32_t *)r = xy_outcodes(r, c);
+}
+#define wide_project wide_project_c
+#define wide_outcodes wide_outcodes_c
+#endif
 
 static const struct hook project_hook = {"wide_project", 0x426b00, wide_project,
                                          {0x8b, 0x15, 0x74, 0xcd, 0x6c, 0x00, 0xf7, 0x02}};
@@ -1221,9 +1276,9 @@ static const struct hook viewport_hook = {"wide_viewport", 0x41f2d0, viewport,
 
 /* ---- screen-space overlays (docs/renderer/plan.md, step 7) ---- */
 
-#define G_RACE (*(uint8_t **)0x4b1960)
+#define G_RACE WS_P(0x4b1960)
 #define RACE_WIDTH(race) (*(uint16_t *)((race) + 0xa82)) /* the width overlays are laid out in */
-#define FLAKE(i) (*(uint8_t **)0x4d5898 + (i) * 0xa0)  /* +0x7c x, +0x80 y (floats, screen pixels) */
+#define FLAKE(i) (WS_P(0x4d5898) + (i) * 0xa0)  /* +0x7c x, +0x80 y (floats, screen pixels) */
 
 /* 0x485140(i): (re)spawns screen flake / lens drop i inside the 4:3 width;
  * its x is spread over the wide screen (the mover only drifts it outwards
@@ -1233,7 +1288,7 @@ static void GAMEAPI flake_spawn(int32_t i)
     float extra = extra_width(), w, *x;
 
     flake_spawn_body(i);
-    if (extra <= 0.0f || !G_RACE || !*(uint8_t **)0x4d5898 || i < 0 || i >= 32)
+    if (extra <= 0.0f || !G_RACE || !WS_U(0x4d5898) || i < 0 || i >= 32)
         return;
     w = (float)RACE_WIDTH(G_RACE);
     if (w <= 0.0f)
@@ -1252,12 +1307,12 @@ static void GAMEAPI sparkle(uint32_t camera)
     float wide = G_CLIP_RIGHT - G_CLIP_LEFT;
 
     if (!race || extra_width() <= 0.0f || wide <= (float)RACE_WIDTH(race) || wide > 8192.0f) {
-        sparkle_body((uint8_t *)camera);
+        sparkle_body((uint8_t *)(uintptr_t)camera);
         return;
     }
     width = RACE_WIDTH(race);
     RACE_WIDTH(race) = (uint16_t)wide;
-    sparkle_body((uint8_t *)camera);
+    sparkle_body((uint8_t *)(uintptr_t)camera);
     RACE_WIDTH(race) = width;
 }
 

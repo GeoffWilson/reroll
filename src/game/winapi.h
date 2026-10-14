@@ -40,7 +40,7 @@ typedef int32_t LRESULT;
 #endif
 
 /* DDRAW.dll */
-HRESULT W32API DirectDrawCreate(const void *guid, void **out, void *outer);
+HRESULT W32API DirectDrawCreate(const void *guid, uint32_t *out, void *outer);
 HRESULT W32API DirectDrawEnumerateA(void *callback, void *ctx);
 
 /* KERNEL32.dll */
@@ -104,16 +104,16 @@ BOOL W32API CreateDirectoryA(const char *name, void *security);
 void *W32API VirtualAlloc(void *address, DWORD size, DWORD type, DWORD prot);
 HANDLE W32API CreateThread(void *security, DWORD stack, void *start, void *param, DWORD flags, DWORD *id);
 LONG W32API InterlockedExchange(LONG *p, LONG v);
-void W32API DeleteCriticalSection(void **cs);
-void W32API InitializeCriticalSection(void **cs);
+void W32API DeleteCriticalSection(uint32_t *cs);
+void W32API InitializeCriticalSection(uint32_t *cs);
 BOOL W32API VirtualFree(void *address, DWORD size, DWORD type);
 HANDLE W32API HeapCreate(DWORD options, DWORD initial, DWORD maximum);
 BOOL W32API HeapDestroy(HANDLE heap);
 BOOL W32API GetStringTypeW(DWORD type, const WCHAR *in, int32_t n, WORD *out);
 BOOL W32API GetStringTypeA(DWORD locale, DWORD type, const char *in, int32_t n, WORD *out);
 int32_t W32API MultiByteToWideChar(UINT page, DWORD flags, const char *in, int32_t in_len, WCHAR *out, int32_t out_len);
-void W32API LeaveCriticalSection(void **cs);
-void W32API EnterCriticalSection(void **cs);
+void W32API LeaveCriticalSection(uint32_t *cs);
+void W32API EnterCriticalSection(uint32_t *cs);
 void *W32API GetProcAddress(HANDLE module, const char *name);
 void W32API GetSystemTimeAsFileTime(uint64_t *ft);
 DWORD W32API GetVersion(void);
@@ -131,7 +131,7 @@ LONG W32API InterlockedIncrement(LONG *p);
 void W32API ExitThread(DWORD code);
 BOOL W32API GetExitCodeThread(HANDLE h, DWORD *code);
 DWORD W32API GetCurrentDirectoryA(DWORD size, char *buf);
-DWORD W32API GetFullPathNameA(const char *name, DWORD size, char *buf, char **file_part);
+DWORD W32API GetFullPathNameA(const char *name, DWORD size, char *buf, uint32_t *file_part);
 BOOL W32API HeapFree(HANDLE heap, DWORD flags, void *p);
 void *W32API HeapAlloc(HANDLE heap, DWORD flags, DWORD size);
 LONG W32API InterlockedDecrement(LONG *p);
@@ -186,7 +186,7 @@ LONG W32API RegUnLoadKeyA(DWORD key, const char *sub);
 
 /* ole32.dll */
 void W32API CoUninitialize(void);
-LONG W32API CoCreateInstance(const void *clsid, void *outer, DWORD context, const void *iid, void **out);
+LONG W32API CoCreateInstance(const void *clsid, void *outer, DWORD context, const void *iid, uint32_t *out);
 LONG W32API CoInitialize(void *reserved);
 
 /* WINMM.dll */
@@ -211,10 +211,10 @@ UINT W32API mixerGetLineControlsA(void *mixer, void *controls, DWORD flags);
 UINT W32API mixerGetControlDetailsA(void *mixer, void *details, DWORD flags);
 
 /* DINPUT.dll */
-HRESULT W32API DirectInputCreateA(void *instance, DWORD version, void **out, void *outer);
+HRESULT W32API DirectInputCreateA(void *instance, DWORD version, uint32_t *out, void *outer);
 
 /* DPLAYX.dll */
-LONG W32API DirectPlayLobbyCreateA(void *guid, void **out, void *outer, void *data, DWORD size);
+LONG W32API DirectPlayLobbyCreateA(void *guid, uint32_t *out, void *outer, void *data, DWORD size);
 
 /* QMIXER.dll */
 DWORD W32API QSWaveMixStopProfile(DWORD session, DWORD *stats, DWORD size);
@@ -235,16 +235,16 @@ DWORD W32API QSWaveMixRestartChannel(DWORD session, DWORD channel, DWORD flags);
 void *W32API QSWaveMixInitEx(void *config);
 void *W32API QSWaveMixOpenWaveEx(DWORD session, const DWORD *params, DWORD flags);
 DWORD W32API QSWaveMixOpenChannel(DWORD session, DWORD channel, DWORD flags);
-DWORD W32API QSWaveMixGetDirectSoundBuffer(DWORD session, DWORD channel, void **out);
+DWORD W32API QSWaveMixGetDirectSoundBuffer(DWORD session, DWORD channel, uint32_t *out);
 DWORD W32API QSWaveMixGetChannelParams(DWORD session, DWORD channel, DWORD *params);
 DWORD W32API QSWaveMixSetListenerRolloff(DWORD session, DWORD value, DWORD flags);
-DWORD W32API QSWaveMixGetDirectSound(DWORD session, void **out);
+DWORD W32API QSWaveMixGetDirectSound(DWORD session, uint32_t *out);
 DWORD W32API QSWaveMixActivate(DWORD session, DWORD on);
 DWORD W32API QSWaveMixCloseSession(DWORD session);
 DWORD W32API QSWaveMixFreeWave(DWORD session, void *w);
 
 /* DSOUND.dll */
-LONG W32API DirectSoundCreate(const void *guid, void **out, void *outer);
+LONG W32API DirectSoundCreate(const void *guid, uint32_t *out, void *outer);
 
 #ifndef REROLL_NATIVE
 

@@ -62,7 +62,7 @@ static void write_maps(void)
 
 static int is_call_return(uint32_t v)
 {
-    const uint8_t *c = (const uint8_t *)v;
+    const uint8_t *c = (const uint8_t *)(uintptr_t)v;
     return c[-5] == 0xe8 || c[-6] == 0xff || c[-2] == 0xff || c[-3] == 0xff;
 }
 
@@ -84,7 +84,7 @@ static void take(const uint8_t *body)
 {
     uint64_t ip, time, size;
     const uint32_t *stack;
-    uint32_t own_lo = (uint32_t)_init, own_hi = (uint32_t)_fini, i, n;
+    uint32_t own_lo = (uint32_t)(uintptr_t)_init, own_hi = (uint32_t)(uintptr_t)_fini, i, n;
     struct sample s = {0, 0, 0, 0};
     memcpy(&ip, body, 8);
     memcpy(&time, body + 8, 8);

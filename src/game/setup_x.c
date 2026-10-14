@@ -27,11 +27,12 @@
  * reading of ROOTNAME.TXT (0x465550), the arena allocator (0x476bc0,
  * 0x476c00) and everything owned by other groups, called by address. */
 #include "../runtime.h"
+#include "gamefn.h"
 #include "physics.h"
 
-#define g_race (*(uint8_t **)0x4b1960)
-#define g_track (*(uint8_t **)0x6c1e30)
-#define g_track_info (*(uint8_t **)0x6c1eb0)
+#define g_race (GP(0x4b1960))
+#define g_track (GP(0x6c1e30))
+#define g_track_info (GP(0x6c1eb0))
 #define g_car_slots ((uint8_t *)0x6bfb80)
 #define CAR_SLOT_SIZE 0x274
 #define g_ai_seed (*(uint32_t *)0x4a7148)
@@ -39,41 +40,32 @@
 #define g_difficulty (*(uint32_t *)0x6d0ed0)
 #define g_ai_started (*(uint8_t *)0x4b5e4c)
 #define g_rivals ((uint8_t *)0x6cf658)       /* per car: the player it races, or 0xff */
-#define g_skill_table (*(const uint8_t **)0x6cf654)
+#define g_skill_table (*(uint32_t *)0x6cf654) /* a pointer */
 
 #define I32(p, off) (*(int32_t *)((p) + (off)))
 #define U32(p, off) (*(uint32_t *)((p) + (off)))
 #define S16(p, off) (*(int16_t *)((p) + (off)))
 #define U16(p, off) (*(uint16_t *)((p) + (off)))
-#define PTR(p, off) (*(uint8_t **)((p) + (off)))
+#define PTR(p, off) GP((p) + (off))
+#define PTR_SET(p, off, v) (U32(p, off) = (uint32_t)(uintptr_t)(v))
 
 /* Not ours. */
-typedef void(GAMEAPI *slot_fn)(uint8_t *slot);
-typedef void(GAMEAPI *replan_fn)(uint8_t *car, int32_t refresh);
-typedef uint8_t *(GAMEAPI *object_new_fn)(int32_t a, int32_t kind, int32_t size, int32_t d);
-typedef void(GAMEAPI *path_start_fn)(uint8_t *body, int32_t path, uint32_t spot);
-typedef uint8_t *(GAMEAPI *take_fn)(int32_t size);
-typedef void(GAMEAPI *header_fn)(uint8_t *body, int32_t kind);
-typedef void(GAMEAPI *prim_flag_fn)(uint8_t *prim, int32_t on);
-typedef void(GAMEAPI *prim_init_fn)(uint8_t *prim, int32_t on);
-typedef void(GAMEAPI *voice_fn)(uint32_t which);
-typedef void(GAMEAPI *fade_fn)(uint32_t on);
-typedef int32_t(GAMEAPI *font_load_fn)(const char *name, int32_t width, uint8_t *font, int32_t row, int32_t rows,
-                                       int32_t count, int32_t keep, int32_t again);
-typedef void(GAMEAPI *free_fn)(uint8_t *block);
-#define rejoin_plan ((slot_fn)0x47fbb0)
-#define ai_plan ((replan_fn)0x4105e0)
-#define object_new ((object_new_fn)0x460ba0)
-#define path_start ((path_start_fn)0x462e30)
-#define pool_take ((take_fn)0x460af0)
-#define heap_take ((take_fn)0x4445e0)
-#define header_init ((header_fn)0x460b20)
-#define prim_flag ((prim_flag_fn)0x4270e0)
-#define glow_prim_init ((prim_init_fn)0x42a9a0)
-#define voice_slot_set ((voice_fn)0x472130)
-#define fade_set ((fade_fn)0x40afb0)
-#define font_load ((font_load_fn)0x4432d0)
-#define block_free ((free_fn)0x476b40)
+#define rejoin_plan GCALL(0x47fbb0, ai_rejoin_plan)
+#define ai_plan GCALL(0x4105e0, ai_replan)
+#define object_new GCALL(0x460ba0, object_create)
+#define path_start GCALL(0x462e30, body_path_start)
+#define pool_take GCALL(0x460af0, link_pool_take)
+#define heap_take GCALL(0x4445e0, kr_malloc)
+#define header_init GCALL(0x460b20, grid_link_init)
+#define prim_flag GCALL(0x4270e0, prim_flag2_set)
+/* flash_packet_init (0x42a9a0) takes the packet alone; the original
+ * pushes a 1 as well, which it does not read. */
+typedef void(GAMEAPI *glow_prim_init_fn)(uint8_t *prim, int32_t on);
+#define glow_prim_init ((glow_prim_init_fn)(uintptr_t)0x42a9a0)
+#define voice_slot_set GCALL(0x472130, voice_slot_reset)
+#define fade_set GCALL(0x40afb0, race_end_fade_set)
+#define font_load GCALL(0x4432d0, glyph_sheet_pack)
+#define block_free GCALL(0x476b40, global_block_free)
 
 /* --- AI --- */
 
@@ -115,7 +107,7 @@ void GAMEAPI ai_bodies_tall_faces(void)
 {
     uint32_t n = *(uint32_t *)0x4b5f98;
     uint32_t *count = (uint32_t *)0x4b5fa4;
-    uint8_t **list = (uint8_t **)0x4b5ea8;
+    uint32_t *list = (uint32_t *)0x4b5ea8; /* pointers */
     uint8_t *rec = (uint8_t *)0x6d0a80;
 
     *count = 0;
@@ -125,7 +117,7 @@ void GAMEAPI ai_bodies_tall_faces(void)
         uint32_t k = body[0x10d], found = 0, f;
         int32_t top = -0xffffff;
 
-        PTR(rec, 8) = (uint8_t *)&list[*count];
+        PTR_SET(rec, 8, &list[*count]);
         if (k) {
             const int16_t *y = (const int16_t *)(verts + 2);
 
@@ -151,7 +143,7 @@ void GAMEAPI ai_bodies_tall_faces(void)
                     continue;
                 tall:
                     if (*count < 0x3c) {
-                        list[*count] = face;
+                        list[*count] = (uint32_t)(uintptr_t)face;
                         found++;
                         (*count)++;
                     }
@@ -220,10 +212,10 @@ static uint32_t field_raise(uint32_t x, int shift, uint32_t by)
  * eased in difficulty mode 0 and toughened in mode 2. */
 void GAMEAPI ai_skill_init(uint8_t *car)
 {
-    const uint32_t *skills = (const uint32_t *)(0x4a7b88 + g_race[U16(car, 0x64e) + 0x1c] * 8);
+    const uint32_t *skills = (const uint32_t *)(uintptr_t)(0x4a7b88 + g_race[U16(car, 0x64e) + 0x1c] * 8);
     uint32_t x;
 
-    g_skill_table = (const uint8_t *)(g_ai_difficulty_mode ? 0x4a7c60 : 0x4a7c58);
+    g_skill_table = g_ai_difficulty_mode ? 0x4a7c60 : 0x4a7c58;
     U32(car, 0x6e4) = (U32(car, 0x6e4) & ~0x3fffffffu) | (skills[0] & 0x3fffffff);
     U32(car, 0x6e8) = (U32(car, 0x6e8) & ~0xffffffu) | (skills[1] & 0xffffff);
     if (g_ai_difficulty_mode == 0) {
@@ -321,7 +313,7 @@ void GAMEAPI ai_car_race_start(uint8_t *slot)
 /* --- the track's fixed lights --- */
 
 #define g_lights ((uint8_t *)0x5d8000) /* 0x40 bytes each */
-#define g_light_grid ((uint32_t **)0x5d7de0) /* by section: rows of 8 light keys */
+#define g_light_grid(section) ((uint32_t *)GP(0x5d7de0 + (section) * 4)) /* by section: rows of 8 light keys */
 
 /* 0x441000: a light's cells (up to 4 words: section, first and last row
  * <<4 in bits 8..19 and 20..31 (low 4 bits: column)) are stored at +0x14 and
@@ -346,7 +338,7 @@ void GAMEAPI light_cells_add(uint32_t index, const uint32_t *cells)
         first = (w >> 8 & 0xfff) >> 4;
         last = (w >> 20 & 0xfff) >> 4;
         if (first <= last) {
-            uint32_t *row = g_light_grid[w & 0xff] + first * 8;
+            uint32_t *row = g_light_grid(w & 0xff) + first * 8;
             uint32_t rows = last - first + 1;
 
             do {
@@ -379,7 +371,7 @@ void GAMEAPI light_set(uint32_t index, const int32_t *pos, const uint32_t *colou
     U32(light, 0x28) = shape[0];
     U16(light, 0x2c) = ((const uint16_t *)shape)[2];
     U16(light, 0x2e) = ((const uint16_t *)shape)[3];
-    PTR(light, 0x30) = object;
+    PTR_SET(light, 0x30, object);
     if (object) {
         I32(object, 0x34) = pos[0];
         I32(object, 0x38) = pos[1];
@@ -396,7 +388,7 @@ void GAMEAPI light_set(uint32_t index, const int32_t *pos, const uint32_t *colou
  * light with a path is carried by a new object following it. */
 void GAMEAPI track_lights_init(void)
 {
-    uint8_t *rec = *(uint8_t **)0x6bfaec;
+    uint8_t *rec = GP(0x6bfaec);
     uint32_t i;
 
     for (i = 1; i <= *(uint32_t *)0x6bfae8; i++, rec += 0x20) {
@@ -428,9 +420,9 @@ void GAMEAPI track_lights_init(void)
         if (kind) {
             uint16_t first;
 
-            shapes = *(uint8_t **)0x6bfb2c;
+            shapes = GP(0x6bfb2c);
             first = U16(shapes, kind * 2);
-            shape[0] = (uint32_t)(shapes + first);
+            shape[0] = (uint32_t)(uintptr_t)(shapes + first);
             shape[1] = (uint32_t)(uint16_t)(U16(shapes, kind * 2 + 2) - first) >> 1 << 16;
         } else {
             shape[0] = 0;
@@ -451,7 +443,7 @@ void GAMEAPI pieces_init(void)
     uint8_t *piece = pool_take(0x10000);
     int32_t n, i;
 
-    *(uint8_t **)0x6b983c = piece;
+    *(uint32_t *)0x6b983c = (uint32_t)(uintptr_t)piece;
     for (n = 0x200; n; n--, piece += 0x80) {
         uint8_t *prim = piece + 0x10;
         int k;
@@ -470,10 +462,10 @@ void GAMEAPI pieces_init(void)
             prim_flag(prim, 1);
         }
     }
-    *(uint8_t **)0x6b9840 = heap_take(0x400);
-    *(uint8_t **)0x6b9844 = heap_take(0x400);
+    *(uint32_t *)0x6b9840 = heap_take(0x400);
+    *(uint32_t *)0x6b9844 = heap_take(0x400);
     for (i = 0; i < 0x200; i++)
-        (*(int16_t **)0x6b9840)[i] = (int16_t)i;
+        (((int16_t *)GP(0x6b9840)))[i] = (int16_t)i;
     *(uint32_t *)0x6b9848 = 0;
     *(uint32_t *)0x6b984c = 0x1ff;
 }
@@ -516,9 +508,9 @@ void GAMEAPI slot_glow_init(uint8_t *car, int32_t index)
     uint16_t c, d;
     int k;
 
-    PTR(car, 0x68c) = glow;
+    PTR_SET(car, 0x68c, glow);
     glow_prim_init(glow, 1);
-    texture = *(uint8_t **)0x6c1e14 + (U16(g_track_info, 0x2e) + 0x40) * 0x10;
+    texture = GP(0x6c1e14) + (U16(g_track_info, 0x2e) + 0x40) * 0x10;
     a = U32(texture, 0);
     b = U32(texture, 4);
     c = U16(texture, 8);
@@ -620,28 +612,28 @@ void GAMEAPI race_sounds_init(void)
 
     switch (race[0x552]) {
     case 4:
-        p[3][0] = (uint32_t)(*(uint8_t **)0x6c02dc + 0x34);
-        p[3][1] = (uint32_t)(*(uint8_t **)0x6c02dc + 0x68);
-        p[3][2] = (uint32_t)(**(uint8_t ***)0x6c0304 + 0xc4);
+        p[3][0] = (uint32_t)(uintptr_t)(GP(0x6c02dc) + 0x34);
+        p[3][1] = (uint32_t)(uintptr_t)(GP(0x6c02dc) + 0x68);
+        p[3][2] = (uint32_t)(uintptr_t)(GP(GP(0x6c0304)) + 0xc4);
         count = 2;
         /* fall through */
     case 3:
-        p[2][0] = (uint32_t)(*(uint8_t **)0x6c0068 + 0x34);
-        p[2][1] = (uint32_t)(*(uint8_t **)0x6c0068 + 0x68);
-        p[2][2] = (uint32_t)(**(uint8_t ***)0x6c0090 + 0xc4);
+        p[2][0] = (uint32_t)(uintptr_t)(GP(0x6c0068) + 0x34);
+        p[2][1] = (uint32_t)(uintptr_t)(GP(0x6c0068) + 0x68);
+        p[2][2] = (uint32_t)(uintptr_t)(GP(GP(0x6c0090)) + 0xc4);
         count++;
         /* fall through */
     case 1:
     case 2:
-        p[1][0] = (uint32_t)(*(uint8_t **)0x6bfdf4 + 0x34);
-        p[1][1] = (uint32_t)(*(uint8_t **)0x6bfdf4 + 0x68);
-        p[1][2] = (uint32_t)(**(uint8_t ***)0x6bfe1c + 0xc4);
+        p[1][0] = (uint32_t)(uintptr_t)(GP(0x6bfdf4) + 0x34);
+        p[1][1] = (uint32_t)(uintptr_t)(GP(0x6bfdf4) + 0x68);
+        p[1][2] = (uint32_t)(uintptr_t)(GP(GP(0x6bfe1c)) + 0xc4);
         count++;
         break;
     }
     (void)count; /* passed as a 13th argument, which 0x4718d0 does not read */
-    sound_listeners_set((uint32_t)(*(uint8_t **)0x6bfb80 + 0x34), (uint32_t)(*(uint8_t **)0x6bfb80 + 0x68),
-                        (uint32_t)(**(uint8_t ***)0x6bfba8 + 0xc4), p[1][0], p[1][1], p[1][2], p[2][0], p[2][1],
+    sound_listeners_set((uint32_t)(uintptr_t)(GP(0x6bfb80) + 0x34), (uint32_t)(uintptr_t)(GP(0x6bfb80) + 0x68),
+                        (uint32_t)(uintptr_t)(GP(GP(0x6bfba8)) + 0xc4), p[1][0], p[1][1], p[1][2], p[2][0], p[2][1],
                         p[2][2], p[3][0], p[3][1], p[3][2]);
     race = g_race;
     for (i = 0; i < race[0x54d] * 6u; i++)
@@ -668,14 +660,14 @@ void GAMEAPI race_sounds_init(void)
 int32_t GAMEAPI list_push(uint32_t *head, uint32_t *item)
 {
     *item = *head;
-    *head = (uint32_t)item;
+    *head = (uint32_t)(uintptr_t)item;
     return 0;
 }
 
 #define FONT_A ((uint8_t *)0x6c8180) /* 0x1120 bytes: +0 kind, +4 width, glyphs from +0x1c, map +0x101c */
 #define FONT_B ((uint8_t *)0x6c92a0)
 #define FONT_C ((uint8_t *)0x6ca3c0) /* a copy of font A */
-#define g_fonts ((uint8_t **)0x6cb4e0)
+#define g_fonts ((uint32_t *)0x6cb4e0) /* pointers */
 #define g_font_count (*(uint32_t *)0x4be314)
 
 /* 0x42e0c0: the fonts' glyphs (font A only with `small_only` 0) and their
@@ -691,10 +683,10 @@ void GAMEAPI fonts_init(int32_t small_only)
         extra[i] = ((const uint8_t *)0x4ac86c)[i];
     g_font_count = 0;
     if (small_only == 0) {
-        font_load((const char *)0x4ac860, 0x2e, FONT_A, 0, 0x32, 0x70, 1, 0);
-        font_load((const char *)0x4ac860, 0x10, FONT_B, 0x36, 100, 0x70, 0, 1);
+        font_load(0x4ac860, 0x2e, FONT_A, 0, 0x32, 0x70, 1, 0);
+        font_load(0x4ac860, 0x10, FONT_B, 0x36, 100, 0x70, 0, 1);
     } else
-        font_load((const char *)0x4ac860, 0x10, FONT_B, 0x36, 100, 0x70, 0, 0);
+        font_load(0x4ac860, 0x10, FONT_B, 0x36, 100, 0x70, 0, 0);
     for (i = 0; i < 0x40; i++)
         U32(FONT_A + 0x101c, i * 4) = 0xffffffff;
     for (i = 0; i < 0x40; i++)
@@ -729,7 +721,7 @@ void GAMEAPI fonts_init(int32_t small_only)
     *(uint32_t *)0x4ac848 = 2;
     base = g_font_count;
     U32(FONT_B, 0x18) = 1;
-    g_fonts[base] = FONT_B;
+    g_fonts[base] = (uint32_t)(uintptr_t)FONT_B;
     U32(FONT_B, 0x14) = 1;
     *(uint32_t *)0x4ac84c = 1;
     U32(FONT_B, 0x10) = 5;
@@ -737,8 +729,8 @@ void GAMEAPI fonts_init(int32_t small_only)
     *(uint32_t *)0x4ac844 = 3;
     g_font_count = base + 1;
     if (small_only == 0) {
-        g_fonts[base + 1] = FONT_C;
-        g_fonts[base + 2] = FONT_A;
+        g_fonts[base + 1] = (uint32_t)(uintptr_t)FONT_C;
+        g_fonts[base + 2] = (uint32_t)(uintptr_t)FONT_A;
         g_font_count = base + 3;
         return;
     }
@@ -760,7 +752,7 @@ void GAMEAPI text_reset(void)
     uint32_t plain, i;
 
     fonts_init(1);
-    *(uint8_t **)0x5f6940 = FONT_B;
+    *(uint32_t *)0x5f6940 = (uint32_t)(uintptr_t)FONT_B;
     plain = *(uint32_t *)0x6ccd84 & 4;
     for (i = 0; i < 0x380; i++, sprite += 0x84) {
         sprite[7] = 0x8c;
@@ -778,9 +770,9 @@ void GAMEAPI text_reset(void)
 void GAMEAPI image_release(uint8_t *image)
 {
     if (U32(image, 0xc) != 0 && !(image[0x20] & 1))
-        block_free(PTR(image, 0xc));
+        block_free(U32(image, 0xc));
     if (U32(image, 0x18) != 0 && !(image[0x20] & 1))
-        block_free(PTR(image, 0x18));
+        block_free(U32(image, 0x18));
     U32(image, 0xc) = 0;
     U32(image, 0x10) = 0;
     U32(image, 0x14) = 0;

@@ -42,7 +42,9 @@
 #define EVENT_TYPE 0x54     /* low byte */
 #define EVENT_SURFACE 0x5a  /* int16, for type 0x40 */
 #define EVENT_VELOCITY 0x5c /* relative velocity at the contact */
-#define EVENT_BODY(event, which) (*(uint8_t **)((event) + (which)))
+/* the bodies are 32-bit pointers in the event record */
+#define EVENT_BODY(event, which) ((uint8_t *)(uintptr_t)*(uint32_t *)((event) + (which)))
+#define EVENT_BODY_SET(event, which, body) (*(uint32_t *)((event) + (which)) = (uint32_t)(uintptr_t)(body))
 
 typedef void(GAMEAPI *grid_fn)(uint8_t *body);
 #define grid_unlink ((grid_fn)0x4611d0)

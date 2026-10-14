@@ -18,13 +18,17 @@
 #include "body.h"
 #include "fixed.h"
 #include "physics.h"
+#include "gamefn.h"
 
 #define U8(p, off) (*(uint8_t *)((p) + (off)))
 #define S16(p, off) (*(int16_t *)((p) + (off)))
 #define U16(p, off) (*(uint16_t *)((p) + (off)))
-#define PTR(p, off) (*(uint8_t **)((p) + (off)))
+#define PTR(p, off) ((uint8_t *)(uintptr_t)*(uint32_t *)((p) + (off))) /* 32-bit pointers in game memory */
+#define A(p) ((uint32_t)(uintptr_t)(p))
+#define SET_PTR(p, off, v) (*(uint32_t *)((p) + (off)) = A(v))
+#define G_SET(a, v) (*(uint32_t *)(a) = A(v))
 
-#define g_race (*(uint8_t **)0x4b1960)
+#define g_race GP(0x4b1960)
 #define g_race_ticks (*(uint32_t *)0x6c0a50)
 #define g_seed (*(uint32_t *)0x4b11d8)
 #define g_car_slots ((uint8_t *)0x6bfb80)
@@ -37,31 +41,31 @@
 
 /* Ripples: 0x18-byte records {int16 *vertex; int16 base x, y, z; ...;
  * +0x10 int16 phase, +0x12 uint16 offset, +0x14 kind, +0x15 shift}. */
-#define g_ripple_rules (*(uint8_t **)0x6c1eb0)
+#define g_ripple_rules GP(0x6c1eb0)
 #define g_ripple_count (*(int32_t *)0x6c1eb4)
-#define g_ripples (*(uint8_t **)0x6c1eb8)
+#define g_ripples GP(0x6c1eb8)
 #define g_wave ((const int16_t *)0x4b24f8)
 #define g_ripples_moved (*(uint32_t *)0x4b2c64)
 
 /* Collapses: 4 entries of 0xa8 bytes; a queue of 64 {object, next}. */
-#define g_crumbles (*(uint8_t **)0x6d04a4)
+#define g_crumbles GP(0x6d04a4)
 #define g_crumble_queue_head (*(uint8_t *)0x6d04a1)
 #define g_crumble_queue_count (*(uint8_t *)0x6d04a2)
-#define CRUMBLE_QUEUE_OBJECT(i) (*(uint32_t *)(0x6d04c0 + (i) * 8))
-#define CRUMBLE_QUEUE_STATE(i) (*(uint32_t *)(0x6d04c4 + (i) * 8))
+#define CRUMBLE_QUEUE_OBJECT(i) (*(uint32_t *)(uintptr_t)(0x6d04c0 + (i) * 8))
+#define CRUMBLE_QUEUE_STATE(i) (*(uint32_t *)(uintptr_t)(0x6d04c4 + (i) * 8))
 #define g_crumble_setup_step (*(uint32_t *)0x4a7ce4)
-#define g_crumble_model (*(uint8_t **)0x6cf160)
-#define g_crumble_object (*(uint8_t **)0x6cf164)
-#define g_crumble_shape (*(uint8_t **)0x6cf168)
-#define g_crumble_entry (*(uint8_t **)0x6cf16c)
-#define g_settings (*(uint8_t **)0x4b2198)
+#define g_crumble_model GP(0x6cf160)
+#define g_crumble_object GP(0x6cf164)
+#define g_crumble_shape GP(0x6cf168)
+#define g_crumble_entry GP(0x6cf16c)
+#define g_settings GP(0x4b2198)
 
 /* Bomblets: 0x24 entries of 8 bytes {object, fuse, slot, kind, owner}. */
-#define g_bomblets (*(uint8_t **)0x600664)
+#define g_bomblets GP(0x600664)
 #define g_bomblet_next (*(uint32_t *)0x4d3dd8)
 #define g_bomblet_live (*(uint32_t *)0x4d3de0)
 #define g_bomblet_busy ((uint8_t *)0x600640)
-#define g_bomblet_objects ((uint8_t **)0x600680)
+#define g_bomblet_object(i) GP(0x600680 + (i) * 4)
 #define g_bomblet_shape ((int32_t *)0x600600)
 
 /* Glints: 10 records of 0x14 bytes at 0x4c1b20. */
@@ -72,58 +76,40 @@
 /* On-screen messages: 0x1c records of 0x50 bytes; the font. */
 #define g_texts ((uint8_t *)0x5f6944)
 #define g_menu_texts ((uint8_t *)0x6b95a4)
-#define g_font (*(uint8_t **)0x5f6940)
+#define g_font GP(0x5f6940)
 
 /* Still original, owned elsewhere or out of scope. */
-typedef void(GAMEAPI *void_fn)(void);
-typedef int32_t(GAMEAPI *int_fn)(void);
-typedef void(GAMEAPI *ptr_fn)(uint8_t *p);
-typedef void(GAMEAPI *arg_fn)(int32_t a);
-typedef uint8_t *(GAMEAPI *spawn_fn)(void);
-typedef void(GAMEAPI *place_fn)(uint8_t *p, int32_t x, int32_t y, int32_t z);
-typedef void(GAMEAPI *marker_fn)(uint32_t packed, uint32_t kind);
-typedef void(GAMEAPI *effect_fn)(const int32_t *pos, const int32_t *vel, int32_t count, uint32_t kind,
-                                 uint32_t extra);
-typedef void(GAMEAPI *sound_fn)(int32_t id, int32_t a, int32_t b, int32_t c, const void *pos);
-typedef void(GAMEAPI *fade_fn)(uint8_t *effect, int32_t a, int32_t b);
-typedef void(GAMEAPI *shape_fn)(uint8_t *body, int32_t kind, const int32_t *shape, uint32_t owner);
-typedef void(GAMEAPI *boost_fn)(uint8_t *slot, int32_t a, int32_t b);
-typedef void(GAMEAPI *controls_fn)(int32_t player, void *out, void *packet);
-typedef int32_t(GAMEAPI *menu_fn)(int32_t a, int32_t b, int32_t c);
-typedef int32_t(GAMEAPI *index_ptr_fn)(uint32_t *index);
-typedef void(GAMEAPI *panel_fn)(int32_t a, int32_t b, int32_t c);
-typedef void(GAMEAPI *volume2_fn)(int32_t a, int32_t b);
-#define ripple_marker ((marker_fn)0x4411c0)
-#define particle_slot ((int_fn)0x462450)
-#define grid_place ((place_fn)0x460ff0)
-#define effect_new ((spawn_fn)0x42ac30)
-#define effect_fade ((fade_fn)0x42cd40)
-#define effect_burst ((effect_fn)0x42aa30)
-#define sound_play ((sound_fn)0x471c90)
-#define body_remove ((ptr_fn)0x419300)
-#define body_shape ((shape_fn)0x419150)
-#define crumble_start ((ptr_fn)0x4427a0)
-#define lap_split ((ptr_fn)0x43d750)
-#define slot_boost ((boost_fn)0x47aa60)
-#define read_controls ((controls_fn)0x45e8c0)
-#define network_game ((int_fn)0x45ef80)
-#define network_host ((int_fn)0x45eed0)
-#define network_finish ((void_fn)0x45fc40)
-#define race_end ((arg_fn)0x439a70)
-#define sound_pause ((arg_fn)0x471c30)
-#define sound_master ((arg_fn)0x471a60)
-#define sound_balance ((volume2_fn)0x471af0)
-#define menu_open ((menu_fn)0x45ddb0)
-#define local_player ((int_fn)0x48cf20)
-#define pause_send ((arg_fn)0x45fa60)
-#define pause_receive ((index_ptr_fn)0x45fe70)
-#define pause_menu ((panel_fn)0x4600a0)
-#define pause_layout ((int_fn)0x423f20)
-#define pause_panel ((ptr_fn)0x463ca0)
-#define pause_bar ((panel_fn)0x464c10)
-#define pause_items ((void_fn)0x463f90)
-#define pause_sounds ((void_fn)0x46fe60)
-#define pause_player ((arg_fn)0x489f70)
+#define ripple_marker GCALL(0x4411c0, mesh_rows_touch)
+#define particle_slot GCALL(0x462450, piece_take)
+#define grid_place GCALL(0x460ff0, object_grid_link2_at)
+#define effect_new GCALL(0x42ac30, particle_take)
+#define effect_fade GCALL(0x42cd40, particle_fade)
+#define effect_burst GCALL(0x42aa30, explosion_effects)
+#define sound_play GCALL(0x471c90, sound_play_body)
+#define body_remove GCALL(0x419300, body_retire)
+#define body_shape GCALL(0x419150, body_spheres_set)
+#define crumble_start GCALL(0x4427a0, body_triggers_apply)
+#define lap_split GCALL(0x43d750, slot_lap_record)
+#define slot_boost GCALL(0x47aa60, boost_start)
+#define read_controls GCALL(0x45e8c0, controls_fetch_packet)
+#define network_game GCALL(0x45ef80, net_state_game)
+#define network_host GCALL(0x45eed0, net_state_host)
+#define network_finish GCALL(0x45fc40, net_finish_send)
+#define race_end GCALL(0x439a70, race_results_update)
+#define sound_pause GCALL(0x471c30, sound_cd_pause)
+#define sound_master GCALL(0x471a60, sound_volume_mix)
+#define sound_balance GCALL(0x471af0, sound_cd_volume)
+#define menu_open GCALL(0x45ddb0, netplay_send_byte)
+#define local_player GCALL(0x48cf20, net_local_slot)
+#define pause_send GCALL(0x45fa60, net_pause_request)
+#define pause_receive GCALL(0x45fe70, net_pause_due)
+#define pause_menu GCALL(0x4600a0, net_kill_message)
+#define pause_layout GCALL(0x423f20, view_full_screen)
+#define pause_panel GCALL(0x463ca0, pause_open)
+#define pause_bar GCALL(0x464c10, pause_menu_slider_set)
+#define pause_items GCALL(0x463f90, pause_menu_draw)
+#define pause_sounds GCALL(0x46fe60, snd_pause_all)
+#define pause_player GCALL(0x489f70, ff_device_stop_all)
 
 static uint32_t next_seed(uint32_t s)
 {
@@ -160,7 +146,7 @@ void GAMEAPI particle_spawn(const int32_t *pos, int32_t *vel, int32_t kind)
     index = particle_slot();
     if (index == -1)
         return;
-    p = *(uint8_t **)0x6b983c + (uint32_t)index * 0x80;
+    p = GP(0x6b983c) + (uint32_t)index * 0x80;
     I32(p, 0x4c) = pos[0];
     I32(p, 0x50) = pos[1];
     I32(p, 0x54) = pos[2];
@@ -245,7 +231,7 @@ void GAMEAPI ripple_update(void)
             }
             i = ((uint32_t)U16(rec, 0x12) + (uint32_t)phase) & 0xff;
             shift = U8(rec, 0x15);
-            v = *(int16_t **)rec;
+            v = (int16_t *)(uintptr_t)*(uint32_t *)rec;
             wave = g_wave[i];
             d = (int16_t)(wave >> ((12u - shift) & 31));
             v[0] = (int16_t)(S16(rec, 4) + d);
@@ -264,7 +250,7 @@ void GAMEAPI ripple_update(void)
         rules = g_ripple_rules;
     }
     {
-        const uint16_t *m = *(const uint16_t **)(rules + 0x118);
+        const uint16_t *m = ((const uint16_t *)(uintptr_t)*(uint32_t *)(rules + 0x118));
 
         for (n = U8(rules, 0x11c); n; n--, m += 4) {
             packed = (packed & 0xffc00000) | (uint32_t)(m[1] & 0x7ff) << 11 | (m[0] & 0x7ff);
@@ -274,7 +260,7 @@ void GAMEAPI ripple_update(void)
     r = g_seed = next_seed(g_seed);
     i = r >> 16 & 0x1ff;
     if (i < (uint32_t)g_ripple_count) {
-        const int16_t *v = *(int16_t **)(g_ripples + i * 0x18);
+        const int16_t *v = ((int16_t *)(uintptr_t)*(uint32_t *)(g_ripples + i * 0x18));
 
         pos[0] = (int32_t)((uint32_t)v[0] << 16);
         pos[1] = (int32_t)((uint32_t)v[1] << 16);
@@ -295,7 +281,7 @@ void GAMEAPI ripple_update(void)
     g_seed = next_seed(r);
     i = g_seed >> 16 & 0xff;
     if (i < (uint32_t)g_ripple_count) {
-        const int16_t *v = *(int16_t **)(g_ripples + i * 0x18);
+        const int16_t *v = ((int16_t *)(uintptr_t)*(uint32_t *)(g_ripples + i * 0x18));
 
         pos[1] = (int32_t)((uint32_t)v[1] << 16);
         pos[2] = (int32_t)((uint32_t)v[2] << 16);
@@ -436,13 +422,13 @@ void GAMEAPI bomblet_spawn(const int32_t *pos, const int32_t *vel, uint32_t kind
                 return;
             }
         found:
-            obj = g_bomblet_objects[s];
+            obj = g_bomblet_object(s);
             U8(e, 4) = 0x40;
             U32(obj, CALLBACK) = 0x46c1a0;
             U16(obj, 0x160) = 0;
             g_bomblet_busy[s] = 1;
             U8(e, 5) = (uint8_t)s;
-            PTR(e, 0) = obj;
+            SET_PTR(e, 0, obj);
             U8(e, 6) = type;
             I32(obj, 0x34) = pos[0];
             I32(obj, 0x38) = pos[1];
@@ -450,7 +436,7 @@ void GAMEAPI bomblet_spawn(const int32_t *pos, const int32_t *vel, uint32_t kind
             I32(obj, 0x40) = (int32_t)((uint32_t)vel[0] << 8);
             I32(obj, 0x44) = (int32_t)((uint32_t)vel[1] << 8);
             I32(obj, 0x48) = (int32_t)((uint32_t)vel[2] << 8);
-            PTR(obj, 0x164) = e;
+            SET_PTR(obj, 0x164, e);
             k = U8(e, 6) == 1 ? 0x1e : U8(e, 6) == 2 ? 0x1e : 0x19;
             w = U16(PTR(obj, 0x10), 0x32);
             a = (w * k / 100) << 8;
@@ -471,7 +457,7 @@ void GAMEAPI bomblet_spawn(const int32_t *pos, const int32_t *vel, uint32_t kind
             g_bomblet_shape[12] = -(int32_t)a;
             g_bomblet_shape[13] = (int32_t)b;
             g_bomblet_shape[14] = 1;
-            body_shape(obj, 3, g_bomblet_shape, (owner & 0xffff) + 1);
+            body_shape(obj, 3, (const uint8_t *)g_bomblet_shape, (int32_t)((owner & 0xffff) + 1));
             U8(e, 7) = (uint8_t)owner;
             grid_link(obj);
             n = 0x1c;
@@ -514,7 +500,7 @@ void GAMEAPI bomblet_update(void)
         grid_unlink(PTR(e, 0));
         g_bomblet_busy[U8(e, 5)] = 0;
         U8(e, 4) = 0;
-        sound_play(0x11, 7, 900, 13000, PTR(e, 0) + 0x34);
+        sound_play(0x11, 7, 900, 13000, A(PTR(e, 0) + 0x34));
         obj = PTR(e, 0);
         if (U8(e, 6) == 1)
             effect_burst(VEC(obj, 0x34), VEC(obj, 0x68), 2, 0x24, 0);
@@ -551,7 +537,7 @@ uint32_t GAMEAPI crumble_alloc(uint8_t *entry, uint32_t size)
 /* 0x4038e0: the collapsing object no longer blocks its two racing lines. */
 void GAMEAPI crumble_release_lines(uint8_t *object)
 {
-    uint8_t *lines = PTR(*(uint8_t **)0x6c1e30, 0x60);
+    uint8_t *lines = PTR(GP(0x6c1e30), 0x60);
 
     if (U8(object, 0x1a6) && U8(lines, U8(object, 0x1a6) * 0xc + 3))
         U8(lines, U8(object, 0x1a6) * 0xc + 3)--;
@@ -595,10 +581,10 @@ int32_t GAMEAPI crumble_setup(void)
 
         e = g_crumble_entry;
         U32(e, 0x90) = U32(e, 0x8c);
-        from = *(const uint32_t **)(g_crumble_object + 0x24);
+        from = ((const uint32_t *)(uintptr_t)*(uint32_t *)(g_crumble_object + 0x24));
         U32(g_crumble_entry, 0x98) =
             crumble_alloc(g_crumble_entry, (uint32_t)U16(g_crumble_model, 4) << 3);
-        to = *(uint32_t **)(g_crumble_entry + 0x98);
+        to = ((uint32_t *)(uintptr_t)*(uint32_t *)(g_crumble_entry + 0x98));
         for (i = 0; i < (uint32_t)U16(g_crumble_model, 4) << 1; i++) {
             to[i] = from[i];
             if (i & 1)
@@ -611,8 +597,8 @@ int32_t GAMEAPI crumble_setup(void)
         return 0;
     }
     case 1:
-        g_crumble_shape = (uint8_t *)((uint32_t)U16(PTR(g_crumble_entry, 4), 0x190) * 0x10 + *(uint32_t *)0x6bfb14);
-        U32(g_crumble_entry, 0x9c) = (uint32_t)U16(g_crumble_model, 0x34) + (uint32_t)g_crumble_model;
+        *(uint32_t *)0x6cf168 = (uint32_t)U16(PTR(g_crumble_entry, 4), 0x190) * 0x10 + *(uint32_t *)0x6bfb14; /* g_crumble_shape */
+        U32(g_crumble_entry, 0x9c) = (uint32_t)U16(g_crumble_model, 0x34) + A(g_crumble_model);
         U16(g_crumble_entry, 0) = U16(PTR(g_crumble_entry, 4), 0x192);
         U16(g_crumble_entry, 0x30) = U8(g_crumble_model, 0x27);
         U16(g_crumble_entry, 0x32) = U16(g_crumble_model, 6);
@@ -646,7 +632,7 @@ int32_t GAMEAPI crumble_setup(void)
                 (uint8_t)((*(uint32_t *)(PTR(obj, 0x194) + *(uint32_t *)0x4b7e54 * 4) >> 24) & 0xf);
             obj = PTR(g_crumble_entry, 4);
             U8(g_crumble_entry, 0x6c + i) =
-                U8(*(uint8_t **)0x6bfb10, ((uint32_t)U16(obj, 0x18e) + i) * 8 + 3);
+                U8(GP(0x6bfb10), ((uint32_t)U16(obj, 0x18e) + i) * 8 + 3);
             U8(g_crumble_entry, 0x7c + i) = 0;
         }
         e = g_crumble_entry;
@@ -709,14 +695,14 @@ void GAMEAPI crumble_update(void)
             if (q >= 0x40)
                 g_crumble_queue_head = 0;
         }
-        groups = *(uint8_t **)E(0x9c);
+        groups = GP(E(0x9c));
         if (g_crumble_setup_step == 0xff && *(uint16_t *)E(2) == 1) {
             uint8_t *e = E(0);
 
-            g_crumble_entry = e;
-            g_crumble_object = PTR(e, 4);
+            G_SET(0x6cf16c, e); /* g_crumble_entry */
+            G_SET(0x6cf164, PTR(e, 4)); /* g_crumble_object */
             g_crumble_setup_step = 0;
-            g_crumble_model = PTR(PTR(e, 4), 0x10);
+            G_SET(0x6cf160, PTR(PTR(e, 4), 0x10)); /* g_crumble_model */
             U16(e, 2) = 2;
             U8(g_crumble_object, 0x19a) = 5;
             crumble_release_lines(g_crumble_object);
@@ -726,13 +712,13 @@ void GAMEAPI crumble_update(void)
             uint32_t c, f;
             int32_t j;
 
-            obj = *(uint8_t **)E(4);
+            obj = GP(E(4));
             if (!*(uint32_t *)E(0x28))
                 crumble_start(obj);
             c = ++*(uint32_t *)E(0x28);
             if (!(c & 7))
                 sound_play((int32_t)(((c & 0xffffff00) | ((c & 8) ? 0xff : 0)) + 0x10), 2, 0x400, 12000,
-                           *(uint8_t **)E(4) + 0x34);
+                           A(GP(E(4)) + 0x34));
             c = *(uint32_t *)E(0x34);
             if ((int32_t)(c & 0xffff0000) < 0x200000)
                 *(uint32_t *)E(0x34) = *(uint32_t *)E(0x40) + c;
@@ -790,7 +776,7 @@ void GAMEAPI crumble_update(void)
                     }
                     gi = group;
                     third = (uint8_t)(((uint32_t)U8(g, 9) - U8(g, 8)) >> 2);
-                    if (!U8(*(uint8_t **)E(0xa0), f)) {
+                    if (!U8(GP(E(0xa0)), f)) {
                         for (k = 0; k < 4; k++) {
                             uint8_t corner = (uint8_t)corners;
                             uint8_t *v;
@@ -853,7 +839,7 @@ void GAMEAPI crumble_update(void)
                             }
                             if (!(f & 3))
                                 effect_burst(vert, VEC(obj, 0x40), 1, 0x24, 0);
-                            U8(*(uint8_t **)E(0xa0), f) = 5;
+                            U8(GP(E(0xa0)), f) = 5;
                             *(int16_t *)E(0x32) -= 1;
                         }
                     }
@@ -995,7 +981,7 @@ int32_t GAMEAPI text_create(const uint8_t *s, uint32_t owner, int32_t x, int32_t
     return i;
 }
 
-#define MESSAGE(i) (*(const uint8_t **)(0x4d1098 + (i) * 4))
+#define MESSAGE(i) ((const uint8_t *)GP(0x4d1098 + (i) * 4))
 
 /* 0x464e10: each finisher's messages: place, then a two-line verdict,
  * slid on and off. */
@@ -1027,7 +1013,7 @@ void GAMEAPI finish_messages(void)
             }
             break;
         case 2:
-            s[1] = (uint8_t)text_create(place >= 2 && place <= 6 ? MESSAGE(place - 1) : MESSAGE(0), (uint32_t)slot,
+            s[1] = (uint8_t)text_create(place >= 2 && place <= 6 ? MESSAGE(place - 1) : MESSAGE(0), A(slot),
                                         (int32_t)((uint32_t)g_screen_scale << 5) >> 8, 0, 0xc, 0, 0);
             s[-1] = 3;
             s[0] = 0;
@@ -1052,11 +1038,11 @@ void GAMEAPI finish_messages(void)
                 top = MESSAGE(6 + 2 * (place - 1));
                 bottom = MESSAGE(7 + 2 * (place - 1));
             }
-            s[1] = (uint8_t)text_create(top, (uint32_t)slot, 0,
+            s[1] = (uint8_t)text_create(top, A(slot), 0,
                                         (int32_t)((uint32_t)g_screen_scale * (uint32_t)-10) >> 8, 0xc, 0, 0);
             if (U8(g_race, 0x551))
-                bottom = *(const uint8_t **)0x4d1144;
-            s[2] = (uint8_t)text_create(bottom, (uint32_t)slot, 0, (int32_t)((uint32_t)g_screen_scale * 10) >> 8,
+                bottom = (const uint8_t *)GP(0x4d1144);
+            s[2] = (uint8_t)text_create(bottom, A(slot), 0, (int32_t)((uint32_t)g_screen_scale * 10) >> 8,
                                         0xc, 0, 0);
             s[-1] = 5;
             s[0] = 0;
@@ -1082,12 +1068,12 @@ void GAMEAPI finish_messages(void)
             if (++s[0] != 0x1e)
                 break;
             if (U8(race, 0x552) == 2) {
-                text_create(*(const uint8_t **)0x4d10ec, (uint32_t)slot, 0,
+                text_create((const uint8_t *)GP(0x4d10ec), A(slot), 0,
                             (int32_t)((uint32_t)g_screen_scale * (uint32_t)-62) >> 8, 0x43, 0, 0);
-                text_create(*(const uint8_t **)0x4d10f0, (uint32_t)slot, 0,
+                text_create((const uint8_t *)GP(0x4d10f0), A(slot), 0,
                             (int32_t)((uint32_t)g_screen_scale * (uint32_t)-40) >> 8, 0x43, 0, 0);
             } else {
-                text_create(*(const uint8_t **)0x4d10e8, (uint32_t)slot, 0,
+                text_create((const uint8_t *)GP(0x4d10e8), A(slot), 0,
                             (int32_t)((uint32_t)g_screen_scale * (uint32_t)-40) >> 8, 0x43, 0, 0);
             }
             s[0] = 0;
@@ -1108,9 +1094,9 @@ void GAMEAPI race_go_banner(void)
     uint32_t h = U16(g_race, 0xa80), w = U16(g_race, 0xa82);
     uint32_t y = (h >> 1) - 0x3c, x = w - 0x14;
 
-    text_create(*(const uint8_t **)0x4d112c, 0, (int32_t)((uint32_t)g_screen_scale * x >> 8),
+    text_create((const uint8_t *)GP(0x4d112c), 0, (int32_t)((uint32_t)g_screen_scale * x >> 8),
                 (int32_t)((uint32_t)g_screen_scale * y >> 8), 0x31, 0, 0);
-    text_create(*(const uint8_t **)0x4d1130, 0, (int32_t)((uint32_t)g_screen_scale * x >> 8),
+    text_create((const uint8_t *)GP(0x4d1130), 0, (int32_t)((uint32_t)g_screen_scale * x >> 8),
                 (int32_t)((y + 0x16) * (uint32_t)g_screen_scale >> 8), 0x31, 0, 0);
 }
 
@@ -1127,7 +1113,7 @@ uint32_t GAMEAPI players_buttons(void)
         uint8_t *car = PTR(slot, 0), *p;
         uint8_t scratch[8];
 
-        read_controls((int32_t)i, scratch, car + 0x71c);
+        read_controls((int32_t)i, scratch, (void *)(car + 0x71c));
         p = PTR(car, 0x71c);
         slot += CAR_SLOT_SIZE;
         buttons |= (~((uint32_t)p[2] * 0x100 + p[3]) & 0xffff) | (uint32_t)U16(p, 4) << 16;
@@ -1189,14 +1175,14 @@ void GAMEAPI pause_check(void)
         *(uint32_t *)0x6b8d7c = buttons;
         *(uint32_t *)0x6b8d78 = buttons;
     }
-    pause_panel(slot);
+    pause_panel((void *)slot);
     pause_bar(*(int8_t *)0x6b983a, 2, (int32_t)((uint32_t)*(int32_t *)0x6b8d84 * 0xc0) >> 14);
     pause_bar(*(int8_t *)0x6b983b, 3, (int32_t)((uint32_t)*(int32_t *)0x6b8d88 * 0xc0) >> 14);
     pause_items();
     sound_pause(1);
     pause_sounds();
     for (i = 0; i < U8(g_race, 0x54d); i++)
-        pause_player(*(int16_t *)(0x6bfdec + i * CAR_SLOT_SIZE));
+        pause_player(*(int16_t *)(uintptr_t)(0x6bfdec + i * CAR_SLOT_SIZE));
 }
 
 /* 0x46a530 */

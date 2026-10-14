@@ -31,21 +31,22 @@
 #include "../runtime.h"
 #include "fixed.h"
 #include "physics.h"
+#include "gamefn.h"
 
-#define g_race (*(uint8_t **)0x4b1960)
-#define g_config (*(uint8_t **)0x4b2198)
-#define g_track (*(uint8_t **)0x6c1e30)
-#define g_track_info (*(uint8_t **)0x6c1eb0)
-#define g_track_colours (*(uint8_t **)0x6c1e14)
-#define g_sections (*(uint8_t ***)0x6bfac0)
-#define g_palette (*(uint8_t **)0x6bfaf0)
+#define g_race GP(0x4b1960)
+#define g_config GP(0x4b2198)
+#define g_track GP(0x6c1e30)
+#define g_track_info GP(0x6c1eb0)
+#define g_track_colours GP(0x6c1e14)
+#define g_section(i) GP(GP(0x6bfac0) + (uint32_t)(i) * 4)
+#define g_palette GP(0x6bfaf0)
 #define g_effect_seed (*(uint32_t *)0x4b11dc)
 #define g_sin ((const int16_t *)0x4b24f8)
 
 /* The shield ripple. */
-#define g_shield_mesh (*(uint8_t **)0x4d44a4)
-#define g_shield_links (*(uint8_t **)0x4d44a0)
-#define g_shield_dirs (*(uint8_t **)0x4d44a8)
+#define g_shield_mesh GP(0x4d44a4)
+#define g_shield_links GP(0x4d44a0)
+#define g_shield_dirs GP(0x4d44a8)
 #define g_shield_vertices (*(int32_t *)0x4d44ac)
 #define g_shield_texture (*(int32_t *)0x4b24a0)
 #define SHIELDS ((uint8_t *)0x6002e0)
@@ -55,7 +56,7 @@
 /* Views. */
 #define g_screen_width (*(int32_t *)0x4acc38)
 #define g_screen_height (*(int32_t *)0x4acc3c)
-#define g_view_current (*(uint8_t **)0x6ce60c)
+#define g_view_current GP(0x6ce60c)
 #define VIEW_A ((uint8_t *)0x6cd4a0)
 #define VIEW_B ((uint8_t *)0x6cdd10)
 #define g_view_width (*(uint16_t *)0x6cd462)
@@ -71,9 +72,9 @@
 
 /* Track water. */
 #define g_ripples_count (*(int32_t *)0x6c1eb4)
-#define g_ripples (*(uint8_t **)0x6c1eb8)
+#define g_ripples GP(0x6c1eb8)
 #define g_waters_count (*(int32_t *)0x5d637c)
-#define g_waters (*(uint8_t **)0x5d6378)
+#define g_waters GP(0x5d6378)
 
 /* Pad state, ticks. */
 #define PAD_A ((uint8_t *)0x6ce6c0)
@@ -86,48 +87,42 @@
 #define S16(p, off) (*(int16_t *)((p) + (off)))
 #define U16(p, off) (*(uint16_t *)((p) + (off)))
 #define U8(p, off) (*(uint8_t *)((p) + (off)))
-#define PTR(p, off) (*(uint8_t **)((p) + (off)))
+#define PTR(p, off) GP((p) + (off))
+#define G32(a) (*(uint32_t *)(uintptr_t)(a))
 #define SHL(x, n) ((int32_t)((uint32_t)(int32_t)(x) << (n)))
 
-typedef uint8_t *(GAMEAPI *alloc_fn)(uint32_t size);
-typedef int32_t(GAMEAPI *int_fn)(void);
-typedef void(GAMEAPI *void_fn)(void);
-typedef void(GAMEAPI *arg_fn)(int32_t a);
+/* 0x4290b0 (src/game/orig_pc.c's vec_normalise_x87, an x87 asm entry taking
+ * its arguments on the stack): normalise v into out, returns 0. */
+typedef int32_t(GAMEAPI *normalise_fn)(int32_t *v, int32_t *out);
+/* 0x4291f0 (dx_error_ignore) and 0x479ae0 (ps_wait_none) read no arguments;
+ * these keep the ones the original pushes (harmless in 64-bit). */
 typedef void(GAMEAPI *ptrs_fn)(const void *a, const void *b);
-typedef void(GAMEAPI *normalise_fn)(int32_t *v, int32_t *out);
-typedef void(GAMEAPI *viewport_fn)(int32_t x, int32_t y, int32_t w, int32_t h);
-typedef void(GAMEAPI *ptr_fn)(const void *p);
-typedef void(GAMEAPI *clear_fn)(void *p, int32_t n);
-typedef void(GAMEAPI *rgb_fn)(int32_t r, int32_t g, int32_t b);
-typedef uint8_t *(GAMEAPI *body_new_fn)(int32_t size);
-typedef void(GAMEAPI *body_kind_fn)(uint8_t *body, int32_t kind);
-typedef void(GAMEAPI *body_place_fn)(uint8_t *body, const int32_t *pos);
-typedef void(GAMEAPI *body_spheres_fn)(uint8_t *body, int32_t n, const void *spheres, int32_t a);
-typedef void(GAMEAPI *text_fn)(uint32_t text, int32_t a, int32_t b, int32_t y, int32_t c, int32_t d, int32_t e);
+typedef int32_t(GAMEAPI *arg_fn)(int32_t a);
+void GAMEAPI camera_translation(const int32_t *pos); /* 0x423ce0 (static in src/subunit.c) */
 
-#define heap_alloc ((alloc_fn)0x4445e0)
-#define heap_init ((void_fn)0x444500)
-#define shield_texture_draw ((void_fn)0x46d0c0)
-#define textures_unusable ((int_fn)0x429340)
-#define vec_normalise_float ((normalise_fn)0x4290b0)
-#define wait_frame ((void_fn)0x4291f0)
-#define wait_frame_for ((ptrs_fn)0x4291f0)
-#define screen_idle ((arg_fn)0x479ae0)
-#define screen_idle0 ((void_fn)0x479ae0)
-#define screen_ready ((int_fn)0x428060)
-#define view_reset ((arg_fn)0x423f00)
-#define viewport_set ((viewport_fn)0x41f2d0)
-#define view_set_position ((ptr_fn)0x423ce0)
-#define view_set_matrix ((ptr_fn)0x423d10)
-#define view_set_lights ((void_fn)0x423d30)
-#define list_clear ((clear_fn)0x427a70)
-#define clear_colour_set ((rgb_fn)0x428390)
-#define body_new ((body_new_fn)0x460af0)
-#define body_set_kind ((body_kind_fn)0x460b40)
-#define body_place ((body_place_fn)0x465640)
-#define body_spheres_set ((body_spheres_fn)0x419150)
-#define camera_fade ((arg_fn)0x40afb0)
-#define text_create ((text_fn)0x479060)
+#define heap_alloc GCALL(0x4445e0, kr_malloc)
+#define heap_init GCALL(0x444500, kr_heap_init)
+#define shield_texture_draw GCALL(0x46d0c0, shield_texture_animate)
+#define textures_unusable GCALL(0x429340, textures_unusable_thunk)
+#define vec_normalise_float ((normalise_fn)(uintptr_t)0x4290b0)
+#define wait_frame GCALL(0x4291f0, dx_error_ignore)
+#define wait_frame_for ((ptrs_fn)(uintptr_t)0x4291f0)
+#define screen_idle ((arg_fn)(uintptr_t)0x479ae0)
+#define screen_idle0 GCALL(0x479ae0, ps_wait_none)
+#define screen_ready GCALL(0x428060, sound_device_ready)
+#define view_reset GCALL(0x423f00, view_zoom_set)
+#define viewport_set GCALL(0x41f2d0, viewport_body)
+#define view_set_position GCALL(0x423ce0, camera_translation)
+#define view_set_matrix GCALL(0x423d10, view_matrix_store)
+#define view_set_lights GCALL(0x423d30, camera_matrix_body)
+#define list_clear GCALL(0x427a70, ot_clear_reverse)
+#define clear_colour_set GCALL(0x428390, clear_colour_store)
+#define body_new GCALL(0x460af0, link_pool_take)
+#define body_set_kind GCALL(0x460b40, body_header_init)
+#define body_place GCALL(0x465640, body_init_from_template)
+#define body_spheres_set GCALL(0x419150, body_spheres_set)
+#define camera_fade GCALL(0x40afb0, race_end_fade_set)
+#define text_create GCALL(0x479060, text_create)
 
 static uint32_t effect_random(void)
 {
@@ -179,8 +174,8 @@ void GAMEAPI shield_mesh_links(void)
     int32_t i, j;
 
     g_shield_vertices = U16(mesh, 4);
-    g_shield_links = heap_alloc((uint32_t)U16(mesh, 4) << 5);
-    g_shield_dirs = heap_alloc(0x100);
+    G32(0x4d44a0) = heap_alloc((uint32_t)U16(mesh, 4) << 5);
+    G32(0x4d44a8) = heap_alloc(0x100);
     links = g_shield_links;
     for (i = 0; i < g_shield_vertices; i++) {
         U32(links, i * 8) = 0;
@@ -238,14 +233,14 @@ void GAMEAPI shield_mesh_links(void)
 void GAMEAPI shield_record_init(uint8_t *r)
 {
     uint32_t polys = U16(g_shield_mesh, 6), vertices = U16(g_shield_mesh, 4);
-    uint8_t *p = heap_alloc(polys * 0xcc);
+    uint8_t *p = (uint8_t *)(uintptr_t)heap_alloc(polys * 0xcc);
     const uint32_t *colour;
     uint32_t *c;
     int32_t n, i;
 
-    PTR(r, 0x68) = p;
-    PTR(r, 0x6c) = p + polys * 0x64;
-    PTR(r, 0x70) = p + polys * 0x64 * 2;
+    U32(r, 0x68) = (uint32_t)(uintptr_t)p;
+    U32(r, 0x6c) = (uint32_t)(uintptr_t)(p + polys * 0x64);
+    U32(r, 0x70) = (uint32_t)(uintptr_t)(p + polys * 0x64 * 2);
     colour = (const uint32_t *)(g_track_colours + (U16(g_track_info, 0x2e) + 0x4e) * 0x10);
     for (n = (int32_t)(polys * 2); n > 0; n--, p += 0x64) {
         uint32_t flags = U32(p, 0);
@@ -306,7 +301,7 @@ void GAMEAPI shield_uvs(void)
     u_scale = SHL((u_end & 0xff) - (base & 0xff), 16) / (max_x - min_x);
     v_scale = SHL((v_end >> 8) - (base >> 8), 16) / (max_z - min_z);
     vertex = PTR(g_shield_mesh, 0x40) - 8;
-    for (r = SHIELDS; (uint32_t)r < SHIELDS_END; r += SHIELD_SIZE) {
+    for (r = SHIELDS; (uint32_t)(uintptr_t)r < SHIELDS_END; r += SHIELD_SIZE) {
         uint8_t *a = PTR(r, 0x68), *b = PTR(r, 0x6c);
         const uint8_t *poly = PTR(g_shield_mesh, 0xc);
         int32_t polys = U16(g_shield_mesh, 6);
@@ -349,9 +344,9 @@ void GAMEAPI shield_setup(void)
 {
     uint8_t *r;
 
-    g_shield_mesh = ((uint8_t **)PTR(g_track, 0x18))[S16(PTR(g_track, 0x58), 0xe)];
+    G32(0x4d44a4) = U32(PTR(g_track, 0x18), S16(PTR(g_track, 0x58), 0xe) * 4);
     shield_mesh_links();
-    for (r = SHIELDS; (int32_t)r < SHIELDS_END; r += SHIELD_SIZE)
+    for (r = SHIELDS; (int32_t)(uintptr_t)r < SHIELDS_END; r += SHIELD_SIZE)
         shield_record_init(r);
     if (textures_unusable())
         g_config[0x2a] = 0;
@@ -416,7 +411,7 @@ uint32_t GAMEAPI views_setup(void)
     int16_t cx, cy;
     uint32_t w;
 
-    g_view_current = VIEW_A;
+    G32(0x6ce60c) = (uint32_t)(uintptr_t)VIEW_A;
     g_view_width = (uint16_t)g_screen_width;
     g_view_height = (uint16_t)g_screen_height;
     view_reset(0x68);
@@ -434,9 +429,9 @@ uint32_t GAMEAPI views_setup(void)
     *(uint16_t *)0x6cdd7a = g_view_height;
     viewport_apply((int16_t *)(g_view_current + 0x5c));
     view_keep((const uint32_t *)g_view_current);
-    g_view_current = g_view_current == VIEW_A ? VIEW_B : VIEW_A;
+    G32(0x6ce60c) = (uint32_t)(uintptr_t)(g_view_current == VIEW_A ? VIEW_B : VIEW_A);
     view_set_position(camera.position);
-    view_set_matrix(camera.matrix);
+    view_set_matrix((const uint32_t *)camera.matrix);
     view_angles_reset();
     view_set_lights();
     w = (uint32_t)g_screen_width << 8;
@@ -449,9 +444,9 @@ uint32_t GAMEAPI views_setup(void)
 void GAMEAPI views_init(void)
 {
     views_setup();
-    list_clear((void *)0x6cd510, 0x200);
-    list_clear((void *)0x6cdd80, 0x200);
-    list_clear((void *)0x6ce580, 2);
+    list_clear((uint32_t *)0x6cd510, 0x200);
+    list_clear((uint32_t *)0x6cdd80, 0x200);
+    list_clear((uint32_t *)0x6ce580, 2);
 }
 
 /* 0x43c300: the leftover PlayStation screen waits (all empty). */
@@ -488,10 +483,10 @@ void GAMEAPI ripple_vertices_setup(void)
     int32_t count = 0, i;
 
     g_ripples_count = 0;
-    list = heap_alloc(0x6000);
-    g_ripples = list;
+    list = (uint8_t *)(uintptr_t)heap_alloc(0x6000);
+    G32(0x6c1eb8) = (uint32_t)(uintptr_t)list;
     for (; (int32_t)cells > 0; cells--, cell += 4) {
-        uint8_t *section = g_sections[cell[2]];
+        uint8_t *section = g_section(cell[2]);
         uint32_t width = U32(section, 8) + 1;
         uint8_t *base = PTR(section, 0x20) + (U16(cell, 0) * width + cell[3]) * 8, *corner[4];
         int32_t k;
@@ -507,7 +502,7 @@ void GAMEAPI ripple_vertices_setup(void)
             if (i < count)
                 continue;
             count++;
-            PTR(rec, 0) = corner[k];
+            U32(rec, 0) = (uint32_t)(uintptr_t)corner[k];
             S16(rec, 6) = S16(corner[k], 2);
             S16(rec, 4) = S16(corner[k], 0);
             S16(rec, 8) = S16(corner[k], 4);
@@ -558,14 +553,14 @@ void GAMEAPI water_meshes_setup(void)
 
     n = 0;
     for (i = 0; i < U32(g_track, 0x10); i++)
-        if (((uint8_t **)PTR(g_track, 0))[i][6] & 0x3f)
+        if (PTR(PTR(g_track, 0), i * 4)[6] & 0x3f)
             n++;
     g_waters_count = (int32_t)n;
-    g_waters = 0;
+    G32(0x5d6378) = 0;
     if (!n)
         return;
-    w = heap_alloc(n * 0x1c);
-    g_waters = w;
+    w = (uint8_t *)(uintptr_t)heap_alloc(n * 0x1c);
+    G32(0x5d6378) = (uint32_t)(uintptr_t)w;
     for (i = 0; i < U32(g_track, 0x10); i++) {
         uint8_t *section;
         uint32_t band, row, col, stride;
@@ -573,22 +568,22 @@ void GAMEAPI water_meshes_setup(void)
         uint8_t *v;
         int16_t *e;
 
-        if (!(((uint8_t **)PTR(g_track, 0))[i][6] & 0x3f))
+        if (!(PTR(PTR(g_track, 0), i * 4)[6] & 0x3f))
             continue;
         U16(w, 0) = (uint16_t)i;
         U16(w, 2) = 0;
-        band = U16(((uint8_t **)PTR(g_track, 0))[i], 6) & 0x3f;
+        band = U16(PTR(PTR(g_track, 0), i * 4), 6) & 0x3f;
         U16(w, 0xa) = (uint16_t)band;
-        section = g_sections[i & 0xffff];
+        section = g_section(i & 0xffff);
         U16(w, 4) = (uint16_t)(U16(section, 8) - band + 1);
         U16(w, 6) = U16(section, 0xc);
         U16(w, 8) = (section[6] & 0x40) ? 1 : 0xffff;
-        PTR(w, 0xc) = PTR(section, 0x20);
+        U32(w, 0xc) = U32(section, 0x20);
         if (U16(w, 8) == 1) {
-            PTR(w, 0xc) = PTR(section, 0x20) + band * 8;
-            PTR(w, 0x10) = PTR(w, 0xc) - 8;
+            U32(w, 0xc) = (uint32_t)(uintptr_t)(PTR(section, 0x20) + band * 8);
+            U32(w, 0x10) = (uint32_t)(uintptr_t)(PTR(w, 0xc) - 8);
         } else {
-            PTR(w, 0x10) = PTR(w, 0xc) + U16(w, 4) * 8;
+            U32(w, 0x10) = (uint32_t)(uintptr_t)(PTR(w, 0xc) + U16(w, 4) * 8);
         }
         v = PTR(w, 0xc);
         for (row = 0; row < U16(w, 6); row++) {
@@ -650,7 +645,7 @@ void GAMEAPI track_water_setup(void)
  * 0x4a77e4 / 0x4a77ec), and the viewports' director state reset. */
 void GAMEAPI camera_view_setup(int32_t index, int32_t car, int32_t *cam)
 {
-    const int16_t *spot = (const int16_t *)(*(uint8_t **)0x6bfb08 + index * 8);
+    const int16_t *spot = (const int16_t *)(GP(0x6bfb08) + index * 8);
     int32_t *pos = (int32_t *)0x4a76f8, i;
     uint8_t *c = (uint8_t *)cam, *body;
     int16_t kind;
@@ -661,12 +656,12 @@ void GAMEAPI camera_view_setup(int32_t index, int32_t car, int32_t *cam)
     pos[1] = SHL(spot[1] - 0x3f, 16);
     pos[2] = SHL(spot[2] + 0xa0, 16);
     body = body_new(0x180);
-    PTR(c, 0) = body;
+    U32(c, 0) = (uint32_t)(uintptr_t)body;
     body_set_kind(body, 0x804);
-    body_place(PTR(c, 0), pos);
+    body_place(PTR(c, 0), (const uint32_t *)pos);
     I32(PTR(c, 0), 0x108) = 1;
     I32(PTR(c, 0), 0xb4) = 0;
-    body_spheres_set(PTR(c, 0), 1, (const void *)0x4a77d0, 0);
+    body_spheres_set(PTR(c, 0), 1, (const uint8_t *)0x4a77d0, 0);
     cam[0xe] = 0;
     if (index == 0) {
         S16(c, 0x40) = (int8_t)g_race[0xa90];
@@ -677,8 +672,8 @@ void GAMEAPI camera_view_setup(int32_t index, int32_t car, int32_t *cam)
     }
     kind = S16(c, 0x40);
     S16(c, 0x58) = 0;
-    S16(c, 0x44) = *(const int16_t *)(0x4a77e4 + kind * 2);
-    S16(c, 0x46) = *(const int16_t *)(0x4a77ec + kind * 2);
+    S16(c, 0x44) = *(const int16_t *)(uintptr_t)(0x4a77e4 + kind * 2);
+    S16(c, 0x46) = *(const int16_t *)(uintptr_t)(0x4a77ec + kind * 2);
     S16(c, 0x42) = 0;
     S16(c, 0x48) = (int16_t)(S16(c, 0x44) / 2);
     c[0x51] = 0;
@@ -693,7 +688,7 @@ void GAMEAPI camera_view_setup(int32_t index, int32_t car, int32_t *cam)
     cam[2] = 0;
     cam[4] = 0;
     cam[3] = (int32_t)0xffff0000;
-    PTR(PTR(c, 0), 0x164) = c;
+    U32(PTR(c, 0), 0x164) = (uint32_t)(uintptr_t)c;
     for (i = 0; i < 0x150; i++)
         ((uint32_t *)DIRECTORS)[i] = 0;
     for (i = 0; i < 4; i++) {
@@ -736,16 +731,16 @@ void GAMEAPI tint_colour_tables(int32_t r, int32_t g, int32_t b)
     uint8_t *c;
     uint32_t i;
 
-    c = *(uint8_t **)0x4b5fb0 + 4;
+    c = GP(0x4b5fb0) + 4;
     for (i = 0x40; i; i--, c += 0x78)
         rgb_scale(c, r, g, b);
-    c = *(uint8_t **)0x4b5fc8 + 4;
+    c = GP(0x4b5fc8) + 4;
     for (i = 0; i < *(uint32_t *)0x6d0a78; i++, c += 0x78)
         rgb_scale(c, r, g, b);
-    c = *(uint8_t **)0x4b5fcc + 4;
+    c = GP(0x4b5fcc) + 4;
     for (i = 0; i < *(uint32_t *)0x6d0a00; i++, c += 0x78)
         rgb_scale(c, r, g, b);
-    c = *(uint8_t **)0x4b5fdc + 4;
+    c = GP(0x4b5fdc) + 4;
     for (i = 0x20; i; i--, c += 0x60)
         rgb_scale(c, r, g, b);
     rgb_scale(g_track_info + 0x30, r, g, b);
@@ -874,12 +869,12 @@ void GAMEAPI race_start_messages(int32_t mode)
         for (i = 0; i < g_race[0x54d]; i++)
             g_race[i] = 8;
         U16(g_race, 0x58e) = 0x708;
-        text_create(*(uint32_t *)0x4d1134, 0, 0, g_view_y_scale * 0x3c >> 8, 7, 0, 0);
+        text_create(GP(0x4d1134), 0, 0, g_view_y_scale * 0x3c >> 8, 7, 0, 0);
         return;
     }
     U16(g_race, 0x58e) = 0x63;
-    text_create(*(uint32_t *)0x4d113c, 0, 0, g_view_y_scale * 0x3c >> 8, 7, 0, 0);
-    text_create(*(uint32_t *)0x4d1140, 0, 0, g_view_y_scale * 0x52 >> 8, 0x26, 0, 0);
+    text_create(GP(0x4d113c), 0, 0, g_view_y_scale * 0x3c >> 8, 7, 0, 0);
+    text_create(GP(0x4d1140), 0, 0, g_view_y_scale * 0x52 >> 8, 0x26, 0, 0);
 }
 
 /* 0x449ca0: player i's (0..3) car choice from the options, or -1. */

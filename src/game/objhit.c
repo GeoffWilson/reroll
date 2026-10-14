@@ -6,26 +6,24 @@
  * Hitting some objects is gameplay (pickups and the like); those calls
  * are still the original. */
 #include "../runtime.h"
+#include "gamefn.h"
 #include "body.h"
 #include "fixed.h"
 #include "physics.h"
 #include "../coverage.h"
 
 #define SLOT_SIZE 0x48
-#define g_slots (*(uint8_t **)0x6ce740)
+#define g_slots GP(0x6ce740)
 #define g_sin_table ((const int16_t *)0x4b24f8)
 #define g_cos_table ((const int16_t *)0x4b2578)
 #define g_gte_diagonal(i) (*(int16_t *)(0x6ccbe0 + (i) * 8))
 #define g_gte_vector2(i) (*(int16_t *)(0x6ccc88 + (i) * 4))
 #define g_gte_result ((const int32_t *)0x6cccc8)
 
-typedef int32_t(GAMEAPI *object_fn)(uint8_t *object);
-typedef int32_t(GAMEAPI *object_hit_fn)(uint8_t *object, uint8_t *body, uint32_t part, int32_t *velocity);
-typedef void(GAMEAPI *object_void_fn)(uint8_t *object);
-#define object_kind1_hit ((object_fn)0x47c110)
-#define object_kind2_hit ((object_fn)0x405280)
-#define object_struck ((object_hit_fn)0x412bf0)
-#define object_kind4_struck ((object_void_fn)0x4427a0)
+#define object_kind1_hit GCALL(0x47c110, object_debris_break)
+#define object_kind2_hit GCALL(0x405280, blast_object_hit)
+#define object_struck GCALL(0x412bf0, object_part_hit)
+#define object_kind4_struck GCALL(0x4427a0, body_triggers_apply)
 
 static void unpack_normal(uint32_t plane, int32_t *n)
 {
@@ -111,7 +109,7 @@ static void offset_vertex(int16_t *out, const int16_t *v, int32_t x, int32_t y, 
 int32_t GAMEAPI object_polygon_sweep(uint8_t *body, uint8_t *object, const uint8_t *polygon, uint8_t *slot,
                                      int32_t *out, int32_t dt)
 {
-    const uint8_t *model = *(uint8_t **)(object + 0x10), *planes = *(uint8_t **)(object + 0x2c), *face, *plane;
+    const uint8_t *model = GP(object + 0x10), *planes = GP(object + 0x2c), *face, *plane;
     const int16_t *vertices, *v;
     uint32_t info = U32(polygon, 0x10), shape = info & 0x1f0000, count, i;
     int32_t ox, oy, oz, rx, ry, rz, vx = I32(slot, 0x14), vy = I32(slot, 0x18), vz = I32(slot, 0x1c);
@@ -133,7 +131,7 @@ int32_t GAMEAPI object_polygon_sweep(uint8_t *body, uint8_t *object, const uint8
     oz >>= 8;
     oy >>= 8;
     face = model + *(const uint16_t *)(model + 0x38) + (info & 0xff) * 9;
-    vertices = (const int16_t *)(*(uint8_t **)(model + 0x40) - 8);
+    vertices = (const int16_t *)(GP(model + 0x40) - 8);
 
     /* outside a face's plane and not reaching it this step: no contact */
     if (shape > 0x20000 && (int32_t)(count = (info >> 16) & 0x1f) > 0) {
@@ -352,10 +350,10 @@ static void turn(int32_t *x, int32_t *z, int32_t c, int32_t s)
 int32_t GAMEAPI slot_object_sweep(uint8_t *body, uint8_t *slot, int32_t *out, int32_t limit)
 {
     int32_t best = limit, result = 0, n, whole = 0;
-    const uint8_t *entry = *(uint8_t **)(body + 0x158);
-    const char *flag = *(const char *const *)(body + 0x6ac);
+    const uint8_t *entry = GP(body + 0x158);
+    const char *flag = ((const char *)(uintptr_t)*(const uint32_t *)(body + 0x6ac));
 
-    if ((U32(body, FLAGS) & 0x1ff) == 3 && flag != (const char *)-1 && *flag)
+    if ((U32(body, FLAGS) & 0x1ff) == 3 && flag != (const char *)0xffffffff && *flag)
         whole = 1;
     n = *(uint16_t *)(body + 0x15e);
     if (n <= 0) {
@@ -363,15 +361,15 @@ int32_t GAMEAPI slot_object_sweep(uint8_t *body, uint8_t *slot, int32_t *out, in
         return limit;
     }
     for (; n > 0; n--, entry += 16) {
-        uint8_t *object = *(uint8_t **)(entry + 8);
-        const uint8_t *polygon = *(const uint8_t **)(entry + 0xc);
+        uint8_t *object = GP(entry + 8);
+        const uint8_t *polygon = GP(entry + 0xc);
         uint32_t kind = object[0x19a], flags;
         int32_t hit[9], x, z, vx, vz, ox, oz, c, s, t, angle;
 
         out[7] = 0;
         if (kind == 5 || ((kind == 1 || kind == 2) && !I32(slot, 0x40)))
             continue;
-        flags = ((*(uint32_t **)(object + 0x194))[U32(polygon, 0xc) & 0xf] >> 24) & 0xf;
+        flags = (((uint32_t *)GP(object + 0x194))[U32(polygon, 0xc) & 0xf] >> 24) & 0xf;
         if (flags == 5)
             continue;
         if (flags == 4 && whole) {
@@ -460,9 +458,9 @@ void GAMEAPI body_object_hits(uint8_t *body)
     int32_t limit = I32(body, 0x124), best = limit, current = limit, surface_time = 0x7fffffff;
     uint32_t parts = 0, surface = 0, kind;
     int32_t i = (int8_t)body[RIGIDITY];
-    const char *flag = *(const char *const *)(body + 0x6ac);
+    const char *flag = ((const char *)(uintptr_t)*(const uint32_t *)(body + 0x6ac));
 
-    if ((U32(body, FLAGS) & 0x1ff) == 3 && flag != (const char *)-1 && *flag)
+    if ((U32(body, FLAGS) & 0x1ff) == 3 && flag != (const char *)0xffffffff && *flag)
         i++;
     for (i--; i >= 0; i--) {
         uint8_t *slot = slots + body[0x140 + i] * SLOT_SIZE;

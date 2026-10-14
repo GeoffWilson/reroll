@@ -15,6 +15,7 @@
  *    the OS file functions), the replay file loader (0x41c400), and the boot
  *    data copy to and from the registry (0x474030..0x4746b0). */
 #include "../runtime.h"
+#include "gamefn.h"
 #include "physics.h"
 
 #define U8(p, off) (*(uint8_t *)((uint8_t *)(p) + (off)))
@@ -22,71 +23,62 @@
 #define S16(p, off) (*(int16_t *)((uint8_t *)(p) + (off)))
 #define I32(p, off) (*(int32_t *)((uint8_t *)(p) + (off)))
 #define U32(p, off) (*(uint32_t *)((uint8_t *)(p) + (off)))
-#define G8(a) (*(uint8_t *)(a))
-#define G32(a) (*(uint32_t *)(a))
-#define GI32(a) (*(int32_t *)(a))
+#define G8(a) (*(uint8_t *)(uintptr_t)(a))
+#define G32(a) (*(uint32_t *)(uintptr_t)(a))
+#define GI32(a) (*(int32_t *)(uintptr_t)(a))
 
-#define g_race (*(uint8_t **)0x4b1960)
-#define g_set (*(uint8_t **)0x4b2198) /* the settings block */
+#define g_race GP(0x4b1960)
+#define g_set GP(0x4b2198) /* the settings block */
 
-/* Not ours. */
-typedef void(GAMEAPI *v0_fn)(void);
-typedef int32_t(GAMEAPI *i0_fn)(void);
-typedef void(GAMEAPI *v1_fn)(uint32_t a);
-typedef int32_t(GAMEAPI *i1_fn)(uint32_t a);
-typedef void(GAMEAPI *v2_fn)(uint32_t a, uint32_t b);
-typedef int32_t(GAMEAPI *i2_fn)(uint32_t a, uint32_t b);
-typedef void(GAMEAPI *v3_fn)(uint32_t a, uint32_t b, uint32_t c);
-typedef int32_t(GAMEAPI *i3_fn)(uint32_t a, uint32_t b, uint32_t c);
-typedef void(GAMEAPI *v4_fn)(uint32_t a, uint32_t b, uint32_t c, uint32_t d);
-typedef int32_t(GAMEAPI *i4_fn)(uint32_t a, uint32_t b, uint32_t c, uint32_t d);
-typedef int32_t(GAMEAPI *i7_fn)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f, uint32_t g);
-typedef uint8_t *(GAMEAPI *p1_fn)(uint32_t a);
-typedef void(GAMEAPI *proj_fn)(float a, float b, float c, float d, uint32_t e);
-
-#define mem_alloc ((p1_fn)0x4982c2)
-#define mem_free ((v1_fn)0x49827a)
-#define string_load ((i4_fn)0x42e6d0)      /* (buffer, size, name, index): -1 when missing */
-#define file_exists ((i1_fn)0x475070)
-#define registry_read ((i4_fn)0x46b650)    /* (key, value, buffer, size) */
-#define path_fix ((v2_fn)0x474ed0)         /* (path, path) */
-#define sprintf_ ((i3_fn)0x4979f0)
-#define debug_nop ((v0_fn)0x4291f0)
-#define movie_prepare ((v0_fn)0x487830)
-#define movie_run ((v3_fn)0x493210)        /* (path, window, config) */
-#define sound_direct ((i0_fn)0x46f720)
-#define display_start ((i7_fn)0x4885d0)
-#define display_stop ((v0_fn)0x487210)
-#define screen_flip ((v0_fn)0x4876f0)
-#define screen_fill ((v1_fn)0x41e040)
-#define screen_ready ((i0_fn)0x41e170)
-#define screen_done ((v0_fn)0x41e190)
-#define loading_picture ((v1_fn)0x436c2c)
-#define screen_end ((v0_fn)0x4205e0)
-#define image_load ((i3_fn)0x477530)
-#define image_free ((v1_fn)0x477810)
-#define arena_state ((v1_fn)0x496510)
-#define arena_get ((i0_fn)0x496680)
-#define archive_load_entry ((i2_fn)0x496590)
-#define arena_release ((v1_fn)0x496660)
-#define archive_name_equal ((i2_fn)0x43b5a0)
-#define file_cache_init ((v0_fn)0x43b730)
-#define os_file_close ((v1_fn)0x476e10)
-#define os_file_read ((i3_fn)0x476e20)
-#define os_file_open ((i1_fn)0x476c30)
-#define os_file_size ((i1_fn)0x476e80)
-#define fe_time ((i0_fn)0x436935)
-#define world_number ((i1_fn)0x433570)
-#define world_place ((i1_fn)0x4335c0)
-#define world_track ((i2_fn)0x4335e0)
-#define world_track_count ((i1_fn)0x448670)
-#define world_locked_tracks ((i1_fn)0x4486b0)
-#define track_title_text ((i3_fn)0x4485b0)
-#define sound_reset ((v0_fn)0x472f70)
-#define screen_reset ((v1_fn)0x496510)
-#define view_scale ((v2_fn)0x426200)
-#define view_project ((proj_fn)0x417ed0)
-#define view_clip ((v4_fn)0x41f2d0)
+/* Not ours. Game addresses may be passed as integers or pointers. */
+#define mem_alloc(n) ((uint8_t *)GCALL(0x4982c2, msvc_malloc)(n))
+#define mem_free(p) GCALL(0x49827a, msvc_free)(GMEM(p))
+#define string_load(buf, size, name, index) /* -1 when missing */ \
+    GCALL(0x42e6d0, text_line_get)((uint8_t *)GMEM(buf), size, (const char *)GMEM(name), index)
+#define file_exists(path) GCALL(0x475070, path_access_ok)((const char *)GMEM(path))
+#define registry_read(key, value, buf, size) \
+    GCALL(0x46b650, reg_string_get)(key, value, (uint32_t)(uintptr_t)(buf), size)
+#define path_fix(dst, src) GCALL(0x474ed0, path_dir_make)((uint8_t *)GMEM(dst), (const uint8_t *)GMEM(src))
+#define sprintf_(buf, format, v) GCALL(0x4979f0, msvc_sprintf)((char *)GMEM(buf), (const char *)GMEM(format), v)
+#define debug_nop GCALL(0x4291f0, dx_error_ignore)
+#define movie_prepare GCALL(0x487830, dd_primary_clear)
+#define movie_run(path, window, config) /* (path, window, config) */ \
+    GCALL(0x493210, movie_player_run)((uint32_t)(uintptr_t)(path), window, config)
+#define sound_direct GCALL(0x46f720, snd_dsound)
+#define display_start GCALL(0x4885d0, dd_start_2d)
+#define display_stop GCALL(0x487210, dd_shutdown)
+#define screen_flip GCALL(0x4876f0, flip_body)
+#define screen_fill GCALL(0x41e040, viewport_clear)
+#define screen_ready GCALL(0x41e170, d3d_scene_begin)
+#define screen_done GCALL(0x41e190, d3d_scene_end)
+#define loading_picture GCALL(0x436c2c, loading_picture_draw)
+#define screen_end GCALL(0x4205e0, texture_slots_release_thunk)
+#define image_load(name, image, flags) \
+    GCALL(0x477530, image_bmp_load)((const char *)GMEM(name), (uint8_t *)GMEM(image), flags)
+#define image_free(image) GCALL(0x477810, image_release)((uint8_t *)GMEM(image))
+#define arena_state GCALL(0x496510, archive_select)
+#define arena_get GCALL(0x496680, archive_state)
+#define archive_load_entry(index, buf) \
+    ((uint32_t)(uintptr_t)GCALL(0x496590, archive_entry_load)((int32_t)(index), (uint8_t *)GMEM(buf)))
+#define arena_release(block) GCALL(0x496660, archive_free)(GMEM(block))
+#define archive_name_equal(a, b) GCALL(0x43b5a0, archive_name_equal)((const char *)GMEM(a), (const char *)GMEM(b))
+#define file_cache_init() GCALL(0x43b730, file_cache_init)()
+#define os_file_close GCALL(0x476e10, os_handle_close)
+#define os_file_read(handle, buf, size) GCALL(0x476e20, os_handle_read)(handle, GMEM(buf), size)
+#define os_file_open(name) GCALL(0x476c30, os_file_open_read)((const char *)GMEM(name))
+#define os_file_size GCALL(0x476e80, os_handle_size)
+#define fe_time() GCALL(0x436935, fe_time)()
+#define world_number GCALL(0x433570, track_world_number)
+#define world_place GCALL(0x4335c0, track_world_place)
+#define world_track(world, place) GCALL(0x4335e0, world_track)(world, place)
+#define world_track_count(world) GCALL(0x448670, world_track_count)(world)
+#define world_locked_tracks(world) GCALL(0x4486b0, world_locked_tracks)(world)
+#define track_title_text(out, world, track) GCALL(0x4485b0, track_title_text)((char *)GMEM(out), world, track)
+#define sound_reset GCALL(0x472f70, sound_engine_restart)
+#define screen_reset GCALL(0x496510, archive_select)
+#define view_scale GCALL(0x426200, gte_screen_offset_set)
+#define view_project GCALL(0x417ed0, frustum_body)
+#define view_clip GCALL(0x41f2d0, viewport_body)
 
 /* Defined below (or by another group's hook, called by address). */
 void GAMEAPI movie_texts_free(void);
@@ -128,9 +120,9 @@ char *GAMEAPI movie_path(const char *dir, const char *name)
         str_cat(path, STR_BACKSLASH);
     }
     str_cat(path, name);
-    if (file_exists((uint32_t)path) == 0) {
-        if (registry_read(0x4ac754, 0x4ac77c, (uint32_t)install, 0x104) != -1) {
-            path_fix((uint32_t)install, (uint32_t)install);
+    if (file_exists(path) == 0) {
+        if (registry_read(0x4ac754, 0x4ac77c, install, 0x104) != -1) {
+            path_fix(install, install);
             str_cat(install, (const char *)0x4ac740);
             if (dir) {
                 str_cat(install, STR_UP);
@@ -138,7 +130,7 @@ char *GAMEAPI movie_path(const char *dir, const char *name)
                 str_cat(install, STR_BACKSLASH);
             }
             str_cat(install, name);
-            if (file_exists((uint32_t)install) != 0) {
+            if (file_exists(install) != 0) {
                 char *d = path;
                 const char *s = install;
 
@@ -167,7 +159,7 @@ void GAMEAPI movie_play(const char *path)
 #ifdef REROLL_NATIVE
     if (0) { /* no movie player yet in the native build (docs/native/plan.md step 8): as if the file were missing */
 #else
-    if (file_exists((uint32_t)path) != 0) {
+    if (file_exists(path) != 0) {
 #endif
         uint32_t direct;
 
@@ -192,7 +184,7 @@ void GAMEAPI movie_play(const char *path)
         config[0] = flags;
         movie_prepare();
         debug_nop();
-        movie_run((uint32_t)path, G32(0x6c8000), (uint32_t)config);
+        movie_run(path, G32(0x6c8000), config);
         debug_nop();
     }
     movie_texts_free();
@@ -232,7 +224,7 @@ void GAMEAPI credits_play(void)
         char *p = (char *)mem_alloc(0x80);
 
         if (p) {
-            if (string_load((uint32_t)p, 0x80, 0x4ac7c0, (uint32_t)i) == -1)
+            if (string_load(p, 0x80, 0x4ac7c0, i) == -1)
                 *p = 0;
             else {
                 used[i] = 1;
@@ -253,7 +245,7 @@ void GAMEAPI credits_play(void)
     movie_play(movie_path(STR_MOVIES, (const char *)0x4ac7b4));
     for (i = 0; i < 0x40; i++)
         if (lines[i])
-            mem_free((uint32_t)lines[i]);
+            mem_free(lines[i]);
 }
 
 /* 0x42db90, 0x42dbb0, 0x42dbd0: coploses.fmv, copchal.fmv and expert.fmv. */
@@ -279,7 +271,7 @@ void GAMEAPI movie_win(int32_t language)
     static const uint32_t names[7] = {0x4ac838, 0x4ac82c, 0x4ac820, 0x4ac814, 0x4ac808, 0x4ac7fc, 0x4ac7f0};
 
     if (language >= 0 && language <= 6)
-        movie_play(movie_path(STR_MOVIES, (const char *)names[language]));
+        movie_play(movie_path(STR_MOVIES, (const char *)(uintptr_t)names[language]));
 }
 
 /* 0x42dc60: free the queued movie texts (16-byte records at 0x6cc400, count
@@ -313,7 +305,7 @@ int32_t GAMEAPI text_width(const uint8_t *text)
         if (*text == 0x20)
             width += GI32(0x6c0a70);
         else if (G8(0x6c1a7c + *text) != 0xff)
-            width += *(uint16_t *)(0x6c0a80 + G8(0x6c1a7c + *text) * 0x10) + GI32(0x6c0a74);
+            width += *(uint16_t *)(uintptr_t)(0x6c0a80 + G8(0x6c1a7c + *text) * 0x10) + GI32(0x6c0a74);
     }
     return width;
 }
@@ -345,7 +337,7 @@ void GAMEAPI movie_text_add(int32_t side, uint32_t y, const char *text)
     }
     n = GI32(0x4be2b8);
     rec = (uint32_t *)0x6cc400 + n * 4;
-    rec[3] = (uint32_t)copy;
+    rec[3] = (uint32_t)(uintptr_t)copy;
     rec[2] = y;
     width = text_width((const uint8_t *)text);
     rec[0] = (uint32_t)((GI32(0x4acc38) >> 1) - (width >> 1));
@@ -452,9 +444,9 @@ int32_t GAMEAPI font_cells_build(const char *name, int32_t cell, uint8_t *out, i
     int16_t *rec;
 
     G32(0x4c241c) = 0;
-    if (image_load((uint32_t)name, 0x4c2408, 1) == 0)
+    if (image_load(name, 0x4c2408, 1) == 0)
         return 0;
-    palette = (uint8_t *)G32(0x4c2418);
+    palette = GP(0x4c2418);
     for (i = 0; i < 0x100; i++) {
         uint32_t s0 = palette[i * 4], s1 = palette[i * 4 + 1], s2 = palette[i * 4 + 2];
 
@@ -467,7 +459,7 @@ int32_t GAMEAPI font_cells_build(const char *name, int32_t cell, uint8_t *out, i
     }
     n = (int32_t)(int16_t)G32(0x4c240e) * (int32_t)(int16_t)G32(0x4c240c);
     G32(0x4c2004) = 0;
-    pixels = (uint8_t *)G32(0x4c241c);
+    pixels = GP(0x4c241c);
     for (i = 0; i < n; i++)
         if (G32(0x4c2004 + pixels[i] * 4) == 0)
             pixels[i] = 0;
@@ -485,7 +477,7 @@ int32_t GAMEAPI font_cells_build(const char *name, int32_t cell, uint8_t *out, i
     rec = (int16_t *)(out + 0x1e);
     for (; index < count; index++, x += cell, rec += 8) {
         int32_t stride = (int16_t)G32(0x4c240c);
-        const uint8_t *p = (const uint8_t *)G32(0x4c241c) + stride * row + x;
+        const uint8_t *p = GP(0x4c241c) + stride * row + x;
         int32_t a = bitmap_scan(p, 1, cell - 1, stride, rows - 1);
         int32_t b = bitmap_scan(p + (cell - 1), -1, cell - 1, stride, rows - 1);
         int32_t right = cell - b - 1;
@@ -526,7 +518,7 @@ void GAMEAPI font_map_init(void)
 
     if (font_cells_build((const char *)0x4ac860, 0x10, (uint8_t *)0x6c0a60, 0x36, 100, 0x46) == 0)
         return;
-    ((v1_fn)0x477460)(0x4c2408);
+    GCALL(0x477460, image_palette_to_16)((uint8_t *)GMEM(0x4c2408));
     *(uint32_t *)extra = G32(0x4af5a0);
     *(uint32_t *)(extra + 4) = G32(0x4af5a4);
     extra[8] = G8(0x4af5a8);
@@ -693,7 +685,7 @@ void GAMEAPI debug_key_event(int32_t key)
 void GAMEAPI view_rect_set(int32_t x, int32_t y, int32_t w, int32_t h)
 {
     view_scale((uint32_t)(w >> 1), (uint32_t)(h >> 1));
-    view_project((float)x, (float)y, (float)w, (float)h, G32(0x6ccd00));
+    view_project((float)x, (float)y, (float)w, (float)h, *(const float *)GMEM(0x6ccd00));
     view_clip((uint32_t)x, (uint32_t)y, (uint32_t)w, (uint32_t)h);
 }
 
@@ -711,7 +703,7 @@ uint32_t GAMEAPI archive_find_by_name(uint32_t name)
     for (i = 0; i < GI32(0x4adaa0); i++) {
         r = (uint32_t)archive_name_equal(name, G32(0x4ad000 + i * 8));
         if (r != 0)
-            return (r & 0xffff0000) | *(uint16_t *)(0x4ad004 + i * 8);
+            return (r & 0xffff0000) | *(uint16_t *)(uintptr_t)(0x4ad004 + i * 8);
         r = (uint32_t)GI32(0x4adaa0);
     }
     return (r & 0xffff0000) | 0xffff;
@@ -739,7 +731,7 @@ uint32_t GAMEAPI file_open_any(uint32_t name)
     int32_t slot = (int16_t)found;
 
     if ((int16_t)found >= 0 && slot < GI32(0x4adaa4)) {
-        uint32_t *entry = (uint32_t *)(0x6c25c0 + slot * 8);
+        uint32_t *entry = (uint32_t *)(uintptr_t)(0x6c25c0 + slot * 8);
 
         file_cache_init();
         if (entry[0] == 0)
@@ -794,7 +786,7 @@ uint32_t GAMEAPI file_read_any(uint32_t handle, uint8_t *dest, uint32_t size)
     if ((int16_t)found >= 0 && slot < GI32(0x4adaa4)) {
         if ((int32_t)size > 0) {
             if (dest) {
-                const uint8_t *src = (const uint8_t *)(G32(0x6c25c4 + slot * 8) + G32(0x6c25c0 + slot * 8));
+                const uint8_t *src = (const uint8_t *)(uintptr_t)(G32(0x6c25c4 + slot * 8) + G32(0x6c25c0 + slot * 8));
                 uint32_t i;
 
                 for (i = 0; i < size; i++)
@@ -804,7 +796,7 @@ uint32_t GAMEAPI file_read_any(uint32_t handle, uint8_t *dest, uint32_t size)
         }
         return 1;
     }
-    return (uint32_t)os_file_read(handle, (uint32_t)dest, size);
+    return (uint32_t)os_file_read(handle, dest, size);
 }
 
 /* --- the random numbers and picks --- */
@@ -1112,7 +1104,7 @@ void GAMEAPI track_title(uint8_t *buf, int32_t index)
     uint32_t place = (uint32_t)world_place(index);
     uint32_t world = (uint32_t)world_number(index);
 
-    track_title_text((uint32_t)buf, world, place);
+    track_title_text(buf, (int32_t)world, (int32_t)place);
 }
 
 /* 0x433670: the track for this race, once (cached in 0x4acab0; -1 = not yet
@@ -1236,18 +1228,18 @@ int32_t GAMEAPI replay_files_load(void)
     int32_t failed = 0, i, offset = 0;
 
     for (i = 0; i < 6; i++)
-        paths[i] = (uint32_t)(g_set + 0xccc + i * 0x20);
+        paths[i] = (uint32_t)(uintptr_t)(g_set + 0xccc + i * 0x20);
     if (g_race[0x54d] != 0) {
         i = 0;
         do {
             uint32_t file, k = 0;
             const char *prefix = (const char *)0x4a7f7c;
-            const char *path = (const char *)paths[i];
+            const char *path = (const char *)(uintptr_t)paths[i];
 
             for (; k < 9; k++)
                 name[k] = prefix[k];
             str_cat(name, path);
-            file = file_open_any((uint32_t)name);
+            file = file_open_any((uint32_t)(uintptr_t)name);
             if (file == 0)
                 return 0;
             if (os_file_size(file) == 0x1e884)
@@ -1494,7 +1486,7 @@ after:
 void GAMEAPI table_copy(int32_t op, const uint32_t *table)
 {
     int32_t kind = (int32_t)table[0];
-    uint8_t *a = (uint8_t *)table[1], *b = (uint8_t *)table[2];
+    uint8_t *a = (uint8_t *)(uintptr_t)table[1], *b = (uint8_t *)(uintptr_t)table[2];
 
     for (;;) {
         if (kind == -1 || a == 0 || b == 0)
@@ -1546,8 +1538,8 @@ void GAMEAPI table_copy(int32_t op, const uint32_t *table)
         }
         table += 3;
         kind = (int32_t)table[0];
-        a = (uint8_t *)table[1];
-        b = (uint8_t *)table[2];
+        a = (uint8_t *)(uintptr_t)table[1];
+        b = (uint8_t *)(uintptr_t)table[2];
     }
 }
 
@@ -1586,24 +1578,24 @@ int32_t GAMEAPI registry_load(uint8_t *buf, int32_t size, uint32_t name)
     if (backup)
         for (i = 0; i < size; i++)
             backup[i] = buf[i];
-    got = ((i4_fn)0x46b6d0)(0x4b2284, name, (uint32_t)buf, (uint32_t)size);
+    got = GCALL(0x46b6d0, reg_binary_get)(0x4b2284, name, (uint32_t)(uintptr_t)buf, size);
     if (got < size) {
         if (backup) {
             for (i = 0; i < size; i++)
                 buf[i] = backup[i];
-            mem_free((uint32_t)backup);
+            mem_free(backup);
         }
         return -1;
     }
     if (backup)
-        mem_free((uint32_t)backup);
+        mem_free(backup);
     return 0;
 }
 
 /* 0x474230: write a boot data value (0x46b730): 0 for success, -1 not. */
 int32_t GAMEAPI registry_save(uint8_t *buf, uint32_t size, uint32_t name)
 {
-    int32_t r = ((i4_fn)0x46b730)(0x4b2284, name, (uint32_t)buf, size);
+    int32_t r = GCALL(0x46b730, reg_binary_set)(0x4b2284, name, (uint32_t)(uintptr_t)buf, (int32_t)size);
 
     return (r != -1) - 1;
 }

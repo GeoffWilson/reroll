@@ -20,7 +20,9 @@
  * the group is called by address. */
 #include "../runtime.h"
 #include "physics.h"
+#include "gamefn.h"
 
+#include <math.h>
 #include <string.h>
 
 #define U8(p, off) (*(uint8_t *)((uint8_t *)(uintptr_t)(p) + (off)))
@@ -34,23 +36,16 @@
 #define GI32(a) (*(int32_t *)(uintptr_t)(a))
 #define A(x) ((uint32_t)(uintptr_t)(x))
 
-typedef uint32_t(GAMEAPI *wa_fn1)(uint32_t a);
-typedef uint32_t(GAMEAPI *wa_fn2)(uint32_t a, uint32_t b);
-typedef uint32_t(GAMEAPI *wa_fn4)(uint32_t a, uint32_t b, uint32_t c, uint32_t d);
-
-#define CALL1(a, x) (((wa_fn1)(a))(A(x)))
-#define CALL2(a, x, y) (((wa_fn2)(a))(A(x), A(y)))
-#define CALL4(a, x, y, z, w) (((wa_fn4)(a))(A(x), A(y), A(z), A(w)))
-
-#define d3d_viewport_set(x, y, w, h) CALL4(0x41f210, x, y, w, h)
-#define screen_offset_get(px, py) CALL2(0x426240, px, py)
-#define light_colours_from_ids(ids, out) CALL2(0x459cb0, ids, out)
-#define model_draw_lit(o, lights) CALL2(0x45a260, o, lights)
-#define grid_record(link) CALL1(0x4613e0, link)
-#define track_runs_visible(cell, out) CALL2(0x47a0d0, cell, out)
-#define track_runs_diff_texture(now, before) CALL2(0x47a500, now, before)
-#define track_runs_light_flags(list) CALL1(0x47c420, list)
-#define track_runs_light(list, mode) CALL2(0x47c730, list, mode)
+#define d3d_viewport_set(x, y, w, h) GCALL(0x41f210, d3d_viewport_set)(x, y, w, h)
+#define screen_offset_get(px, py) GCALL(0x426240, gte_screen_offset_get)(px, py)
+#define light_colours_from_ids(ids, out) GCALL(0x459cb0, light_colours_from_ids)(ids, out)
+#define model_draw_lit(o, lights) GCALL(0x45a260, model_draw_lit)((uint8_t *)GMEM(o), A(lights))
+#define grid_record(link) A(GCALL(0x4613e0, grid_record)(link))
+#define track_runs_visible(cell, out) GCALL(0x47a0d0, track_runs_visible)(cell, (uint32_t *)GMEM(out))
+#define track_runs_diff_texture(now, before) \
+    GCALL(0x47a500, track_runs_diff_texture)((uint32_t *)GMEM(now), (uint32_t *)GMEM(before))
+#define track_runs_light_flags(list) GCALL(0x47c420, track_runs_light_flags)((uint32_t *)GMEM(list))
+#define track_runs_light(list, mode) GCALL(0x47c730, track_runs_light)((uint32_t *)GMEM(list), mode)
 #define CRT_ATAN 0x497c24u
 #define CRT_SIN 0x497b74u
 #define CRT_COS 0x497ac4u
@@ -140,6 +135,7 @@ static inline uint32_t wa_cmp(uint32_t a, uint32_t b)
 
 /* A C runtime function of one double (pushed as two words), its st(0)
  * result stored as a float. */
+#if defined(__i386__)
 static inline uint32_t wa_crt_d1(uint32_t fn, uint64_t d)
 {
     uint32_t r, lo = (uint32_t)d, hi = (uint32_t)(d >> 32);
@@ -154,6 +150,22 @@ static inline uint32_t wa_crt_d1(uint32_t fn, uint64_t d)
                        "st(6)", "st(7)");
     return r;
 }
+#else
+/* x86-64: the C library's atan / sin / cos (the C runtime's are x87 asm
+ * taking the double on the stack), the result stored as a float. */
+static inline uint32_t wa_crt_d1(uint32_t fn, uint64_t d)
+{
+    double x, y;
+    float f;
+    uint32_t r;
+
+    memcpy(&x, &d, 8);
+    y = fn == CRT_ATAN ? atan(x) : fn == CRT_SIN ? sin(x) : cos(x);
+    f = (float)y;
+    memcpy(&r, &f, 4);
+    return r;
+}
+#endif
 
 static inline uint32_t fbits(float f)
 {

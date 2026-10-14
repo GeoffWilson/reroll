@@ -24,20 +24,21 @@
 #include "../runtime.h"
 #include "physics.h"
 #include "winapi.h"
+#include "gamefn.h"
 
-#define U8(p, off) (*(uint8_t *)((uint8_t *)(p) + (off)))
-#define U16(p, off) (*(uint16_t *)((uint8_t *)(p) + (off)))
-#define S16(p, off) (*(int16_t *)((uint8_t *)(p) + (off)))
-#define U32(p, off) (*(uint32_t *)((uint8_t *)(p) + (off)))
-#define I32(p, off) (*(int32_t *)((uint8_t *)(p) + (off)))
-#define G32(a) (*(uint32_t *)(a))
-#define GI32(a) (*(int32_t *)(a))
+#define U8(p, off) (*(uint8_t *)((uint8_t *)(uintptr_t)(p) + (off)))
+#define U16(p, off) (*(uint16_t *)((uint8_t *)(uintptr_t)(p) + (off)))
+#define S16(p, off) (*(int16_t *)((uint8_t *)(uintptr_t)(p) + (off)))
+#define U32(p, off) (*(uint32_t *)((uint8_t *)(uintptr_t)(p) + (off)))
+#define I32(p, off) (*(int32_t *)((uint8_t *)(uintptr_t)(p) + (off)))
+#define G32(a) (*(uint32_t *)(uintptr_t)(a))
+#define GI32(a) (*(int32_t *)(uintptr_t)(a))
 
 #define CHANNELS 64
 #define CHANNEL_SIZE 0x3c
 #define CHANNEL_TABLE 0x6cb500
-#define CHANNEL(i) ((uint8_t *)(CHANNEL_TABLE + (uint32_t)(i) * CHANNEL_SIZE))
-#define CHANNEL_END ((uint8_t *)(CHANNEL_TABLE + CHANNELS * CHANNEL_SIZE))
+#define CHANNEL(i) ((uint8_t *)(uintptr_t)(CHANNEL_TABLE + (uint32_t)(i) * CHANNEL_SIZE))
+#define CHANNEL_END ((uint8_t *)(uintptr_t)(CHANNEL_TABLE + CHANNELS * CHANNEL_SIZE))
 
 #define g_inited G32(0x4d4520)  /* snd_init has run */
 #define g_open G32(0x4d4524)    /* QMixer session open */
@@ -51,21 +52,6 @@
 #define g_last_channel GI32(0x4b1c6c)
 #define g_channel_limit GI32(0x4b1c74)
 #define g_speaker_mode GI32(0x4d454c)
-
-/* Original functions called by address (other groups, the x87 code, the
- * runtime). */
-#define fix_sqrt_table ((int32_t(GAMEAPI *)(uint32_t))0x427960)
-#define sound_voices_crowded_orig ((int32_t(GAMEAPI *)(void))0x470e70)
-#define voices_init_orig ((void(GAMEAPI *)(void))0x471370)
-#define voices_exit_orig ((void(GAMEAPI *)(void))0x4713b0)
-#define voice_data_orig ((uint32_t(GAMEAPI *)(int32_t))0x471400)
-#define channel_defaults_orig ((void(GAMEAPI *)(int32_t, uint32_t))0x4714c0)
-#define channel_direction_orig ((void(GAMEAPI *)(int32_t, uint32_t, uint32_t, uint32_t))0x470160)
-#define channels_refresh_orig ((int32_t(GAMEAPI *)(void))0x470ef0)
-#define file_load_orig ((uint32_t(GAMEAPI *)(uint32_t, uint32_t))0x496590)
-#define mem_free_orig ((void(GAMEAPI *)(uint32_t))0x49827a)
-#define sprintf_orig ((int32_t(GAMEAPI *)(char *, const char *, ...))0x4979f0)
-#define log_print_orig ((int32_t(GAMEAPI *)(const char *, const char *))0x4963c0)
 
 int32_t GAMEAPI snd_channel_kind(int32_t channel);
 uint32_t GAMEAPI snd_channel_buffer(int32_t channel);
@@ -92,7 +78,7 @@ int32_t GAMEAPI snd_vec_length(const int16_t *v)
     sum = (uint32_t)(z * z + y * y + x * x);
     if (sum > 0x900)
         return 0x30;
-    return fix_sqrt_table(sum);
+    return (int32_t)GCALL(0x427960, fix_sqrt_table)((int32_t)sum);
 }
 
 /* 0x46f080: merge `box` (6 int16: min, max at +0/+0xc) into the box `holder`
@@ -106,7 +92,7 @@ int32_t GAMEAPI snd_box_merge(uint8_t *holder, uint8_t *box)
     int32_t len1, len2, dot, prod, limit;
     uint8_t *other;
 
-    if ((int32_t)box == -1)
+    if ((int32_t)(uintptr_t)box == -1)
         return 0;
     s1[0] = (int16_t)(S16(box, 0xc) - S16(box, 0));
     s1[1] = (int16_t)(S16(box, 0xe) - S16(box, 2));
@@ -114,7 +100,7 @@ int32_t GAMEAPI snd_box_merge(uint8_t *holder, uint8_t *box)
     len1 = snd_vec_length(s1);
     if (len1 >= 0x30)
         return 0;
-    other = *(uint8_t **)(holder + 0xb8);
+    other = GP(holder + 0xb8);
     s2[0] = (int16_t)(S16(other, 0xc) - S16(other, 0));
     s2[1] = (int16_t)(S16(other, 0xe) - S16(other, 2));
     s2[2] = (int16_t)(S16(other, 0x10) - S16(other, 4));
@@ -126,12 +112,12 @@ int32_t GAMEAPI snd_box_merge(uint8_t *holder, uint8_t *box)
     limit = (int32_t)(((uint32_t)prod << 8) - (uint32_t)prod) >> 8;
     if (dot <= limit)
         return 0;
-    other = *(uint8_t **)(holder + 0xb8);
+    other = GP(holder + 0xb8);
     U32(box, 0xc) = U32(other, 0xc);
     U32(box, 0x10) = U32(other, 0x10);
     U32(box, 0x14) = U32(other, 0x14);
     U16(box, 0x1a) = 1;
-    U32(holder, 0xb8) = (uint32_t)box;
+    U32(holder, 0xb8) = (uint32_t)(uintptr_t)box;
     return 1;
 }
 
@@ -167,7 +153,7 @@ int32_t GAMEAPI snd_activate(int32_t on)
         if (flag) {
             U8(ch, 1) = (uint8_t)snd_channel_kind(i);
             U32(ch, 0x38) = snd_channel_buffer(i);
-            U32(ch, 0x34) = voice_data_orig(i);
+            U32(ch, 0x34) = GCALL(0x471400, snd_channel_eax_props)((uint32_t)i);
         } else {
             U8(ch, 1) = 0;
             U32(ch, 0x38) = 0;
@@ -188,7 +174,7 @@ uint32_t GAMEAPI snd_dsound(void)
         return 0;
     if (!g_active)
         return 0;
-    return QSWaveMixGetDirectSound(g_session, (void **)&object) == 0 ? object : 0;
+    return QSWaveMixGetDirectSound(g_session, &object) == 0 ? object : 0;
 }
 
 /* 0x46f760: set the listener rolloff (a float passed as its bits). 0 / -1. */
@@ -268,7 +254,7 @@ uint32_t GAMEAPI snd_channel_buffer(int32_t channel)
         return 0;
     if (channel < 0 || channel >= CHANNELS)
         return 0;
-    return QSWaveMixGetDirectSoundBuffer(g_session, (uint32_t)channel, (void **)&buffer) == 0 ? buffer : 0;
+    return QSWaveMixGetDirectSoundBuffer(g_session, (uint32_t)channel, &buffer) == 0 ? buffer : 0;
 }
 
 /* 0x46f940: open the session's channels (OpenChannel 0, 1). 0 / -1. */
@@ -383,8 +369,8 @@ int32_t GAMEAPI snd_channels_reset(void)
         snd_chan_volume(i, 0);
         snd_chan_frequency(i, 0);
         snd_chan_position(i, 0, 0x41200000, 0);
-        channel_direction_orig(i, 0, 0, 0);
-        channel_defaults_orig(i, 0);
+        GCALL(0x470160, snd_chan_velocity)(i, 0, 0, 0);
+        GCALL(0x4714c0, eax_voice_reverb_set)(i, 0);
     }
     return 0;
 }
@@ -456,7 +442,7 @@ void GAMEAPI snd_waves_free(void)
             U32(g_wave_table, i * 0x40 + 0x10) = 0;
         }
     }
-    mem_free_orig(g_waves);
+    GCALL(0x49827a, msvc_free)(GMEM(g_waves));
     g_waves = 0;
     g_wave_count = 0;
 }
@@ -473,7 +459,7 @@ uint32_t GAMEAPI snd_waves_load(uint32_t name)
     uint8_t fmt[0x14];
 
     snd_waves_free();
-    block = file_load_orig(name, 0);
+    block = (uint32_t)(uintptr_t)GCALL(0x496590, archive_entry_load)((int32_t)name, 0);
     g_waves = block;
     if (!block)
         return 0;
@@ -484,10 +470,10 @@ uint32_t GAMEAPI snd_waves_load(uint32_t name)
     if (I32(block, 0x40) <= 0)
         return table;
     for (i = 0; i < g_wave_count; i++) {
-        uint8_t *rec = (uint8_t *)(g_wave_table + ((uint32_t)i << 6));
+        uint8_t *rec = (uint8_t *)GMEM(g_wave_table + ((uint32_t)i << 6));
 
         snd_wave_format(fmt, 1, U8(rec, 0x15), U32(rec, 0xc), U8(rec, 0x14));
-        U32(rec, 0x10) = snd_wave_open(U32(rec, 0) + g_wave_data, U32(rec, 4), (uint32_t)fmt, (uint32_t)i);
+        U32(rec, 0x10) = snd_wave_open(U32(rec, 0) + g_wave_data, U32(rec, 4), (uint32_t)(uintptr_t)fmt, (uint32_t)i);
     }
     return (uint32_t)g_wave_count;
 }
@@ -523,7 +509,7 @@ int32_t GAMEAPI snd_chan_play(int32_t wave, int32_t channel, uint32_t loop)
         return 0;
     if (wave < 0 || wave >= g_wave_count)
         return 0;
-    rec = (uint8_t *)(g_wave_table + ((uint32_t)wave << 6));
+    rec = (uint8_t *)GMEM(g_wave_table + ((uint32_t)wave << 6));
     handle = U32(rec, 0x10);
     if (!handle)
         return 0;
@@ -732,12 +718,12 @@ int32_t GAMEAPI snd_channel_limit(void)
 
     if (n < 8) {
         g_channel_limit = 8;
-        channels_refresh_orig();
+        GCALL(0x470ef0, sound_channels_refresh)();
         return 0;
     }
     if (n > 0x20)
         g_channel_limit = 0x20;
-    channels_refresh_orig();
+    GCALL(0x470ef0, sound_channels_refresh)();
     return 0;
 }
 
@@ -752,7 +738,7 @@ int32_t GAMEAPI snd_voice_flags(void)
     uint8_t *ch;
 
     if (G32(0x4b1c88))
-        crowded = sound_voices_crowded_orig();
+        crowded = GCALL(0x470e70, sound_voices_crowded)();
     extra = G32(0x4b1c84);
     is_open = g_open;
     is_active = g_active;
@@ -778,7 +764,7 @@ int32_t GAMEAPI snd_voice_flags(void)
         }
         U8(ch, 0) = flags | 0x10;
     }
-    channels_refresh_orig();
+    GCALL(0x470ef0, sound_channels_refresh)();
     return 0;
 }
 
@@ -823,7 +809,7 @@ int32_t GAMEAPI snd_settings_apply(void)
     snd_speakers();
     snd_options_apply();
     snd_channels_enable();
-    return channels_refresh_orig();
+    return GCALL(0x470ef0, sound_channels_refresh)();
 }
 
 /* 0x4705f0: step the speaker mode 0x4d454c forward (`next`) or back through
@@ -942,15 +928,16 @@ int32_t GAMEAPI snd_profile_start(void)
 
 /* 0x470ca0: format the profile statistics into `dst` with the format at
  * 0x4b1cb4: 29 doubles read from 0x600160.. in the order the original pushes
- * them (as dword pairs), and a final 0. Returns sprintf's result. */
+ * them, and a final 0. Returns sprintf's result. */
 int32_t GAMEAPI snd_stats_format(char *dst)
 {
-#define D(a) G32(a), G32((a) + 4)
-    return sprintf_orig(dst, (const char *)0x4b1cb4, D(0x600160), D(0x600168), D(0x6001a8), D(0x6001e8), D(0x600228),
-                        D(0x600170), D(0x6001b0), D(0x6001f0), D(0x600230), D(0x600178), D(0x6001b8), D(0x6001f8),
-                        D(0x600238), D(0x600180), D(0x6001c0), D(0x600200), D(0x600240), D(0x600268), D(0x600280),
-                        D(0x600298), D(0x6002b0), D(0x600270), D(0x600288), D(0x6002a0), D(0x6002b8), D(0x600278),
-                        D(0x600290), D(0x6002a8), D(0x6002c0), 0);
+#define D(a) (*(const double *)(uintptr_t)(a))
+    return GCALL(0x4979f0, msvc_sprintf)(dst, (const char *)0x4b1cb4, D(0x600160), D(0x600168), D(0x6001a8),
+                                         D(0x6001e8), D(0x600228), D(0x600170), D(0x6001b0), D(0x6001f0), D(0x600230),
+                                         D(0x600178), D(0x6001b8), D(0x6001f8), D(0x600238), D(0x600180), D(0x6001c0),
+                                         D(0x600200), D(0x600240), D(0x600268), D(0x600280), D(0x600298), D(0x6002b0),
+                                         D(0x600270), D(0x600288), D(0x6002a0), D(0x6002b8), D(0x600278), D(0x600290),
+                                         D(0x6002a8), D(0x6002c0), 0);
 #undef D
 }
 
@@ -960,7 +947,13 @@ int32_t GAMEAPI snd_stats_log(void)
     char text[0x800];
 
     snd_stats_format(text);
-    return log_print_orig((const char *)0x4b1e48, text);
+#if defined(__i386__)
+    /* the original returns what 0x4963c0 (void in C) leaves in eax */
+    return ((int32_t(GAMEAPI *)(const char *, const char *))0x4963c0)((const char *)0x4b1e48, text);
+#else
+    GCALL(0x4963c0, debug_log_print)((const char *)0x4b1e48, text);
+    return 0;
+#endif
 }
 
 /* 0x46f610: shut the sound engine down: voices (0x4713b0), deactivate,
@@ -970,7 +963,7 @@ int32_t GAMEAPI snd_shutdown(void)
     int32_t result = 0;
 
     if (g_open) {
-        voices_exit_orig();
+        GCALL(0x4713b0, sound_eax_close)();
         snd_activate(0);
         result = (int32_t)QSWaveMixCloseSession(g_session);
     }
@@ -1029,7 +1022,7 @@ int32_t GAMEAPI snd_init(void)
     snd_activate(1);
     result = 0;
     if (g_active) {
-        voices_init_orig();
+        GCALL(0x471370, sound_eax_open)();
         snd_settings_apply();
         snd_open_channels();
         result = snd_channels_reset();

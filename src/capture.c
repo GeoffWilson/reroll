@@ -135,7 +135,7 @@ static void put_region(uint32_t address, uint32_t len)
 {
     chunk(TAG('R', 'E', 'G', 'N'), len + 4);
     put(&address, 4);
-    put((const void *)address, len);
+    put((const void *)(uintptr_t)address, len);
 }
 
 static void put_region_data(uint32_t address, const void *data, uint32_t len)
@@ -178,10 +178,10 @@ static int readable(uint32_t address, uint32_t len)
         return 0;
     if (address >= cache_start && address + len <= cache_end)
         return 1;
-    if (!VirtualQuery((const void *)address, &info, sizeof info) || info.state != MEM_COMMIT)
+    if (!VirtualQuery((const void *)(uintptr_t)address, &info, sizeof info) || info.state != MEM_COMMIT)
         return 0;
-    cache_start = (uint32_t)info.base_address;
-    cache_end = cache_start + info.region_size;
+    cache_start = (uint32_t)(uintptr_t)info.base_address;
+    cache_end = cache_start + (uint32_t)info.region_size;
     return address + len <= cache_end;
 }
 
@@ -232,17 +232,17 @@ static void record_walk(uint32_t start)
     put(head, 8);
     add_region(0x6cc000, 0x3000);
     add_region(start, 4);
-    word = *(uint32_t *)start;
+    word = *(uint32_t *)(uintptr_t)start;
     while (word != 0xffffffff && guard-- > 0) {
         uint32_t address = word & 0x7fffffff;
         if (!readable(address, 4))
             break;
         if (word & 0x80000000) {
             add_region(address, 4);
-            word = *(uint32_t *)address;
+            word = *(uint32_t *)(uintptr_t)address;
         } else {
-            add_region(address, readable(address, 8) ? packet_size((const uint8_t *)address) : 4);
-            word = *(uint32_t *)address;
+            add_region(address, readable(address, 8) ? packet_size((const uint8_t *)(uintptr_t)address) : 4);
+            word = *(uint32_t *)(uintptr_t)address;
         }
     }
     if (guard <= 0)
@@ -285,7 +285,7 @@ static void record_prim(uint32_t packet)
 
     if (!readable(packet, 8))
         return;
-    size = packet_size((const uint8_t *)packet);
+    size = packet_size((const uint8_t *)(uintptr_t)packet);
     if (!readable(packet, size))
         return;
     head[0] = fake_table;
@@ -294,7 +294,7 @@ static void record_prim(uint32_t packet)
     put(head, 8);
     put_region(0x6cc000, 0x3000);
     put_region_data(fake_table, &packet, 4);
-    memcpy(copy, (const void *)packet, size);
+    memcpy(copy, (const void *)(uintptr_t)packet, size);
     *(uint32_t *)copy = 0xffffffff;
     put_region_data(packet, copy, size);
 }
@@ -315,7 +315,7 @@ void GAMEAPI capture_draw_prim(uint32_t packet)
 static void record_texture(int slot)
 {
     uint8_t *rec = TEX_SLOT(slot);
-    void **surface = *(void ***)(rec + 4);
+    void **surface = (void **)(uintptr_t)*(uint32_t *)(rec + 4);
     uint8_t desc[0x6c];
     uint32_t key[2] = {0, 0}, head[12], y, height, pitch;
     int i;
@@ -323,7 +323,7 @@ static void record_texture(int slot)
     int32_t(__stdcall * lock)(void *, void *, uint8_t *, DWORD, void *);
     int32_t(__stdcall * unlock)(void *, void *);
 
-    if (!surface || !readable((uint32_t)surface, 4))
+    if (!surface || !readable((uint32_t)(uintptr_t)surface, 4))
         return;
     get_color_key = (int32_t(__stdcall *)(void *, DWORD, uint32_t *))((void **)*surface)[0x40 / 4];
     lock = (int32_t(__stdcall *)(void *, void *, uint8_t *, DWORD, void *))((void **)*surface)[0x64 / 4];
@@ -353,7 +353,7 @@ static void record_texture(int slot)
     chunk(TAG('T', 'E', 'X', 'S'), sizeof head + height * pitch);
     put(head, sizeof head);
     for (y = 0; y < height; y++)
-        put(*(uint8_t **)(desc + 0x24) + y * pitch, pitch);
+        put(((uint8_t *)(uintptr_t)*(uint32_t *)(desc + 0x24)) + y * pitch, pitch);
     unlock(surface, 0);
 }
 
@@ -458,7 +458,7 @@ static void live_init(void)
 static void live_texture(int slot)
 {
     uint8_t *rec = TEX_SLOT(slot), *out = live_base + LIVE_TEX_OFFSET + slot * LIVE_TEX_STRIDE;
-    void **surface = *(void ***)(rec + 4);
+    void **surface = (void **)(uintptr_t)*(uint32_t *)(rec + 4);
     uint8_t desc[0x6c];
     uint32_t key[2] = {0, 0}, *head = (uint32_t *)(out + 4), w, h, pitch, y, x, sum = 2166136261u;
     const uint8_t *pixels;
@@ -466,7 +466,7 @@ static void live_texture(int slot)
     int32_t(__stdcall * lock)(void *, void *, uint8_t *, DWORD, void *);
     int32_t(__stdcall * unlock)(void *, void *);
 
-    if (!surface || !readable((uint32_t)surface, 4))
+    if (!surface || !readable((uint32_t)(uintptr_t)surface, 4))
         return;
     get_color_key = (int32_t(__stdcall *)(void *, DWORD, uint32_t *))((void **)*surface)[0x40 / 4];
     lock = (int32_t(__stdcall *)(void *, void *, uint8_t *, DWORD, void *))((void **)*surface)[0x64 / 4];
@@ -478,7 +478,7 @@ static void live_texture(int slot)
     w = *(uint32_t *)(desc + 0xc);
     h = *(uint32_t *)(desc + 8);
     pitch = *(uint32_t *)(desc + 0x10);
-    pixels = *(const uint8_t **)(desc + 0x24);
+    pixels = (const uint8_t *)(uintptr_t)*(const uint32_t *)(desc + 0x24);
     if (*(uint32_t *)(desc + 0x54) != 16 || w > 256 || h > 256) {
         unlock(surface, 0);
         return;
@@ -515,13 +515,13 @@ static void live_texture(int slot)
  * as an 'SCRN' chunk, for screens drawn without packets. */
 static void live_screen(void)
 {
-    void **surface = *(void ***)0x4d5f4c;
+    void **surface = (void **)(uintptr_t)*(uint32_t *)0x4d5f4c;
     uint8_t desc[0x6c];
     uint32_t head[7], y, w, h, pitch, bytes;
     int32_t(__stdcall * lock)(void *, void *, uint8_t *, DWORD, void *);
     int32_t(__stdcall * unlock)(void *, void *);
 
-    if (!surface || !readable((uint32_t)surface, 4))
+    if (!surface || !readable((uint32_t)(uintptr_t)surface, 4))
         return;
     lock = (int32_t(__stdcall *)(void *, void *, uint8_t *, DWORD, void *))((void **)*surface)[0x64 / 4];
     unlock = (int32_t(__stdcall *)(void *, void *))((void **)*surface)[0x80 / 4];
@@ -544,7 +544,7 @@ static void live_screen(void)
         chunk(TAG('S', 'C', 'R', 'N'), sizeof head + h * w * bytes);
         put(head, sizeof head);
         for (y = 0; y < h; y++)
-            put(*(uint8_t **)(desc + 0x24) + y * pitch, w * bytes);
+            put(((uint8_t *)(uintptr_t)*(uint32_t *)(desc + 0x24)) + y * pitch, w * bytes);
     }
     unlock(surface, 0);
 }

@@ -8,11 +8,12 @@
  * Special states: 1/2 swerve, 0x20 rejoin a line, 0x40 race start, 0x80
  * unstick, 0x100 coast, 0x200 full throttle. */
 #include "../runtime.h"
+#include "gamefn.h"
 #include "body.h"
 #include "fixed.h"
 #include "physics.h"
 
-#define g_race (*(uint8_t **)0x4b1960)
+#define g_race GP(0x4b1960)
 #define g_race_ticks (*(uint32_t *)0x6c0a50)
 #define g_ai_seed (*(uint32_t *)0x4a7148)
 #define g_ai_difficulty_mode (*(int32_t *)0x4a714c)
@@ -20,15 +21,15 @@
 #define g_start_waiting (*(int32_t *)0x4bde7c)
 #define g_fire_odds_shift ((const int32_t *)0x4a7c38)
 #define g_start_odds ((const uint8_t *)0x4a7bc0)
-#define g_markers (*(uint8_t **)0x6c1eb0) /* +0xf6 count, +0xf8 8-byte entries */
-#define g_lines (*(uint8_t **)(*(uint8_t **)0x6c1e30 + 0x60))
+#define g_markers GP(0x6c1eb0) /* +0xf6 count, +0xf8 8-byte entries */
+#define g_lines GP(GP(0x6c1e30) + 0x60)
 #define g_car_slots ((uint8_t *)0x6bfb80)
 #define CAR_SLOT_SIZE 0x274
 
 #define LINE(i) (g_lines + (uint16_t)(i) * 0xc)
-#define NODE(line, i) (*(uint8_t **)((line) + 8) + (uint16_t)(i) * 0x10)
+#define NODE(line, i) (GP((line) + 8) + (uint16_t)(i) * 0x10)
 #define SLOT_OF(car) (g_car_slots + *(const uint16_t *)((car) + 0x64e) * CAR_SLOT_SIZE)
-#define SLOT_PLAN_LINE(slot) ((*(uint8_t **)((slot) + 0x64))[5])
+#define SLOT_PLAN_LINE(slot) (GP((slot) + 0x64)[5])
 #define SLOT_PLAN_NODE(slot) (*(uint16_t *)((slot) + 0x68))
 #define S16(p, off) (*(int16_t *)((p) + (off)))
 #define U16(p, off) (*(uint16_t *)((p) + (off)))
@@ -36,23 +37,16 @@
 #define STATE_TIME 0x6b6
 
 /* Still original, owned elsewhere. */
-typedef void(GAMEAPI *car_fn)(uint8_t *car);
-typedef void(GAMEAPI *void_fn)(void);
-typedef int32_t(GAMEAPI *line_steps_fn)(uint32_t node, const uint8_t *line, uint32_t steps, uint16_t *out);
-typedef void(GAMEAPI *queue_push_fn)(uint32_t line, uint32_t node);
-typedef void(GAMEAPI *queue_pop_fn)(uint16_t *line, uint16_t *node);
-typedef int32_t(GAMEAPI *queue_empty_fn)(void);
-typedef int32_t(GAMEAPI *contains_fn)(uint32_t value, const uint16_t *list, uint32_t count);
-#define ai_fire_front ((car_fn)0x47f350)
-#define ai_fire_rear ((car_fn)0x47f370)
-#define line_steps_ahead ((line_steps_fn)0x47f550)
-#define ai_avoid ((car_fn)0x412290)
-#define ai_weapons ((car_fn)0x401780)
-#define route_queue_reset ((void_fn)0x47f1b0)
-#define route_queue_push ((queue_push_fn)0x47f1c0)
-#define route_queue_pop ((queue_pop_fn)0x47f220)
-#define route_queue_empty ((queue_empty_fn)0x47f270)
-#define list_contains ((contains_fn)0x47f430)
+#define ai_fire_front GCALL(0x47f350, ai_press_fire_a)
+#define ai_fire_rear GCALL(0x47f370, ai_press_fire_b)
+#define line_steps_ahead GCALL(0x47f550, line_node_ahead)
+#define ai_avoid GCALL(0x412290, ai_choose_target)
+#define ai_weapons_at GCALL(0x401780, ai_weapons)
+#define route_queue_reset GCALL(0x47f1b0, link_queue_reset)
+#define route_queue_push GCALL(0x47f1c0, link_queue_push)
+#define route_queue_pop GCALL(0x47f220, link_queue_pop)
+#define route_queue_empty GCALL(0x47f270, link_queue_empty)
+#define list_contains GCALL(0x47f430, u16_list_contains)
 
 static uint32_t ai_random(void)
 {
@@ -69,7 +63,7 @@ void GAMEAPI ai_clear_buttons(uint8_t *car)
 /* 0x47fbb0: put the slot's car back on its planned line and node. */
 void GAMEAPI ai_rejoin_plan(const uint8_t *slot)
 {
-    uint8_t *car = *(uint8_t **)slot;
+    uint8_t *car = GP(slot);
 
     U16(car, 0x6b0) = SLOT_PLAN_LINE(slot);
     U16(car, 0x6b2) = SLOT_PLAN_NODE(slot);
@@ -266,7 +260,7 @@ void GAMEAPI ai_state_rejoin(uint8_t *car)
     int32_t i = g_markers[0xf6], forward[3], dir[3], to[3], along, behind;
     const int16_t *p;
 
-    entry = *(uint8_t **)(g_markers + 0xf8) + i * 8 - 8;
+    entry = GP(g_markers + 0xf8) + i * 8 - 8;
     U16(car, STATE_TIME)++;
     if (U16(car, STATE_TIME) > 0x78) {
         ai_rejoin_plan(SLOT_OF(car));
@@ -354,7 +348,7 @@ int32_t GAMEAPI ai_state_swerve(uint8_t *car)
 void GAMEAPI ai_markers_update(void)
 {
     uint32_t count = g_markers[0xf6];
-    uint8_t *entry = *(uint8_t **)(g_markers + 0xf8) + count * 8 - 8;
+    uint8_t *entry = GP(g_markers + 0xf8) + count * 8 - 8;
     uint16_t ahead = 0;
 
     if ((int32_t)(count - 1) < 0)
@@ -372,7 +366,7 @@ void GAMEAPI ai_markers_update(void)
         for (i = 0; i < cars; i++) {
             const uint8_t *slot = g_car_slots + i * CAR_SLOT_SIZE;
 
-            if ((*(uint8_t **)slot)[0x70c] == 10 && SLOT_PLAN_LINE(slot) == line_index &&
+            if (GP(slot)[0x70c] == 10 && SLOT_PLAN_LINE(slot) == line_index &&
                 abs32((int32_t)SLOT_PLAN_NODE(slot) - ahead) < 2) {
                 entry[5] = 0;
                 break;
@@ -596,7 +590,7 @@ void GAMEAPI ai_think(uint8_t *car)
     if (!car[0x6c9]) {
         ai_avoid(car);
         if (!car[0x6c9])
-            ai_weapons(car);
+            ai_weapons_at(car);
     }
     car[0x6b5] |= 0x40;
 }

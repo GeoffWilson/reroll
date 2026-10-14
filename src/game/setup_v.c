@@ -14,26 +14,28 @@
  * surface wrappers 0x428c30 / 0x428c60 / 0x428c90. The future renderer
  * replaces those. */
 #include "../runtime.h"
+#include "gamefn.h"
 #include "physics.h"
 
-#define g_race (*(uint8_t **)0x4b1960)
-#define g_config (*(uint8_t **)0x4b2198)
-#define g_track_info (*(uint8_t **)0x6c1eb0)
-#define g_track_lists (*(uint8_t **)0x6c1e14)
+#define g_race GP(0x4b1960)
+#define g_config GP(0x4b2198)
+#define g_track_info GP(0x6c1eb0)
+#define g_track_lists GP(0x6c1e14)
 #define g_misc_seed (*(uint32_t *)0x4b11dc)
 #define g_car_slots ((uint8_t *)0x6bfb80)
 #define CAR_SLOT_SIZE 0x274
 
 /* weather */
-#define g_emitters ((uint8_t **)0x5d6360) /* 6 */
+#define g_emitters ((uint32_t *)0x5d6360) /* 6 pointers */
+#define EMITTER(i) GP(0x5d6360 + (i) * 4)
 #define g_emitter_count (*(uint32_t *)0x5d6248)
-#define g_rain (*(uint8_t **)0x5d6340)
-#define g_rain_end (*(uint8_t **)0x5d633c)
-#define g_snow (*(uint8_t **)0x5d6244)
-#define g_snow_end (*(uint8_t **)0x5d6240)
-#define g_flakes (*(uint8_t **)0x4d5898)
+#define g_rain (*(uint32_t *)0x5d6340) /* pointer */
+#define g_rain_end (*(uint32_t *)0x5d633c)
+#define g_snow (*(uint32_t *)0x5d6244)
+#define g_snow_end (*(uint32_t *)0x5d6240)
+#define g_flakes GP(0x4d5898)
 #define g_flakes_bright (*(uint32_t *)0x4d58f0)
-#define g_weather_buffer (*(uint8_t **)0x4d58fc)
+#define g_weather_buffer (*(uint32_t *)0x4d58fc) /* pointer */
 #define g_weather_seed ((uint32_t *)0x4b2c50)
 #define g_weather_detail (*(uint32_t *)0x5d6338)
 #define g_weather_level (*(uint32_t *)0x4b2c5c)
@@ -45,12 +47,12 @@
 #define g_gte_shift_out (*(uint32_t *)0x6ccce0)
 
 /* rock */
-#define g_rock (*(uint8_t **)0x6b9d50)
+#define g_rock GP(0x6b9d50)
 #define g_voice_count (*(uint32_t *)0x4b1c8c)
 
 /* special track objects */
 #define g_specials_count (*(uint32_t *)0x6ce6fc)
-#define g_specials (*(uint32_t ***)0x6ce738)
+#define g_specials ((uint32_t *)GP(0x6ce738)) /* body pointers */
 #define g_screen ((uint8_t *)0x6ce700)
 
 /* body pools */
@@ -58,48 +60,43 @@
 #define g_slot_records ((uint8_t *)0x6b9880) /* 64 of 0xc */
 
 /* freeze */
-#define g_freeze_map (*(uint32_t **)0x6c3080)
+#define g_freeze_map (*(uint32_t *)0x6c3080) /* pointer */
 
 #define U8(p, off) (*(uint8_t *)((p) + (off)))
 #define U16(p, off) (*(uint16_t *)((p) + (off)))
 #define S16(p, off) (*(int16_t *)((p) + (off)))
 #define U32(p, off) (*(uint32_t *)((p) + (off)))
-#define PTR(p, off) (*(uint8_t **)((p) + (off)))
+#define PTR(p, off) GP((p) + (off))
+#define G32_SET(a, v) (*(uint32_t *)(uintptr_t)(a) = (uint32_t)(v))
+#define PTR_SET(p, off, v) (U32(p, off) = (uint32_t)(uintptr_t)(v))
+#define A(x) ((uint32_t)(uintptr_t)(x))
 
-typedef void *(GAMEAPI *alloc_fn)(uint32_t size);
-typedef uint32_t(GAMEAPI *sound_fn)(uint32_t sound, uint32_t a, uint32_t b, uint32_t c, const void *pos);
-typedef int32_t(GAMEAPI *int_fn)(void);
-typedef void(GAMEAPI *void_fn)(void);
-typedef void(GAMEAPI *body_fn)(uint8_t *body);
-typedef void(GAMEAPI *emitter_fn)(int32_t a, uint8_t *emitter);
-typedef void(GAMEAPI *emitter3_fn)(uint8_t *a, uint8_t *b, uint8_t *c);
-typedef uint8_t *(GAMEAPI *body_new_fn)(uint32_t a, uint32_t kind, uint32_t size, uint32_t d);
-typedef void(GAMEAPI *body_shape_fn)(uint8_t *body, const void *shape);
-typedef void(GAMEAPI *spheres_fn)(uint8_t *body, uint32_t count, const void *spheres, uint32_t d);
-typedef void(GAMEAPI *script_fn)(uint8_t *body, uint32_t script, int32_t start);
-typedef void(GAMEAPI *body_int_fn)(uint8_t *body, uint32_t a);
-typedef void(GAMEAPI *index_fn)(uint32_t i);
-typedef int32_t(GAMEAPI *char_fn)(int32_t c);
-
-#define mem_alloc ((alloc_fn)0x4445e0)
-#define sound_play ((sound_fn)0x471c90)
-#define net_is_game ((int_fn)0x45ef80)
-#define net_local_car ((int_fn)0x48cf20)
-#define game_time ((int_fn)0x43692a)
-#define weather_indoors ((emitter_fn)0x4846c0)
-#define weather_box ((emitter3_fn)0x4848c0)
-#define weather_drops_spawn ((emitter3_fn)0x4846f0)
-#define body_new ((body_new_fn)0x460ba0)
-#define body_shape_set ((body_shape_fn)0x465640)
-#define grid_unlink_body ((body_fn)0x4611d0)
-#define shape_list_add ((body_fn)0x45c010)
-#define body_spheres_set ((spheres_fn)0x419150)
-#define body_script_start ((script_fn)0x462e30)
-#define body_flag_set ((body_int_fn)0x478400)
-#define car_texture_frames ((index_fn)0x475430)
-#define clock_nop ((void_fn)0x4291f0)
-#define clock_read ((int_fn)0x428290)
-#define char_upper ((char_fn)0x498540)
+#define mem_alloc32(size) GCALL(0x4445e0, kr_malloc)(size)
+#define mem_alloc(size) ((void *)GMEM(mem_alloc32(size)))
+#define sound_play(s, a, b, c, pos) GCALL(0x471c90, sound_play_body)(s, a, b, c, (uint32_t)(pos))
+#define net_is_game() ((int32_t)GCALL(0x45ef80, net_state_game)())
+#define net_local_car() GCALL(0x48cf20, net_local_slot)()
+#define game_time() ((int32_t)GCALL(0x43692a, game_time_get)())
+#define weather_indoors(a, e) GCALL(0x4846c0, weather_emitter_indoors)(a, e)
+#define weather_box(a, b, e) GCALL(0x4848c0, weather_box)((int16_t *)(a), (int16_t *)(b), e)
+#define weather_drops_spawn(a, b, e) GCALL(0x4846f0, weather_drops_spawn)((const int16_t *)(a), (const int16_t *)(b), e)
+#define body_new(a, kind, size, d) GCALL(0x460ba0, object_create)((uint8_t *)GMEM(a), kind, size, d)
+#define body_shape_set(b, shape) GCALL(0x465640, body_init_from_template)(b, (const uint32_t *)(shape))
+#define grid_unlink_body(b) GCALL(0x4611d0, object_grid_unlink)(b)
+#define shape_list_add(b) GCALL(0x45c010, shape_list_add)(b)
+#define body_spheres_set(b, n, sp, d) GCALL(0x419150, body_spheres_set)(b, n, (const uint8_t *)(sp), d)
+#if defined(__i386__)
+/* The original pushes the start spot as a full dword (a byte parameter). */
+#define body_script_start(b, script, start) \
+    ((void(GAMEAPI *)(uint8_t *, int32_t, int32_t))(uintptr_t)0x462e30)(b, (int32_t)(script), (int32_t)(start))
+#else
+#define body_script_start(b, script, start) GCALL(0x462e30, body_path_start)(b, (int32_t)(script), (uint8_t)(start))
+#endif
+#define body_flag_set(b, a) GCALL(0x478400, car_target_add)(b, a)
+#define car_texture_frames(i) GCALL(0x475430, car_texture_frames)((int32_t)(i))
+#define clock_nop() GCALL(0x4291f0, dx_error_ignore)()
+#define clock_read() GCALL(0x428290, game_clock_read)()
+#define char_upper(c) GCALL(0x498540, msvc_toupper)(c)
 
 /* --- weather --- */
 
@@ -116,7 +113,7 @@ void GAMEAPI weather_level_setup(void)
 {
     uint32_t detail;
 
-    g_weather_buffer = mem_alloc(0x1000);
+    g_weather_buffer = mem_alloc32(0x1000);
     time_stamp(g_weather_seed);
     switch (U8(g_config, 0x26)) {
     case 0:
@@ -155,8 +152,8 @@ void GAMEAPI rain_setup(void)
     uint8_t *p = mem_alloc(0x2580);
     int32_t i;
 
-    g_rain_end = p + 0x2580;
-    g_rain = p;
+    g_rain_end = A(p + 0x2580);
+    g_rain = A(p);
     for (i = 0; i < 0xa0; i++, p += 0x3c) {
         uint32_t head = U32(p, 0);
 
@@ -177,8 +174,8 @@ void GAMEAPI snow_setup(void)
     uint8_t *p = mem_alloc(0x5208);
     int32_t i;
 
-    g_snow = p;
-    g_snow_end = p + 0x5208;
+    g_snow = A(p);
+    g_snow_end = A(p + 0x5208);
     for (i = 0; i < 0xaf; i++, p += 0x78) {
         uint32_t head = U32(p, 0);
 
@@ -196,7 +193,7 @@ void GAMEAPI snow_setup(void)
  * local car, as does emitter 0 in a network game). */
 void GAMEAPI weather_emitter_setup(int32_t i)
 {
-    uint8_t *e = g_emitters[i];
+    uint8_t *e = EMITTER(i);
     int32_t n;
     uint32_t bit;
 
@@ -207,10 +204,10 @@ void GAMEAPI weather_emitter_setup(int32_t i)
     if (net_is_game())
         i = net_local_car();
 follow:
-    U32(e, 0x10) = **(uint32_t **)(g_car_slots + i * CAR_SLOT_SIZE + 0x28);
+    U32(e, 0x10) = *(uint32_t *)GP(g_car_slots + i * CAR_SLOT_SIZE + 0x28);
     for (n = 0; n < 400; n++)
         U16(e, 0x1a + n * 8) = 0;
-    PTR(e, 0xc94) = e + 0x14;
+    PTR_SET(e, 0xc94, e + 0x14);
     weather_indoors(0, e);
     weather_box(e, e + 8, e);
     weather_drops_spawn(e, e + 8, e);
@@ -234,7 +231,7 @@ void __attribute__((fastcall)) weather_flakes_setup(const uint8_t *uv)
     int32_t i;
 
     weather_level_setup();
-    g_flakes = mem_alloc(0x1400);
+    G32_SET(0x4d5898, mem_alloc32(0x1400));
     g_flakes_bright = 0;
     if (U8(g_race, 0x553) == 0) {
         g_misc_seed = g_misc_seed * 16807 & 0x7fffffff;
@@ -273,7 +270,7 @@ void GAMEAPI weather_setup(void)
     uint32_t count = 1, i;
 
     for (i = 0; i < 6; i++)
-        g_emitters[i] = (uint8_t *)0xffffffff;
+        g_emitters[i] = 0xffffffff;
     if (U8(g_race, 0x553)) {
         switch (U8(g_race, 0x552)) {
         case 0:
@@ -293,7 +290,7 @@ void GAMEAPI weather_setup(void)
         count += 2;
         g_emitter_count = count;
         for (i = 0; i < count; i++)
-            g_emitters[i] = mem_alloc(0xca4);
+            g_emitters[i] = mem_alloc32(0xca4);
         if (U8(g_race, 0x553) == 1)
             rain_setup();
         else if (U8(g_race, 0x553) == 2)
@@ -302,9 +299,9 @@ void GAMEAPI weather_setup(void)
             if (U8(g_race, 0x553) & 1) {
                 uint8_t voice = (uint8_t)sound_play(0x27, 9, 0x400, 0, 0);
 
-                U8(g_emitters[i], 0xca1) = voice;
+                U8(EMITTER(i), 0xca1) = voice;
             } else
-                U8(g_emitters[i], 0xca1) = 0x7f;
+                U8(EMITTER(i), 0xca1) = 0x7f;
             weather_emitter_setup((int32_t)i);
         }
     }
@@ -320,7 +317,7 @@ void GAMEAPI rock_setup(void)
 {
     if (!U8(g_race, 0x554))
         return;
-    g_rock = body_new(0, 0x821, 0x180, 0);
+    G32_SET(0x6b9d50, A(body_new(0, 0x821, 0x180, 0)));
     U32(g_rock, 0x148) = 0x458310;
     body_shape_set(g_rock, (const void *)0x4b0a70);
     grid_unlink_body(g_rock);
@@ -389,7 +386,7 @@ void GAMEAPI screen_uv_setup(uint8_t *body)
 
     U32(g_screen, 4) = 1;
     U32(g_screen, 0) = 0;
-    PTR(g_screen, 8) = body;
+    PTR_SET(g_screen, 8, body);
     U16(g_screen, 0xc) = 3;
     g_screen[0x10] = 0x23;
     g_screen[0x11] = 0x24;
@@ -423,10 +420,10 @@ void GAMEAPI screen_uv_setup(uint8_t *body)
  * *0x6ce738, *0x6ce6fc of them). */
 void GAMEAPI track_specials_setup(void)
 {
-    uint32_t **list = g_specials, n;
+    uint32_t *list = g_specials, n;
 
     for (n = g_specials_count; n; n--, list++) {
-        uint8_t *body = (uint8_t *)*list;
+        uint8_t *body = (uint8_t *)(uintptr_t)*list;
 
         switch (U32(body, 0) & 0x1ff) {
         case 0x14:
@@ -461,10 +458,10 @@ void GAMEAPI event_queue_setup(uint32_t capacity, uint32_t *queue)
     uint32_t *free_list, i;
 
     capacity &= 0xffff;
-    queue[2] = (uint32_t)mem_alloc(capacity * 0x68);
-    queue[3] = (uint32_t)mem_alloc(capacity * 4 + 4);
+    queue[2] = mem_alloc32(capacity * 0x68);
+    queue[3] = mem_alloc32(capacity * 4 + 4);
     free_list = mem_alloc(capacity * 4);
-    queue[4] = (uint32_t)free_list;
+    queue[4] = A(free_list);
     queue[1] = capacity;
     queue[0] = 0;
     for (i = 0; i < capacity; i++)
@@ -481,11 +478,11 @@ void GAMEAPI body_pools_setup(void)
     int32_t i;
 
     event_queue_setup(100, g_events);
-    *(void **)0x6ce740 = mem_alloc(0x4800);
+    G32_SET(0x6ce740, mem_alloc32(0x4800));
     map = mem_alloc(0x300);
-    *(uint8_t **)0x6ce73c = map;
-    *(uint8_t **)0x6ce744 = map + 0x100;
-    *(uint8_t **)0x6ce750 = map + 0x200;
+    G32_SET(0x6ce73c, A(map));
+    G32_SET(0x6ce744, A(map + 0x100));
+    G32_SET(0x6ce750, A(map + 0x200));
     *(uint32_t *)0x6ce754 = 0;
     for (i = 0; i < 0x100; i++) {
         map[i] = (uint8_t)i;
@@ -494,8 +491,8 @@ void GAMEAPI body_pools_setup(void)
     }
     *(uint32_t *)0x6ce748 = 0xffffffff;
     *(uint32_t *)0x6ce758 = 0xff;
-    *(void **)0x6ce74c = mem_alloc(0x8000);
-    *(void **)0x6b9b80 = mem_alloc(0x180);
+    G32_SET(0x6ce74c, mem_alloc32(0x8000));
+    G32_SET(0x6b9b80, mem_alloc32(0x180));
     *(uint16_t *)0x6b9b84 = 0;
     *(uint16_t *)0x6b9b86 = 0;
     *(uint32_t *)0x6b9b88 = 0;
@@ -503,7 +500,7 @@ void GAMEAPI body_pools_setup(void)
     for (i = 0; i < 64; i++, p += 0x84) {
         uint8_t *r = g_slot_records + i * 0xc;
 
-        PTR(r, 0) = p;
+        PTR_SET(r, 0, p);
         U16(r, 4) = 0;
         U16(r, 6) = 0;
         U32(r, 8) = 0;
@@ -512,7 +509,7 @@ void GAMEAPI body_pools_setup(void)
     *(uint16_t *)0x6b9856 = 0;
     *(uint32_t *)0x6b9858 = 0;
     *(uint32_t *)0x6b9b8c = 0;
-    *(uint8_t **)0x6b9850 = p;
+    G32_SET(0x6b9850, A(p));
 }
 
 /* --- car textures --- */
@@ -536,8 +533,8 @@ void GAMEAPI car_texture_setup(uint32_t i)
 
         for (c = 0; c < 8; c++) {
             uint8_t *e = (uint8_t *)0x5f72c0 + r * 8 + c * 0x28;
-            int32_t s = *(const int16_t *)(0x4b24f8 + c * 0x40) * radius;
-            int32_t k = *(const int16_t *)(0x4b2578 + c * 0x40) * radius;
+            int32_t s = *(const int16_t *)(uintptr_t)(0x4b24f8 + c * 0x40) * radius;
+            int32_t k = *(const int16_t *)(uintptr_t)(0x4b2578 + c * 0x40) * radius;
 
             S16(e, 0) = (int16_t)(s / 14000);
             S16(e, 2) = (int16_t)(k / 32768);
@@ -566,7 +563,7 @@ void GAMEAPI freeze_setup(void)
 
     *(uint32_t *)0x6c30a0 = 0;
     map = mem_alloc(0x800);
-    g_freeze_map = map;
+    g_freeze_map = A(map);
     *(uint8_t *)0x4beb24 = 0x7f;
     for (i = 0; i < 0x200; i++)
         map[i] = 0xffffffff;

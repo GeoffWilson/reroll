@@ -25,6 +25,7 @@
  * address. */
 #include "../runtime.h"
 #include "physics.h"
+#include "gamefn.h"
 
 #define U8(p, off) (*(uint8_t *)((uint8_t *)(uintptr_t)(p) + (off)))
 #define U16(p, off) (*(uint16_t *)((uint8_t *)(uintptr_t)(p) + (off)))
@@ -42,51 +43,45 @@
 #define g_screen_w GI32(0x4acc38)
 #define g_screen_h GI32(0x4acc3c)
 
-typedef int32_t(GAMEAPI *pj_fn0)(void);
-typedef int32_t(GAMEAPI *pj_fn1)(uint32_t a);
-typedef int32_t(GAMEAPI *pj_fn2)(uint32_t a, uint32_t b);
-typedef int32_t(GAMEAPI *pj_fn3)(uint32_t a, uint32_t b, uint32_t c);
-typedef int32_t(GAMEAPI *pj_fn4)(uint32_t a, uint32_t b, uint32_t c, uint32_t d);
-typedef int32_t(GAMEAPI *pj_fn5)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e);
-typedef int32_t(GAMEAPI *pj_fn6)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f);
-typedef int32_t(GAMEAPI *pj_fn7)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f,
-                                 uint32_t g);
+#define AP(T, x) ((T)GMEM(A(x)))
 
-#define CALL0(a) (((pj_fn0)(a))())
-#define CALL1(a, x) (((pj_fn1)(a))(A(x)))
-#define CALL2(a, x, y) (((pj_fn2)(a))(A(x), A(y)))
-#define CALL3(a, x, y, z) (((pj_fn3)(a))(A(x), A(y), A(z)))
-#define CALL4(a, x, y, z, w) (((pj_fn4)(a))(A(x), A(y), A(z), A(w)))
-#define CALL5(a, x, y, z, w, v) (((pj_fn5)(a))(A(x), A(y), A(z), A(w), A(v)))
-#define CALL6(a, x, y, z, w, v, u) (((pj_fn6)(a))(A(x), A(y), A(z), A(w), A(v), A(u)))
-#define CALL7(a, x, y, z, w, v, u, t) (((pj_fn7)(a))(A(x), A(y), A(z), A(w), A(v), A(u), A(t)))
-
-#define menu_model_find_at(id) PTR(CALL1(0x4539d0, id))
-#define menu_model_draw_at(id, m, p, l, f) CALL5(0x4538e0, id, m, p, l, f)
-#define menu_model_corners_draw_at(id, m, p, l, a, s) CALL6(0x453a00, id, m, p, l, a, s)
-#define fade_scale_at(v) CALL1(0x4328a0, v)
-#define view_rect_set_at(x, y, w, h) CALL4(0x428850, x, y, w, h)
-#define matrix_from_angles_at(a, m) CALL2(0x426f80, a, m)
-#define matrix_identity_at(m) CALL1(0x4264f0, m)
-#define gte_rotate_short_at() CALL0(0x427fc0)
-#define gte_rotate_at() CALL0(0x428090)
-#define ot_clear_reverse_at(ot, n) CALL2(0x427a70, ot, n)
-#define draw_otag_at(ot) CALL1(0x428470, ot)
-#define fe_box_frame_place_at(l, p, c, x, y, w, h) CALL7(0x431780, l, p, c, x, y, w, h)
-#define language_get_at() CALL0(0x430120)
-#define charanim_upload_at(c, f) CALL2(0x4114b0, c, f)
-#define charanim_texture_info_at(a, b, c, d, e) CALL5(0x411740, a, b, c, d, e)
-#define car_stat_bar_at(s, c) CALL2(0x456f70, s, c)
-#define texture_surface_lock_at(h, n, px, pal, bpp, pitch) CALL6(0x428c30, h, n, px, pal, bpp, pitch)
-#define texture_surface_unlock_at(h, n, pal) CALL3(0x428c60, h, n, pal)
-#define texture_handle_new_at() CALL0(0x428c80)
-#define texture_surface_upload_at(h, w, ht, a, b, c) CALL6(0x428c90, h, w, ht, a, b, c)
-#define mem_fill_at(p, v, n) CALL3(0x476f50, p, v, n)
-#define pixels_rgb_convert_at(s, n, d, f) CALL4(0x41e1f0, s, n, d, f)
-#define texture_palettes_apply_at() CALL0(0x429070)
-#define flame_step_at() CALL0(0x457bf0)
-#define flame_texture_info_at(a, b, c, d, e) CALL5(0x457d10, a, b, c, d, e)
-#define flame_upload_at() CALL0(0x457d50)
+#define menu_model_find_at(id) PTR(GCALL(0x4539d0, menu_model_find)(id))
+#define menu_model_draw_at(id, m, p, l, f) \
+    GCALL(0x4538e0, menu_model_draw)(id, AP(const uint32_t *, m), AP(const int32_t *, p), A(l), f)
+#define menu_model_corners_draw_at(id, m, p, l, a, s) \
+    GCALL(0x453a00, menu_model_corners_draw)(id, AP(const uint32_t *, m), AP(const int32_t *, p), A(l), \
+                                             AP(const uint32_t *, a), AP(const int16_t *, s))
+#define fade_scale_at(v) GCALL(0x4328a0, fade_scale)(v)
+#define view_rect_set_at(x, y, w, h) GCALL(0x428850, view_rect_set)(x, y, w, h)
+#define matrix_from_angles_at(a, m) GCALL(0x426f80, matrix_from_angles)(AP(const int16_t *, a), AP(int16_t *, m))
+#define matrix_identity_at(m) GCALL(0x4264f0, matrix_identity)(AP(uint8_t *, m))
+#define gte_rotate_short_at() GCALL(0x427fc0, gte_rotate_short)()
+#define gte_rotate_at() GCALL(0x428090, gte_rotate)()
+#define ot_clear_reverse_at(ot, n) GCALL(0x427a70, ot_clear_reverse)(AP(uint32_t *, ot), n)
+#define draw_otag_at(ot) GCALL(0x428470, capture_draw_otag)(A(ot))
+#define fe_box_frame_place_at(l, p, c, x, y, w, h) \
+    GCALL(0x431780, fe_box_frame_place)(A(l), AP(uint8_t *, p), AP(const uint8_t *, c), x, y, w, h)
+#define language_get_at() GCALL(0x430120, language_get)()
+#define charanim_upload_at(c, f) GCALL(0x4114b0, charanim_upload)(A(c), A(f))
+#define charanim_texture_info_at(a, b, c, d, e) \
+    GCALL(0x411740, charanim_texture_info)(AP(uint16_t *, a), AP(uint16_t *, b), AP(int16_t *, c), AP(int16_t *, d), \
+                                           AP(uint16_t *, e))
+#define car_stat_bar_at(s, c) GCALL(0x456f70, car_stat_bar)(A(s), c)
+#define texture_surface_lock_at(h, n, px, pal, bpp, pitch) \
+    GCALL(0x428c30, texture_surface_lock)(A(h), A(n), A(px), A(pal), A(bpp), A(pitch))
+#define texture_surface_unlock_at(h, n, pal) GCALL(0x428c60, texture_surface_unlock)(A(h), A(n), A(pal))
+#define texture_handle_new_at() GCALL(0x428c80, texture_handle_new)()
+#define texture_surface_upload_at(h, w, ht, a, b, c) \
+    GCALL(0x428c90, texture_surface_upload)(A(h), A(w), A(ht), A(a), A(b), A(c))
+#define mem_fill_at(p, v, n) GCALL(0x476f50, mem_fill)(AP(uint8_t *, p), (uint8_t)(v), A(n))
+#define pixels_rgb_convert_at(s, n, d, f) \
+    GCALL(0x41e1f0, pixels_rgb_convert)(AP(const uint8_t *, s), n, AP(uint16_t *, d), A(f))
+#define texture_palettes_apply_at() GCALL(0x429070, texture_palettes_apply)() /* src/vkgame.c's texture_queue_flush */
+#define flame_step_at() GCALL(0x457bf0, flame_step)()
+#define flame_texture_info_at(a, b, c, d, e) \
+    GCALL(0x457d10, flame_texture_info)(AP(uint16_t *, a), AP(uint16_t *, b), AP(uint16_t *, c), \
+                                                  AP(uint16_t *, d), AP(uint16_t *, e))
+#define flame_upload_at() GCALL(0x457d50, flame_upload)()
 
 /* This group's functions (also in build/groups/pj_protos.txt for physics.h). */
 void GAMEAPI fe_item_model_draw(void); /* 0x455e90 */

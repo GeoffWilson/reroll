@@ -27,6 +27,7 @@
  * outside the group is called by address. */
 #include "../runtime.h"
 #include "physics.h"
+#include "gamefn.h"
 
 #define U8(p, off) (*(uint8_t *)((uint8_t *)(uintptr_t)(p) + (off)))
 #define S16(p, off) (*(int16_t *)((uint8_t *)(uintptr_t)(p) + (off)))
@@ -41,27 +42,29 @@
 #define A(x) ((uint32_t)(uintptr_t)(x))
 #define PTR(x) ((uint8_t *)(uintptr_t)(x))
 
-typedef int32_t(GAMEAPI *ps_fn0)(void);
-typedef int32_t(GAMEAPI *ps_fn1)(uint32_t a);
-typedef int32_t(GAMEAPI *ps_fn3)(uint32_t a, uint32_t b, uint32_t c);
-typedef int32_t(GAMEAPI *ps_fn4)(uint32_t a, uint32_t b, uint32_t c, uint32_t d);
-typedef int32_t(GAMEAPI *ps_fn6)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f);
+/* 0x4266d0: gte_rtps_float, an x87 asm entry in src/game/orig_pc.c (no arguments). */
+typedef void(GAMEAPI *ps_void_fn)(void);
 
-#define CALL0(a) (((ps_fn0)(a))())
-#define CALL1(a, x) (((ps_fn1)(a))(A(x)))
-#define CALL3(a, x, y, z) (((ps_fn3)(a))(A(x), A(y), A(z)))
-#define CALL4(a, x, y, z, w) (((ps_fn4)(a))(A(x), A(y), A(z), A(w)))
-#define CALL6(a, x, y, z, w, v, u) (((ps_fn6)(a))(A(x), A(y), A(z), A(w), A(v), A(u)))
+#define flare_add(pos, kind, colour) GCALL(0x441d80, flare_add)(pos, kind, colour)
+#define sprite_quad(pos, size, pkt, mode, flags, s) \
+    GCALL(0x47e5f0, sprite_quad_build)((const uint32_t *)(pos), size, pkt, mode, flags, s)
+#define gte_rtps() ((ps_void_fn)(uintptr_t)0x4266d0)()
+#define net_slot() GCALL(0x48cf20, net_local_slot)()
+#define flake_spawn(i) GCALL(0x485140, flake_spawn_body)(i)
+#define fixed_sin(a) GCALL(0x4270a0, fix_sin)(a)
+#define surface_lock(t, a, b, c, d, e) GCALL(0x428c30, texture_surface_lock)(t, a, A(b), A(c), A(d), A(e))
+#define surface_unlock(t, a, b) GCALL(0x428c60, texture_surface_unlock)(t, a, A(b))
+#define pixels_convert(s, n, d, a) GCALL(0x41e1f0, pixels_rgb_convert)(PTR(s), n, (uint16_t *)PTR(d), a)
 
-#define flare_add(pos, kind, colour) CALL3(0x441d80, pos, kind, colour)
-#define sprite_quad(pos, size, pkt, mode, flags, s) CALL6(0x47e5f0, pos, size, pkt, mode, flags, s)
-#define gte_rtps() CALL0(0x4266d0)
-#define net_slot() CALL0(0x48cf20)
-#define flake_spawn(i) CALL1(0x485140, i)
-#define fixed_sin(a) CALL1(0x4270a0, a)
-#define surface_lock(t, a, b, c, d, e) CALL6(0x428c30, t, a, b, c, d, e)
-#define surface_unlock(t, a, b) CALL3(0x428c60, t, a, b)
-#define pixels_convert(s, n, d, a) CALL4(0x41e1f0, s, n, d, a)
+#if !defined(__i386__)
+/* x86-64: the transform pointers *0x6ccd78 / *0x6ccd7c (0x426a20 / 0x426be0,
+ * src/subunit.c) return what the original leaves in st(0) and the
+ * projection *0x6ccd80 (0x426b00, src/widescreen.c) takes it. */
+typedef float(GAMEAPI *ps_transform_fn)(uint8_t *rec);
+typedef void(GAMEAPI *ps_project_fn)(float h);
+#define PS_TRANSFORM(slot, rec) ((ps_transform_fn)(uintptr_t)G32(slot))((uint8_t *)(rec))
+#define PS_PROJECT(h) ((ps_project_fn)(uintptr_t)G32(0x6ccd80))(h)
+#endif
 
 #define g_race G32(0x4b1960)
 #define g_flakes G32(0x4d5898) /* 32 records of 0xa0 */
@@ -202,32 +205,49 @@ static inline uint32_t ps_cmp(uint32_t a, uint32_t b)
 /* fld dword a; call _ftol (0x497a80, truncating). */
 static inline int32_t ps_ftol(uint32_t a)
 {
+#if defined(__i386__)
     int32_t r;
     __asm__ volatile("flds %1\n\tmovl $0x497a80, %%eax\n\tcall *%%eax"
                      : "=a"(r)
                      : "m"(a)
                      : "ecx", "edx", "cc", "memory", X87);
     return r;
+#else
+    float f;
+
+    memcpy(&f, &a, 4);
+    return (int32_t)(int64_t)f; /* _ftol truncates to 64 bits; eax is the low half */
+#endif
 }
 
 /* The transform *0x6ccd78 (record out, the GTE vector 0x6ccc64 in), its
  * argument popped, then the projection *0x6ccd80 (takes its st(0)). */
 static inline void ps_transform_project(void *out)
 {
+#if defined(__i386__)
     __asm__ volatile("pushl %0\n\tcall *0x6ccd78\n\taddl $4, %%esp\n\tcall *0x6ccd80"
                      :
                      : "S"(out)
                      : "eax", "ecx", "edx", "cc", "memory", X87);
+#else
+    float h = PS_TRANSFORM(0x6ccd78, out);
+
+    PS_PROJECT(h);
+#endif
 }
 
 /* The same with the transform's argument still pushed during the
  * projection. */
 static inline void ps_transform_project_pushed(void *out)
 {
+#if defined(__i386__)
     __asm__ volatile("pushl %0\n\tcall *0x6ccd78\n\tcall *0x6ccd80\n\taddl $4, %%esp"
                      :
                      : "S"(out)
                      : "eax", "ecx", "edx", "cc", "memory", X87);
+#else
+    ps_transform_project(out);
+#endif
 }
 
 /* 16807 * seed mod 2^31 (the original's lea / shl chain, masked). */
@@ -635,11 +655,20 @@ void GAMEAPI rain_drops_draw(int32_t i)
         ps_transform_project_pushed(spr + 8);
         G32(0x6ccc64) = xy;
         G32(0x6ccc68) = z;
+#if defined(__i386__)
         __asm__ volatile("pushl %1\n\tcall *0x6ccd78\n\taddl $4, %%esp\n\tflds -0x18(%1)\n\tfistpl %0\n\t"
                          "call *0x6ccd80"
                          : "=m"(zi)
                          : "S"(spr + 0x24)
                          : "eax", "ecx", "edx", "cc", "memory", X87);
+#else
+        {
+            float h = PS_TRANSFORM(0x6ccd78, spr + 0x24);
+
+            zi = ps_fist(U32(spr, 0xc));
+            PS_PROJECT(h);
+        }
+#endif
         if (U32(spr, 8) & U32(spr, 0x24))
             continue;
         b = zi >> 5;
@@ -687,11 +716,20 @@ void GAMEAPI snow_drops_draw(int32_t i)
             continue;
         G32(0x6ccc64) = U32(drop, 0);
         G32(0x6ccc68) = U32(drop, 4);
+#if defined(__i386__)
         __asm__ volatile("pushl %0\n\tcall *0x6ccd7c\n\taddl $4, %%esp\n\ttestl $0x80000000, 4(%0)\n\tjnz 1f\n\t"
                          "call *0x6ccd80\n1:"
                          :
                          : "S"(v)
                          : "eax", "ecx", "edx", "cc", "memory", X87);
+#else
+        {
+            float h = PS_TRANSFORM(0x6ccd7c, v);
+
+            if (!(v[1] & 0x80000000u))
+                PS_PROJECT(h);
+        }
+#endif
         if (v[1] & 0x80000000u)
             continue;
         if (v[0] & 0x10)
@@ -1186,6 +1224,7 @@ int32_t GAMEAPI snatch_texture_setup(void)
  * original's instruction sequence (an 8-aligned frame, doubles passed on
  * the stack to the C runtime's sqrt 0x4a1ea4, sin 0x497ac4, cos 0x497b74
  * and _ftol 0x497a80). ===== */
+#if defined(__i386__)
 __asm__(".intel_syntax noprefix\n"
         ".text\n"
         ".globl snatch_plasma_build\n"
@@ -1396,3 +1435,96 @@ __asm__(".intel_syntax noprefix\n"
         "    pop ebp\n" /* 486a35 */
         "    ret\n" /* 486a36 */
         ".att_syntax prefix\n");
+#else
+/* x86-64: the same steps in C. The x87 runs at single precision, so each
+ * fadd / fsub / fmul / fdiv result is rounded to float (stored as a double
+ * where the original stores a qword); _hypot is the C runtime's C
+ * (crt_hypot), cos 0x497ac4 / sin 0x497b74 are libm's, _ftol truncates. */
+static float ps_f32(uint32_t a)
+{
+    float f;
+
+    memcpy(&f, (const void *)(uintptr_t)a, 4);
+    return f;
+}
+
+static double ps_f64(uint32_t a)
+{
+    double d;
+
+    memcpy(&d, (const void *)(uintptr_t)a, 8);
+    return d;
+}
+
+static int32_t ps_ftol_d(double v)
+{
+    return (int32_t)(int64_t)v;
+}
+
+void snatch_plasma_build(void)
+{
+    uint8_t *p = PTR(GCALL(0x476b80, arena_alloc_low)(0x75840)), *out;
+    float x, y, t;
+
+    G32(0x4d5f18) = A(p);
+    if (!p)
+        return;
+    G32(0x4d5f1c) = A(p);
+    G32(0x4d5f14) = A(p + 0x1c800);
+    out = p;
+    y = 0.0f;
+    do {
+        double d18 = (float)(ps_f32(0x4a34e8) - y);
+        double d28 = (float)(y / ps_f32(0x4a34e4));
+        double d20 = (float)(y / ps_f32(0x4a34e0));
+
+        x = 0.0f;
+        do {
+            double acc, st;
+            int32_t r;
+
+            st = (float)(ps_f32(0x4a33c0) - x);
+            st = GCALL(0x4a1ea4, crt_hypot)(st, d18);
+            st = (float)(st / ps_f64(0x4a34d8));
+            acc = __builtin_cos(st);
+            acc = (float)(__builtin_sin((float)((float)(x + y) / ps_f32(0x4a34d0))) + acc);
+            acc = (float)(__builtin_sin((float)(x / ps_f32(0x4a34cc))) + acc);
+            acc = (float)(__builtin_cos((float)(x / ps_f32(0x4a34c8))) + acc);
+            acc = (float)(__builtin_cos(d20) + acc);
+            st = (float)(__builtin_sin(d28) + acc);
+            st = (float)(st * ps_f64(0x4a34c0));
+            st = (float)(st + ps_f64(0x4a3468));
+            r = ps_ftol_d(st);
+            x = x + ps_f32(0x4a331c);
+            *out++ = (uint8_t)((uint8_t)(0xff - (uint8_t)r) >> 1);
+        } while (x < ps_f32(0x4a33c4));
+        y = y + ps_f32(0x4a331c);
+    } while (y < ps_f32(0x4a34bc));
+    out = PTR(G32(0x4d5f14));
+    t = 0.0f;
+    do {
+        double st, base;
+        int32_t a, b;
+
+        st = (float)(__builtin_sin((float)(t / ps_f32(0x4a34b8))) * ps_f64(0x4a34b0));
+        st = (float)(st + ps_f64(0x4a34a8));
+        base = (double)(int32_t)((uint32_t)ps_ftol_d(st) << 9);
+        st = (float)(__builtin_cos((float)(t / ps_f32(0x4a3464))) * ps_f64(0x4a34a0));
+        st = (float)(st + base);
+        st = (float)(st + ps_f64(0x4a3498));
+        a = ps_ftol_d(st);
+        st = (float)(__builtin_cos((float)(t / ps_f32(0x4a3390))) * ps_f64(0x4a34b0));
+        st = (float)(st + ps_f64(0x4a34a8));
+        base = (double)(int32_t)((uint32_t)ps_ftol_d(st) << 9);
+        st = (float)(__builtin_sin((float)(t / ps_f32(0x4a3494))) * ps_f64(0x4a34a0));
+        st = (float)(st + base);
+        st = (float)(st + ps_f64(0x4a3498));
+        st = (float)(st - (double)a);
+        b = ps_ftol_d(st);
+        t = t + ps_f32(0x4a331c);
+        U16(out, 0) = (uint16_t)a;
+        U16(out, 2) = (uint16_t)b;
+        out += 4;
+    } while (t < ps_f32(0x4a3490));
+}
+#endif

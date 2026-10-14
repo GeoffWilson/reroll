@@ -28,6 +28,7 @@
 #include "../runtime.h"
 #include "com.h"
 #include "physics.h"
+#include "gamefn.h"
 
 /* This group's prototypes (also in build/groups/pa_protos.txt for physics.h). */
 int32_t GAMEAPI viewport_clear(uint32_t keep_target); /* 0x41e040 */
@@ -89,21 +90,6 @@ void GAMEAPI vertex_list_draw_fan(const int32_t *list); /* 0x420bb0 */
 
 #define X87 "st", "st(1)", "st(2)", "st(3)", "st(4)", "st(5)", "st(6)", "st(7)"
 
-typedef int32_t(GAMEAPI *pa_fn0)(void);
-typedef int32_t(GAMEAPI *pa_fn1)(uint32_t a);
-typedef int32_t(GAMEAPI *pa_fn2)(uint32_t a, uint32_t b);
-typedef int32_t(GAMEAPI *pa_fn3)(uint32_t a, uint32_t b, uint32_t c);
-typedef int32_t(GAMEAPI *pa_fn4)(uint32_t a, uint32_t b, uint32_t c, uint32_t d);
-typedef int32_t(GAMEAPI *pa_fn6)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f);
-
-#define CALL0(a) ((pa_fn0)(a))()
-#define CALL1(a, x) ((pa_fn1)(a))((uint32_t)(x))
-#define CALL2(a, x, y) ((pa_fn2)(a))((uint32_t)(x), (uint32_t)(y))
-#define CALL3(a, x, y, z) ((pa_fn3)(a))((uint32_t)(x), (uint32_t)(y), (uint32_t)(z))
-#define CALL4(a, x, y, z, w) ((pa_fn4)(a))((uint32_t)(x), (uint32_t)(y), (uint32_t)(z), (uint32_t)(w))
-#define CALL6(a, x, y, z, w, u, v)                                                                                     \
-    ((pa_fn6)(a))((uint32_t)(x), (uint32_t)(y), (uint32_t)(z), (uint32_t)(w), (uint32_t)(u), (uint32_t)(v))
-
 /* COM methods com.h lacks (native/ does not implement them). */
 /* Direct3D objects and the last HRESULT. */
 #define DDRAW G32(0x4d5f40)
@@ -111,29 +97,37 @@ typedef int32_t(GAMEAPI *pa_fn6)(uint32_t a, uint32_t b, uint32_t c, uint32_t d,
 #define DEVICE G32(0x4b8384)
 #define VIEWPORT G32(0x4b8388)
 #define g_hresult G32(0x4d6f18)
+/* COM out-parameters are pointer-sized (8 bytes on x86-64): through a
+ * void * (holding the 32-bit variable's value), stored back as 32 bits. */
+#define COM_OUT32(lv, call)                                                                                    \
+    do {                                                                                                       \
+        uint32_t out_ = (lv);                                                                                  \
+        call;                                                                                                  \
+        (lv) = out_;                                                                                           \
+    } while (0)
 #define RENDER_STATE(state, value) IDirect3DDevice2_SetRenderState(DEVICE, (state), (value))
 
 /* Outside the group. */
-#define mem_fill(p, v, n) CALL3(0x476f50, p, v, n)
-#define mem_copy(d, s, n) CALL3(0x476f30, d, s, n)
-#define block_alloc(n, f) ((uint32_t)CALL2(0x476ae0, n, f))
-#define block_free(p) CALL1(0x476b40, p)
-#define surface_desc_get(desc, surf) CALL2(0x487660, desc, surf)
-#define surface_lock(a, surf, desc) CALL3(0x4875a0, a, surf, desc)
-#define surface_unlock(surf) CALL1(0x487610, surf)
-#define texture_slot_release_x(i) CALL1(0x41d890, i)
-#define texture_slot_handle_x(i) CALL1(0x41d940, i)
-#define texture_slots_release_x() CALL0(0x41d910)
-#define texture_page_create(i, w, h, pix, pal, f) CALL6(0x41e710, i, w, h, pix, pal, f)
-#define screen_area_set(x, y, w, h) CALL4(0x41f2d0, x, y, w, h)
+#define mem_fill(p, v, n) GCALL(0x476f50, mem_fill)(GMEM(p), v, n)
+#define mem_copy(d, s, n) GCALL(0x476f30, mem_copy)(GMEM(d), GMEM(s), n)
+#define block_alloc(n, f) ((uint32_t)GCALL(0x476ae0, global_block_alloc)(n, f))
+#define block_free(p) GCALL(0x476b40, global_block_free)(p)
+#define surface_desc_get(desc, surf) GCALL(0x487660, dd_surface_desc_get)(desc, surf)
+#define surface_lock(a, surf, desc) GCALL(0x4875a0, dd_surface_lock)(a, surf, desc)
+#define surface_unlock(surf) GCALL(0x487610, dd_surface_unlock)(surf)
+#define texture_slot_release_x(i) GCALL(0x41d890, texture_slot_release)(i)
+#define texture_slot_handle_x(i) GCALL(0x41d940, texture_slot_handle)(i)
+#define texture_slots_release_x() GCALL(0x41d910, texture_slots_release)()
+#define texture_page_create(i, w, h, pix, pal, f) GCALL(0x41e710, texture_upload_body)(i, w, h, pix, pal, f)
+#define screen_area_set(x, y, w, h) GCALL(0x41f2d0, viewport_body)(x, y, w, h)
 /* the call at 0x420582: to the Vulkan renderer (it falls back to 0x420be0) */
 #ifdef REROLL_NATIVE
 void GAMEAPI vkgame_image_tile(uint32_t packet);
 #define sprite_packet_draw(p) vkgame_image_tile((uint32_t)(p))
 #else
-#define sprite_packet_draw(p) CALL1(0x420be0, p)
+#define sprite_packet_draw(p) GCALL(0x420be0, d3d_packet_draw)(p)
 #endif
-#define vertices_quad_close() CALL0(0x421800)
+#define vertices_quad_close() GCALL(0x421800, d3d_vertex_repeat)()
 
 /* Texture slots: 64 records of 0x24 bytes at 0x4ba6fc (+0 handle, +4 / +8
  * surfaces, +0xc texture, +0x10 / +0x14 size, +0x18 page, +0x1c / +0x20 u / v
@@ -153,11 +147,26 @@ static inline int32_t pa_ftol(uint32_t address)
 {
     int32_t r;
 
+#if defined(__i386__)
     __asm__ volatile("flds (%1)\n\t"
                      "call *%2"
                      : "=a"(r)
                      : "r"(address), "S"(0x497a80)
                      : "ecx", "edx", "memory", "cc", X87);
+#else
+    /* x86-64: _ftol's steps (rounding set to chop around a fistp qword; the
+     * low dword). */
+    uint16_t cw, chop;
+    int64_t q;
+
+    __asm__ volatile("fnstcw %0" : "=m"(cw));
+    chop = (uint16_t)(cw | 0xc00);
+    __asm__ volatile("flds %2\n\tfldcw %3\n\tfistpll %0\n\tfldcw %1"
+                     : "=m"(q)
+                     : "m"(cw), "m"(*(const float *)P8(address)), "m"(chop)
+                     : "st", "memory");
+    r = (int32_t)q;
+#endif
     return r;
 }
 
@@ -177,7 +186,7 @@ static inline uint32_t pa_int_div(int32_t v, uint32_t k_address)
 
     __asm__ volatile("fildl %2\n\tfstps %1\n\tflds %1\n\tfdivs (%3)\n\tfstps %0"
                      : "=m"(r), "=m"(t)
-                     : "m"(v), "r"(k_address)
+                     : "m"(v), "r"(P8(k_address))
                      : "st", "memory");
     return r;
 }
@@ -457,7 +466,10 @@ int32_t GAMEAPI materials_create(void)
     uint32_t m1[0x14], m2[0x14];
     uint32_t handle = 0;
 
-    CALL4(0x4291f0, 0, 0, G32(0x4d5f88), G32(0x4d5f8c)); /* empty debug hook, a RECT by value */
+    /* empty debug hook (dx_error_ignore), a RECT by value: the original's
+     * pushes, which it does not read */
+    ((void(GAMEAPI *)(uint32_t, uint32_t, uint32_t, uint32_t))(uintptr_t)0x4291f0)(0, 0, G32(0x4d5f88),
+                                                                                  G32(0x4d5f8c));
     material_init(m1, 0, 0, 0);
     m1[0x11] = 0x40a00000;
     m1[0x13] = 1;
@@ -763,7 +775,7 @@ int32_t GAMEAPI pvrc_texture_probe(void)
 
     for (i = 0; i < 0x6c; i++)
         desc[i] = 0;
-    g_hresult = (uint32_t)IDirectDraw_QueryInterface(DDRAW, GMEM(0x4a3540), (void **)&dd2);
+    COM_OUT32(dd2, g_hresult = (uint32_t)IDirectDraw_QueryInterface(DDRAW, GMEM(0x4a3540), &out_));
     if (g_hresult != 0)
         return 0;
     U32(desc, 0x08) = 2;
@@ -774,7 +786,7 @@ int32_t GAMEAPI pvrc_texture_probe(void)
     U32(desc, 0x48) = 0x20;
     U32(desc, 0x4c) = 4;
     U32(desc, 0x50) = 0x43525650;
-    g_hresult = (uint32_t)IDirectDraw_CreateSurface(dd2, desc, (void **)&surf, 0);
+    COM_OUT32(surf, g_hresult = (uint32_t)IDirectDraw_CreateSurface(dd2, desc, &out_, 0));
     if (g_hresult != 0)
         return 0;
     g_hresult = (uint32_t)IDirectDrawSurface_Lock(surf, 0, desc, 1, 0);
@@ -788,7 +800,7 @@ int32_t GAMEAPI pvrc_texture_probe(void)
         IDirectDrawSurface_Release(surf);
         return 0;
     }
-    g_hresult = (uint32_t)IDirectDrawSurface_QueryInterface(surf, GMEM(0x4a3920), (void **)&tex);
+    COM_OUT32(tex, g_hresult = (uint32_t)IDirectDrawSurface_QueryInterface(surf, GMEM(0x4a3920), &out_));
     if (g_hresult != 0) {
         IDirectDrawSurface_Release(surf);
         return 0;
@@ -816,7 +828,7 @@ int32_t GAMEAPI ddraw_device_id_check(void)
 
     for (i = 0; i < 0x428; i++)
         ident[i] = 0;
-    g_hresult = (uint32_t)IDirectDraw_QueryInterface(DDRAW, GMEM(0x4a3550), (void **)&dd4);
+    COM_OUT32(dd4, g_hresult = (uint32_t)IDirectDraw_QueryInterface(DDRAW, GMEM(0x4a3550), &out_));
     if (g_hresult != 0)
         return 0;
     g_hresult = (uint32_t)IDirectDraw4_GetDeviceIdentifier(dd4, ident, 0);
@@ -948,7 +960,7 @@ int32_t GAMEAPI texture_lock(int32_t page, uint32_t flags, uint32_t *bits, uint3
     if (G32(0x4bcd78) != 0) {
         uint32_t pal = (uint32_t)page;
 
-        g_hresult = (uint32_t)IDirectDrawSurface_GetPalette(SLOT(4, slot), (void **)&pal);
+        COM_OUT32(pal, g_hresult = (uint32_t)IDirectDrawSurface_GetPalette(SLOT(4, slot), &out_));
         if (pal != 0) {
             IDirectDrawPalette_GetEntries(pal, 0, 0, 0x100, palette);
             IDirectDrawPalette_Release(pal);
@@ -1009,7 +1021,7 @@ void GAMEAPI texture_palettes_apply(void)
 
         texture_reload(slot);
         if (G32(0x4bcd78) != 0) {
-            g_hresult = (uint32_t)IDirectDraw_CreatePalette(DDRAW, 0x4c, GMEM(PAL_DATA(i)), (void **)&pal, 0);
+            COM_OUT32(pal, g_hresult = (uint32_t)IDirectDraw_CreatePalette(DDRAW, 0x4c, GMEM(PAL_DATA(i)), &out_, 0));
             g_hresult = (uint32_t)IDirectDrawSurface_SetPalette(SLOT(4, slot), pal);
             g_hresult = (uint32_t)IDirectDrawSurface_SetPalette(SLOT(8, slot), pal);
             IDirectDrawPalette_Release(pal);
@@ -1026,10 +1038,11 @@ int32_t GAMEAPI texture_reload(uint32_t slot)
     uint32_t tex = 0;
     int32_t r;
 
-    g_hresult = (uint32_t)IDirectDrawSurface_QueryInterface(SLOT(4, slot), GMEM(0x4a3920), (void **)&tex);
+    COM_OUT32(tex, g_hresult = (uint32_t)IDirectDrawSurface_QueryInterface(SLOT(4, slot), GMEM(0x4a3920), &out_));
     if (g_hresult != 0)
         return 0;
-    g_hresult = (uint32_t)IDirectDrawSurface_QueryInterface(SLOT(8, slot), GMEM(0x4a3920), GMEM(0x4ba708 + slot * 0x24));
+    g_hresult = (uint32_t)IDirectDrawSurface_QueryInterface(SLOT(8, slot), GMEM(0x4a3920),
+                                                            (uint32_t *)GMEM(0x4ba708 + slot * 0x24)); /* the slot's +0xc */
     if (g_hresult != 0)
         return 0;
     r = texture_slot_handle_x(slot);
@@ -1217,7 +1230,7 @@ void GAMEAPI vertices_snap(void)
                          "fstps (%0)\n\t"
                          "fstps 4(%0)"
                          :
-                         : "r"(p)
+                         : "r"(P8(p))
                          : "memory", "st", "st(1)");
         p += stride;
     } while (--n != 0);
@@ -1371,6 +1384,7 @@ void GAMEAPI render_state_select_c(uint32_t state)
         render_texture_set(page);
 }
 
+#if defined(__i386__) /* x86-64: every caller is C and calls the body */
 __asm__(".text\n"
         ".globl render_state_select\n"
         "render_state_select:\n\t"
@@ -1378,6 +1392,7 @@ __asm__(".text\n"
         "call render_state_select_c\n\t"
         "addl $4, %esp\n\t"
         "ret\n");
+#endif
 
 /* The next TL vertex slot: *0x4bcd80 + the 0x4a807c offset for the count
  * 0x4bddd8 (incremented). */
@@ -1423,6 +1438,7 @@ void GAMEAPI vertex_emit_indexed_c(uint32_t colour, uint32_t uv, const uint8_t *
     pa_vertex_depth(o, v);
 }
 
+#if defined(__i386__) /* x86-64: every caller is C and calls the body */
 __asm__(".text\n"
         ".globl vertex_emit_indexed\n"
         "vertex_emit_indexed:\n\t"
@@ -1432,6 +1448,7 @@ __asm__(".text\n"
         "call vertex_emit_indexed_c\n\t"
         "addl $12, %esp\n\t"
         "ret\n");
+#endif
 
 /* ===== 0x420b10 (edx vertex, the clipper's 0x30-byte layout): append a TL
  * vertex: screen x / y, z / rhw, u / v (+0x18 / +0x1c) and the colour
@@ -1455,6 +1472,7 @@ void GAMEAPI vertex_emit_c(const uint8_t *v)
     U32(o, 0x10) = c;
 }
 
+#if defined(__i386__) /* x86-64: every caller is C and calls the body */
 __asm__(".text\n"
         ".globl vertex_emit\n"
         "vertex_emit:\n\t"
@@ -1462,6 +1480,7 @@ __asm__(".text\n"
         "call vertex_emit_c\n\t"
         "popl %edx\n\t"
         "ret\n");
+#endif
 
 /* ===== 0x420bb0: emit a vertex list (count, then vertex pointers) and
  * draw it as a fan; nothing for a null or empty list. ===== */

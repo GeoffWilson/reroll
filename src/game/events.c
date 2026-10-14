@@ -13,7 +13,7 @@ uint32_t GAMEAPI event_queue_clear(struct event_queue *q)
 
     q->count = 0;
     for (i = 0; i < q->capacity; i++)
-        q->free[i] = (uint32_t)i << 20;
+        EVQ_FREE(q)[i] = (uint32_t)i << 20;
     q->free_top = q->capacity - 1;
     return (uint32_t)q->free_top;
 }
@@ -21,7 +21,7 @@ uint32_t GAMEAPI event_queue_clear(struct event_queue *q)
 /* 0x434f20: appends `key` and sifts it up; returns where it ended. */
 uint32_t GAMEAPI event_heap_insert(struct event_queue *q, uint32_t key)
 {
-    uint32_t *heap = q->heap, i = ++q->count;
+    uint32_t *heap = EVQ_HEAP(q), i = ++q->count;
 
     while (i > 1) {
         uint32_t parent = heap[i >> 1];
@@ -37,7 +37,7 @@ uint32_t GAMEAPI event_heap_insert(struct event_queue *q, uint32_t key)
 /* 0x434f70: moves the key at `i` down past any earlier child. */
 uint32_t GAMEAPI event_heap_sift_down(struct event_queue *q, uint32_t i)
 {
-    uint32_t *heap = q->heap, n = q->count, key = heap[i];
+    uint32_t *heap = EVQ_HEAP(q), n = q->count, key = heap[i];
 
     for (;;) {
         uint32_t best = i, best_key = key, child = 2 * i;
@@ -65,14 +65,14 @@ uint32_t GAMEAPI event_free_pop(struct event_queue *q)
     int16_t top = (int16_t)q->free_top;
 
     q->free_top--;
-    return q->free[top];
+    return EVQ_FREE(q)[top];
 }
 
 /* 0x435020; returns the free stack as the original leaves it in eax. */
 uint32_t *GAMEAPI event_free_push(struct event_queue *q, uint32_t record)
 {
-    q->free[++q->free_top] = record;
-    return q->free;
+    EVQ_FREE(q)[++q->free_top] = record;
+    return EVQ_FREE(q);
 }
 
 uint32_t GAMEAPI event_queue_push(struct event_queue *q, uint32_t time)
@@ -85,7 +85,7 @@ uint32_t GAMEAPI event_queue_push(struct event_queue *q, uint32_t time)
 
 uint32_t GAMEAPI event_queue_pop(struct event_queue *q)
 {
-    uint32_t *heap = q->heap, last = heap[q->count], first = heap[1];
+    uint32_t *heap = EVQ_HEAP(q), last = heap[q->count], first = heap[1];
 
     heap[1] = last;
     q->count--;
@@ -97,7 +97,7 @@ uint32_t GAMEAPI event_queue_pop(struct event_queue *q)
 /* 0x4350a0: removes the key at heap position `position` (16 bits). */
 uint32_t GAMEAPI event_queue_remove(struct event_queue *q, uint32_t position)
 {
-    uint32_t *heap = q->heap, i = position & 0xffff, removed = heap[i];
+    uint32_t *heap = EVQ_HEAP(q), i = position & 0xffff, removed = heap[i];
 
     heap[i] = heap[q->count];
     q->count--;

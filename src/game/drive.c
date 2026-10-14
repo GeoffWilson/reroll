@@ -19,20 +19,19 @@
 #include "body.h"
 #include "fixed.h"
 #include "physics.h"
+#include "gamefn.h"
 #include "../coverage.h"
 
-typedef void(GAMEAPI *skid_fn)(uint8_t *wheel, int32_t speed, int32_t surface);
-typedef void(GAMEAPI *sparks_fn)(uint8_t *car, int32_t *position, int32_t *velocity);
-#define wheel_skid_marks ((skid_fn)0x46ecb0)
-#define wheel_sparks ((sparks_fn)0x42b4d0)
+#define wheel_skid_marks GCALL(0x46ecb0, wheel_skid_marks)
+#define wheel_sparks GCALL(0x42b4d0, wheel_sparks)
 
 #define g_car_slots ((uint8_t *)0x6bfb80)
 #define CAR_SLOT_SIZE 0x274
-#define g_race_data (*(uint8_t **)0x4b1960)
-#define g_track_tiles (*(uint8_t ***)0x6bfac0)
+#define g_race_data (GP(0x4b1960))
+#define g_track_tiles ((const uint32_t *)GP(0x6bfac0))
 #define g_surface_limit (*(uint32_t *)0x6bfb1c)
 #define g_slow_motion (*(int32_t *)0x5d9b20)
-#define g_slow_motion_body (*(uint8_t **)0x5d9b24)
+#define g_slow_motion_body (GP(0x5d9b24))
 #define g_slow_motion_scale (*(int32_t *)0x5d9b2c)
 
 #define WHEELS 0x324
@@ -53,7 +52,7 @@ void GAMEAPI wheel_spin(uint8_t *wheel, int32_t road, int32_t torque)
     else
         I32(wheel, SPIN_OFFSET) = (int32_t)((uint32_t)(old ^ spin) >> 31) ? 0 : spin;
     spin = I32(wheel, SPIN_OFFSET);
-    car = *(uint8_t **)(g_car_slots + wheel[0x9c] * CAR_SLOT_SIZE);
+    car = GP(g_car_slots + wheel[0x9c] * CAR_SLOT_SIZE);
     if (g_slow_motion && car != g_slow_motion_body)
         I32(wheel, 0x78) += mul16(g_slow_motion_scale, spin);
     else
@@ -113,8 +112,8 @@ int32_t GAMEAPI surface_kind(uint8_t *car)
 
     if (where == 0xffffffff)
         return 0;
-    tile = g_track_tiles[where & 0xff];
-    value = U32(*(uint8_t **)(tile + 0x20),
+    tile = (uint8_t *)(uintptr_t)g_track_tiles[where & 0xff];
+    value = U32(GP(tile + 0x20),
                 4 + ((I32(tile, 8) + 1) * (int16_t)(where >> 16) + (int8_t)(where >> 8)) * 8) >> 22;
     if (value >= 0x3f0)
         return 0;
@@ -208,7 +207,7 @@ void GAMEAPI car_drive(uint8_t *car)
     brake = car[0x63e] << 8;
     for (i = 0; i < 4; i++) {
         uint8_t *wheel = car + WHEELS + i * WHEEL_SIZE;
-        uint8_t *probe = *(uint8_t **)(car + 0x198 + i * 0x1c);
+        uint8_t *probe = GP(car + 0x198 + i * 0x1c);
         int32_t *spin = VEC(wheel, SPIN_OFFSET), drive, torque, rolling, total;
 
         if (abs32(*spin) > 3000000)

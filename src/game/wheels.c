@@ -18,12 +18,11 @@
 #include "fixed.h"
 #include "physics.h"
 #include "../coverage.h"
-
-typedef void(GAMEAPI *car_fn)(uint8_t *car);
+#include "gamefn.h"
 
 #define g_car_slots ((uint8_t *)0x6bfb80)
 #define CAR_SLOT_SIZE 0x274
-#define g_race_data (*(uint8_t **)0x4b1960)
+#define g_race_data GP(0x4b1960)
 #define g_sin_table ((const int32_t *)0x4b277c)
 
 #define WHEELS 0x324 /* 4 x 0xc4 */
@@ -299,7 +298,7 @@ void GAMEAPI cars_prepare(void)
 
 #define EACH_CAR(fn)                                                                                              \
     for (i = 0; i < g_race_data[0x54d]; i++)                                                                       \
-    fn(*(uint8_t **)(g_car_slots + i * CAR_SLOT_SIZE))
+    fn(GP(g_car_slots + i * CAR_SLOT_SIZE))
     EACH_CAR(car_steering);
     EACH_CAR(car_ground_probes);
     EACH_CAR(car_suspension);
@@ -307,7 +306,7 @@ void GAMEAPI cars_prepare(void)
 #undef EACH_CAR
     cars_wheel_forces();
     for (i = 0; i < g_race_data[0x54d]; i++) {
-        uint8_t *car = *(uint8_t **)(g_car_slots + i * CAR_SLOT_SIZE);
+        uint8_t *car = GP(g_car_slots + i * CAR_SLOT_SIZE);
         car_settle(car);
         car_roll_damping(car);
         car_self_right(car);

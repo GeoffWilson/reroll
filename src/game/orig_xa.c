@@ -20,53 +20,38 @@
 #include "../runtime.h"
 #include "physics.h"
 #include "winapi.h"
+#include "gamefn.h"
 
 #define U8(p, off) (*(uint8_t *)((uint8_t *)(uintptr_t)(p) + (off)))
 #define U16(p, off) (*(uint16_t *)((uint8_t *)(uintptr_t)(p) + (off)))
 #define I32(p, off) (*(int32_t *)((uint8_t *)(uintptr_t)(p) + (off)))
 #define U32(p, off) (*(uint32_t *)((uint8_t *)(uintptr_t)(p) + (off)))
-#define PTR(p, off) (*(uint8_t **)((uint8_t *)(uintptr_t)(p) + (off)))
+#define PTR(p, off) GP((uint8_t *)(uintptr_t)(p) + (off))
 #define G8(a) (*(uint8_t *)(uintptr_t)(a))
 #define G16(a) (*(uint16_t *)(uintptr_t)(a))
 #define G32(a) (*(uint32_t *)(uintptr_t)(a))
 #define GI32(a) (*(int32_t *)(uintptr_t)(a))
 #define GF(a) (*(float *)(uintptr_t)(a))
-#define GPTR(a) (*(uint8_t **)(uintptr_t)(a))
+#define GPTR(a) GP(a)
 
 #define g_race GPTR(0x4b1960)
 #define g_config GPTR(0x4b2198)
 
-typedef int32_t(GAMEAPI *xa_fn0)(void);
-typedef int32_t(GAMEAPI *xa_fn1)(uint32_t a);
-typedef int32_t(GAMEAPI *xa_fn2)(uint32_t a, uint32_t b);
-typedef int32_t(GAMEAPI *xa_fn3)(uint32_t a, uint32_t b, uint32_t c);
-typedef int32_t(GAMEAPI *xa_fn4)(uint32_t a, uint32_t b, uint32_t c, uint32_t d);
-typedef int32_t(GAMEAPI *xa_fn5)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e);
-typedef int32_t(GAMEAPI *xa_fn8)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f,
-                                 uint32_t g, uint32_t h);
-
-#define CALL0(a) (((xa_fn0)(uintptr_t)(a))())
-#define CALL1(a, x) (((xa_fn1)(uintptr_t)(a))((uint32_t)(x)))
-#define CALL2(a, x, y) (((xa_fn2)(uintptr_t)(a))((uint32_t)(x), (uint32_t)(y)))
-#define CALL3(a, x, y, z) (((xa_fn3)(uintptr_t)(a))((uint32_t)(x), (uint32_t)(y), (uint32_t)(z)))
-#define CALL4(a, x, y, z, w) (((xa_fn4)(uintptr_t)(a))((uint32_t)(x), (uint32_t)(y), (uint32_t)(z), (uint32_t)(w)))
-#define CALL5(a, x, y, z, w, v)                                                                                \
-    (((xa_fn5)(uintptr_t)(a))((uint32_t)(x), (uint32_t)(y), (uint32_t)(z), (uint32_t)(w), (uint32_t)(v)))
 #define PA(p) ((uint32_t)(uintptr_t)(p))
 
-#define body_retire(o) CALL1(0x419300, PA(o))
-#define grid_unlink(o) CALL1(0x4611d0, PA(o))
-#define crumble_start(o) CALL1(0x4427a0, PA(o))
-#define pair_list_remove(o) CALL1(0x478430, PA(o))
-#define object_debris(o) CALL1(0x403950, PA(o))
-#define explosion_effects(pos, dir, a, b, c) CALL5(0x42aa30, PA(pos), PA(dir), a, b, c)
-#define viewport_apply(v) CALL1(0x4265d0, PA(v))
-#define draw_otag_rect(a, b) CALL2(0x428480, PA(a), PA(b))
-#define draw_otag(a) CALL1(0x428470, PA(a))
-#define ot_clear_reverse(ot, n) CALL2(0x427a70, PA(ot), n)
-#define toggle_step(v, one, action) CALL3(0x447f20, v, one, action)
-#define menu_param_callback_hooked(cmd, dst, v, flag) CALL4(0x44d000, cmd, PA(dst), v, flag)
-#define sprintf_hooked 0x4979f0
+#define body_retire(o) GCALL(0x419300, body_retire)(o)
+#define grid_unlink(o) GCALL(0x4611d0, object_grid_unlink)(o)
+#define crumble_start(o) GCALL(0x4427a0, body_triggers_apply)(o)
+#define pair_list_remove(o) GCALL(0x478430, pair_list_remove)(PA(o))
+#define object_debris(o) GCALL(0x403950, pair_users_release)(PA(o))
+#define explosion_effects(pos, dir, a, b, c) GCALL(0x42aa30, explosion_effects)((const int32_t *)(pos), dir, a, b, c)
+#define viewport_apply(v) GCALL(0x4265d0, viewport_apply)((int16_t *)GMEM(v))
+#define draw_otag_rect(a, b) GCALL(0x428480, capture_draw_otag_rect)(a, (const int16_t *)GMEM(b))
+#define draw_otag(a) GCALL(0x428470, capture_draw_otag)(a)
+#define ot_clear_reverse(ot, n) GCALL(0x427a70, ot_clear_reverse)((uint32_t *)GMEM(ot), n)
+#define toggle_step(v, one, action) GCALL(0x447f20, option_onoff_step)(v, one, action)
+#define menu_param_callback_hooked(cmd, dst, v, flag) GCALL(0x44d000, menu_param_callback)(cmd, dst, v, flag)
+#define sprintf_hooked GCALL(0x4979f0, msvc_sprintf)
 
 /* strcpy as the original's inline repne scasb / rep movs. */
 static void xa_strcpy(uint8_t *dst, const uint8_t *src)
@@ -159,22 +144,23 @@ int32_t GAMEAPI driller_hit(uint8_t *self, uint8_t *other, uint8_t *hit)
             return 0;
         U32(self, 0x1b4) = U32(self, 0x1b0);
         U32(self, 0x1b0) = PA(other);
-        CALL2(0x4599c0, PA(other), PA(hit));
+        GCALL(0x4599c0, car_blast_hit)(other, hit);
         U32(PTR(self, 0x180), 0) |= 0x20000;
         race_mode = U8(g_race, 0x551);
         if ((race_mode == 3 || race_mode == 8) && (U32(other, 0) & 0x1ff) == 3) {
             owner = PTR(self, 0x180);
-            if (CALL0(0x45ef80) == 1 && CALL0(0x45eed0) == 1 && CALL0(0x45ef30) == 1) {
+            if (GCALL(0x45ef80, net_state_game)() == 1 && GCALL(0x45eed0, net_state_host)() == 1 &&
+                GCALL(0x45ef30, net_state_bit5)() == 1) {
                 U8(g_race, U16(owner, 0x64e) + 8) += 1;
-                CALL1(0x45fbe0, PA(g_race + 8));
-            } else if (CALL0(0x45eed0) == 0) {
+                GCALL(0x45fbe0, net_send_type7)(g_race + 8);
+            } else if (GCALL(0x45eed0, net_state_host)() == 0) {
                 U8(g_race, U16(owner, 0x64e) + 8) += 1;
             }
         }
         if ((U32(other, 0) & 0x1ff) == 3) {
             owner = PTR(self, 0x180);
             if (owner != 0 && U8(other, 0x70c) != 8)
-                CALL3(0x4600a0, U16(other, 0x64e), U16(owner, 0x64e), 9);
+                GCALL(0x4600a0, net_kill_message)(U16(other, 0x64e), U16(owner, 0x64e), 9);
         }
         return 0;
     }
@@ -192,12 +178,12 @@ int32_t GAMEAPI driller_hit(uint8_t *self, uint8_t *other, uint8_t *hit)
         if (I32(self, 0x1ac) != 0x7f) {
             /* the original pushes ecx with only cl set (a leftover upper part);
              * sound_voice_stop uses the low byte */
-            CALL1(0x471f40, U32(self, 0x1ac) & 0xff);
+            GCALL(0x471f40, sound_voice_stop)(U32(self, 0x1ac) & 0xff);
             I32(self, 0x1ac) = 0x7f;
         }
         for (i = 0; i < 3; i++) {
             uint8_t *part = PTR(self, 0x184 + 4 * i);
-            CALL2(0x458a20, PA(part), 1);
+            GCALL(0x458a20, trail_update)(part, 1);
             grid_unlink(part);
         }
     }
@@ -237,11 +223,11 @@ int32_t GAMEAPI movie_frame_check(void)
     if (pick != -1 && pick > shown) {
         uint32_t height = G32(0x4be2bc) ? 0x180 : 0xc0;
 
-        CALL1(0x488cc0, height);
+        GCALL(0x488cc0, movie_text_clear)((int32_t)height);
         for (i = 0; i < GI32(0x4be2b8); i++) {
-            const uint32_t *rec = (const uint32_t *)(0x6cc400 + i * 16);
+            const uint32_t *rec = (const uint32_t *)(uintptr_t)(0x6cc400 + i * 16);
             if ((uint32_t)pick == rec[2])
-                CALL3(0x488ad0, rec[3], rec[0], rec[1] + height);
+                GCALL(0x488ad0, movie_text_draw)((const uint8_t *)GMEM(rec[3]), (int32_t)rec[0], (int32_t)(rec[1] + height));
         }
         GI32(0x4ac738) = pick;
     }
@@ -319,9 +305,9 @@ void GAMEAPI clock_tick(void)
     if (U8(g_race, 0x54c) == 0 || G32(0x6ce600) == 0 || G32(0x6c0a38) > G32(0x4be388))
         return;
     if (U8(g_race, 0x552) == 0)
-        CALL0(0x423ba0);
+        GCALL(0x423ba0, screen_ot_swap)();
     else
-        CALL0(0x423af0);
+        GCALL(0x423af0, screen_ot_first)();
 }
 
 /* ---- the movie menu's table (0x4af680: function, name) ---- */
@@ -329,32 +315,32 @@ void GAMEAPI clock_tick(void)
 /* 0x447f90..0x447fe0: the winner's movie in language 0..5 (0x42dbf0). */
 void GAMEAPI movie_win_lang0(void)
 {
-    CALL1(0x42dbf0, 0);
+    GCALL(0x42dbf0, movie_win)(0);
 }
 
 void GAMEAPI movie_win_lang1(void)
 {
-    CALL1(0x42dbf0, 1);
+    GCALL(0x42dbf0, movie_win)(1);
 }
 
 void GAMEAPI movie_win_lang2(void)
 {
-    CALL1(0x42dbf0, 2);
+    GCALL(0x42dbf0, movie_win)(2);
 }
 
 void GAMEAPI movie_win_lang3(void)
 {
-    CALL1(0x42dbf0, 3);
+    GCALL(0x42dbf0, movie_win)(3);
 }
 
 void GAMEAPI movie_win_lang4(void)
 {
-    CALL1(0x42dbf0, 4);
+    GCALL(0x42dbf0, movie_win)(4);
 }
 
 void GAMEAPI movie_win_lang5(void)
 {
-    CALL1(0x42dbf0, 5);
+    GCALL(0x42dbf0, movie_win)(5);
 }
 
 /* ---- front end menu handlers ---- */
@@ -379,7 +365,7 @@ void GAMEAPI menu_item_text_keep(void)
 int32_t GAMEAPI menu_input_back10(int32_t action)
 {
     if (action == 10)
-        CALL0(0x448880);
+        GCALL(0x448880, name_entry_box_place)();
     return 0;
 }
 
@@ -388,8 +374,9 @@ int32_t GAMEAPI menu_input_back10(int32_t action)
  * to 0x449160; returns its result. */
 int32_t GAMEAPI menu_input_net(int32_t action)
 {
-    return ((xa_fn8)0x449160)((uint32_t)action, G32(0x4c98e0), G32(0x4c2914), G32(0x4cb468), G32(0x4c2480),
-                              G32(0x4c2918), G32(0x6bf164), G32(0x6bf160));
+    return GCALL(0x449160, name_entry_input)((uint32_t)action, (uint8_t *)GMEM(G32(0x4c98e0)), GI32(0x4c2914),
+                                             GI32(0x4cb468), G32(0x4c2480), GI32(0x4c2918), G32(0x6bf164),
+                                             G32(0x6bf160));
 }
 
 /* 0x44ce70 / 0x44ce80 / 0x44ce90 / 0x44cea0: float slider callbacks: the
@@ -538,11 +525,12 @@ int32_t GAMEAPI menu_movie_play(int32_t action)
     xa_movie_index_clamp();
     if (action < 6 || action > 7)
         return 0;
-    if (CALL1(0x4475f0, 0) == 0)
+    if (GCALL(0x4475f0, fe_repeat_select)(0) == 0)
         return 0;
-    CALL0(0x443a10);
-    CALL0(G32(0x4af680 + U8(g_config, 0xd) * 8));
-    CALL0(0x443b00);
+    GCALL(0x443a10, font_map_init)();
+    /* the table holds void(void) movie players (0x42da20.., 0x447f90..) */
+    ((void(GAMEAPI *)(void))(uintptr_t)G32(0x4af680 + U8(g_config, 0xd) * 8))();
+    GCALL(0x443b00, font_image_release)();
     return 1;
 }
 
@@ -692,7 +680,6 @@ int32_t GAMEAPI menu_time_cb(int32_t cmd, uint8_t *dst)
     case 0x12: {
         volatile float v, q;
         double d;
-        uint32_t w[2];
 
         if (U16(g_config, 0x12) == 0)
             U16(g_config, 0x12) = 30000;
@@ -703,12 +690,11 @@ int32_t GAMEAPI menu_time_cb(int32_t cmd, uint8_t *dst)
         v = (float)(int32_t)U16(g_config, 0x12);
         q = v / GF(0x4a33b4);
         d = q;
-        __builtin_memcpy(w, &d, 8);
-        CALL4(sprintf_hooked, PA(dst), 0x4b00c8, w[0], w[1]);
+        sprintf_hooked((char *)dst, (const char *)0x4b00c8, d);
         return 1;
     }
     case 0x13:
-        CALL4(sprintf_hooked, PA(dst), 0x4b00c0, 0, 0x404e0000);
+        sprintf_hooked((char *)dst, (const char *)0x4b00c0, 60.0); /* 0x404e0000_00000000 */
         return 1;
     case 0x14:
         if ((int32_t)U16(g_config, 0x12) < step)
@@ -730,5 +716,11 @@ int32_t GAMEAPI menu_time_cb(int32_t cmd, uint8_t *dst)
  * timer restart); returns its result. */
 int32_t GAMEAPI menu_moved_idle(void)
 {
-    return CALL0(0x448000);
+#if defined(__i386__)
+    /* attract_timer_start is void: the original returns whatever it leaves in eax */
+    return ((int32_t(GAMEAPI *)(void))(uintptr_t)0x448000)();
+#else
+    GCALL(0x448000, attract_timer_start)();
+    return 0;
+#endif
 }

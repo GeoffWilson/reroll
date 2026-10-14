@@ -14,13 +14,14 @@
  * 0x460b20, 0x460b40, 0x460dc0, 0x460e40, 0x460f50 (group U). */
 #include "../runtime.h"
 #include "physics.h"
+#include "gamefn.h"
 
-#define g_race (*(uint8_t **)0x4b1960)
-#define g_config (*(uint8_t **)0x4b2198)
-#define g_track_info (*(uint8_t **)0x6c1eb0) /* the loaded track file's header */
-#define g_track (*(uint8_t **)0x6c1e30)      /* the track (0x6bfac0) */
-#define g_textures (*(uint8_t **)0x6c1e14)   /* 0x10-byte texture records */
-#define g_track_models (*(uint8_t **)0x6bfac8)
+#define g_race GP(0x4b1960)
+#define g_config GP(0x4b2198)
+#define g_track_info GP(0x6c1eb0) /* the loaded track file's header */
+#define g_track GP(0x6c1e30)      /* the track (0x6bfac0) */
+#define g_textures GP(0x6c1e14)   /* 0x10-byte texture records */
+#define g_track_models GP(0x6bfac8)
 #define g_car_slots ((uint8_t *)0x6bfb80)
 #define CAR_SLOT_SIZE 0x274
 #define g_controllers ((uint8_t *)0x6bf880) /* 0x5c bytes per car */
@@ -30,10 +31,10 @@
 #define g_object_pool_count (*(int32_t *)0x4d1080)
 #define g_object_pool_block (*(uint32_t *)0x4d1084)
 #define g_object_pool (*(uint32_t *)0x6b9b90)
-#define g_object_list (*(uint8_t ***)0x6ce738)
+#define g_object_list ((uint32_t *)GP(0x6ce738))
 #define g_object_list_count (*(uint32_t *)0x6ce6fc)
 #define g_lit_faces_count (*(uint32_t *)0x5f72a4)
-#define g_lights ((uint8_t **)0x5d6e00)
+#define g_lights ((uint32_t *)0x5d6e00) /* object pointers */
 #define g_markers_count (*(int32_t *)0x4d5800)
 #define g_markers ((int32_t *)0x5d6400) /* x, y, z for up to 40 */
 #define g_cam_lines ((int32_t *)0x6cfbe0) /* 14 words each, up to 40 */
@@ -53,53 +54,38 @@
 #define S16(p, off) (*(int16_t *)((p) + (off)))
 #define U16(p, off) (*(uint16_t *)((p) + (off)))
 #define U8(p, off) (*(uint8_t *)((p) + (off)))
-#define PTR(p, off) (*(uint8_t **)((p) + (off)))
+#define PTR(p, off) GP((p) + (off))
 #define SHL(x, n) ((int32_t)((uint32_t)(int32_t)(x) << (n)))
 
 /* Called by address. */
-typedef void(GAMEAPI *void_fn)(void);
-typedef int32_t(GAMEAPI *int_fn)(void);
-typedef void(GAMEAPI *arg_fn)(uint32_t a);
-typedef int32_t(GAMEAPI *arg_int_fn)(uint32_t a);
-typedef void(GAMEAPI *arg2_fn)(uint32_t a, uint32_t b);
-typedef int32_t(GAMEAPI *arg2_int_fn)(uint32_t a, uint32_t b);
-typedef void(GAMEAPI *arg3_fn)(uint32_t a, uint32_t b, uint32_t c);
-typedef int32_t(GAMEAPI *arg5_int_fn)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e);
-typedef uint32_t(GAMEAPI *pool_size_fn)(uint8_t *model, int32_t size, int32_t a, int32_t b, int32_t c, int32_t *o1,
-                                         int32_t *o2, int32_t *o3, int32_t *o4, int32_t *o5, int32_t *o6);
-typedef uint8_t *(GAMEAPI *pool_take_fn)(uint32_t size);
-typedef void(GAMEAPI *object_fn)(uint8_t *object);
-typedef void(GAMEAPI *object_kind_fn)(uint8_t *object, uint32_t kind);
-typedef void(GAMEAPI *parts_fn)(uint8_t *dst, uint8_t *model, uint8_t *a, uint8_t *b, int32_t sub);
-typedef void(GAMEAPI *link_at_fn)(uint8_t *object, int32_t x, int32_t y, int32_t z);
-typedef void(GAMEAPI *quat_fn)(int32_t *q, int32_t *m);
-typedef int32_t(GAMEAPI *angle_fn)(int32_t a);
-typedef int32_t(GAMEAPI *vec_fn)(int32_t *v);
-typedef void(GAMEAPI *place_fn)(uint8_t *object, uint8_t *light, int16_t *pos);
-typedef int32_t(GAMEAPI *upload_fn)(int32_t i, uint32_t w, uint32_t h, uint32_t pixels, uint32_t palette,
-                                    uint32_t flags);
-typedef uint32_t(GAMEAPI *alloc_fn)(uint32_t size);
+int32_t GAMEAPI texture_upload_body(int32_t page, int32_t w, int32_t h, uint32_t pixels, uint32_t palette,
+                                    uint32_t flags); /* 0x41e710 (src/vkgame.c's texture_upload) */
 
-#define pool_size ((pool_size_fn)0x460e40)
-#define pool_take ((pool_take_fn)0x460af0)
-#define object_clear ((object_kind_fn)0x460b40)
-#define object_register ((object_fn)0x460f50)
-#define object_parts ((parts_fn)0x460dc0)
-#define object_link_at ((link_at_fn)0x460ff0)
-#define object_header ((object_kind_fn)0x460b20)
-#define grid_unlink_object ((object_fn)0x4611d0)
-#define grid_link_object ((object_fn)0x460fb0)
-#define body_matrix ((quat_fn)0x480780)
-#define body_prepare_at ((vec_fn)0x465740)
-#define cos_of ((angle_fn)0x480bc0)
-#define sin_of ((angle_fn)0x480b10)
-#define direction_fit_at ((vec_fn)0x407e90)
-#define vec_length_at ((vec_fn)0x480cd0)
-#define vec_normalise_at ((vec_fn)0x480c70)
-#define light_place ((place_fn)0x442c90)
-#define texture_upload ((upload_fn)0x41e710)
-#define colour_set ((arg3_fn)0x41de10)
-#define game_alloc ((alloc_fn)0x4445e0)
+/* root_name_get 0x465550 and dx_error_ignore 0x4291f0 read no arguments, but
+ * the original pushes one for each; the calls keep it (harmless in 64-bit). */
+typedef uint32_t(GAMEAPI *root_name_arg_fn)(uint32_t unused);
+typedef void(GAMEAPI *dx_error_ignore_arg_fn)(uint32_t unused);
+
+#define pool_size GCALL(0x460e40, model_faces_carve)
+#define pool_take GCALL(0x460af0, link_pool_take)
+#define object_clear GCALL(0x460b40, body_header_init)
+#define object_register GCALL(0x460f50, body_list_add)
+#define object_parts GCALL(0x460dc0, model_instance_init)
+#define object_link_at GCALL(0x460ff0, object_grid_link2_at)
+#define object_header GCALL(0x460b20, grid_link_init)
+#define grid_unlink_object GCALL(0x4611d0, object_grid_unlink)
+#define grid_link_object GCALL(0x460fb0, object_grid_link)
+#define body_matrix GCALL(0x480780, quat_to_matrix)
+#define body_prepare_at GCALL(0x465740, body_prepare)
+#define cos_of GCALL(0x480bc0, cos_table)
+#define sin_of GCALL(0x480b10, sin_table)
+#define direction_fit_at GCALL(0x407e90, direction_fit)
+#define vec_length_at GCALL(0x480cd0, vec_length)
+#define vec_normalise_at GCALL(0x480c70, vec_normalise)
+#define light_place GCALL(0x442c90, body_point_world)
+#define texture_upload GCALL(0x41e710, texture_upload_body)
+#define colour_set GCALL(0x41de10, d3d_fog_colour_set)
+#define game_alloc GCALL(0x4445e0, kr_malloc)
 
 /* Update routines given to track objects (+0x148). */
 #define UPDATE_SWINGING 0x401230
@@ -152,7 +138,7 @@ void GAMEAPI body_init_from_template(uint8_t *object, const uint32_t *t)
     U32(object, 0x108) = 0;
     for (i = 0; i < 13; i++)
         U32(object, 0x34 + i * 4) = t[i];
-    body_matrix((int32_t *)(object + 0x58), (int32_t *)(object + 0xc4));
+    body_matrix((int32_t *)(object + 0x58), (int16_t *)(object + 0xc4));
     for (i = 0; i < 6; i++)
         U32(object, 0x9c + i * 4) = t[0x1a + i];
     U32(object, 0xb4) = 0x20000;
@@ -162,7 +148,7 @@ void GAMEAPI body_init_from_template(uint8_t *object, const uint32_t *t)
     U32(object, 0x8c) = 0;
     for (i = 0; i < 6; i++)
         U32(object, 0x74 + i * 4) = 0;
-    body_prepare_at((int32_t *)(object + 0x34));
+    body_prepare_at(object + 0x34);
     grid_link_object(object);
 }
 
@@ -172,13 +158,15 @@ void GAMEAPI body_init_from_template(uint8_t *object, const uint32_t *t)
  * and part tables set up. */
 uint8_t *GAMEAPI object_create(uint8_t *model, uint32_t kind, int32_t size, int32_t shared)
 {
-    int32_t main_a = (int32_t)(uintptr_t)model, main_b = size, near_a = 0, near_b = shared, far_a = 0, far_b = 0;
+    /* pool_size works in offsets from 0 (`at` = size) */
+    uint8_t *main_a = model, *main_b = (uint8_t *)(uintptr_t)(uint32_t)size, *near_a = 0;
+    uint8_t *near_b = (uint8_t *)(uintptr_t)(uint32_t)shared, *far_a = 0, *far_b = 0;
     uint8_t *object, *lod1, *lod2;
     uint32_t total;
     int32_t own;
 
     if (!model) {
-        total = pool_size(0, size, 0, 0, 0, &main_a, &main_b, &near_a, &near_b, &far_a, &far_b);
+        total = (uint32_t)(uintptr_t)pool_size(0, (uint8_t *)(uintptr_t)(uint32_t)size, 0, 0, 0, &main_a, &main_b, &near_a, &near_b, &far_a, &far_b);
         object = pool_take(total);
         object_clear(object, kind);
         object_register(object);
@@ -187,7 +175,7 @@ uint8_t *GAMEAPI object_create(uint8_t *model, uint32_t kind, int32_t size, int3
     lod1 = model + U16(model, 0x1c);
     lod2 = model + U16(model, 0x1e);
     own = shared == 0;
-    total = pool_size(model, size, own, own && lod1 != model, own && lod2 != model, &main_a, &main_b, &near_a,
+    total = (uint32_t)(uintptr_t)pool_size(model, (uint8_t *)(uintptr_t)(uint32_t)size, own, own && lod1 != model, own && lod2 != model, &main_a, &main_b, &near_a,
                       &near_b, &far_a, &far_b);
     object = pool_take(total);
     object_clear(object, kind);
@@ -207,21 +195,24 @@ uint8_t *GAMEAPI object_create(uint8_t *model, uint32_t kind, int32_t size, int3
         U32(object, 0x30) = U32(model, U16(model, 0x1e) + 0xc);
         U8(object, 0x163) = U8(model, U16(model, 0x1e) + 4);
     }
-    PTR(object, 0x10) = model;
+    U32(object, 0x10) = (uint32_t)(uintptr_t)model;
     if (shared)
         return object;
-    object_parts(object + 0x14, model, object + main_a, object + main_b, 0);
+    object_parts((uint32_t *)(object + 0x14), model, object + (int32_t)(uintptr_t)main_a,
+                 (uint32_t)(uintptr_t)(object + (int32_t)(uintptr_t)main_b));
     if (lod1 == model) {
         U32(object, 0x1c) = U32(object, 0x14);
         U32(object, 0x20) = U32(object, 0x18);
     } else {
-        object_parts(object + 0x1c, lod1, object + near_a, object + near_b, 1);
+        object_parts((uint32_t *)(object + 0x1c), lod1, object + (int32_t)(uintptr_t)near_a,
+                     (uint32_t)(uintptr_t)(object + (int32_t)(uintptr_t)near_b));
     }
     if (lod2 == lod1 || lod2 == model) {
         U32(object, 0x14c) = U32(object, 0x1c);
         U32(object, 0x150) = U32(object, 0x20);
     } else {
-        object_parts(object + 0x14c, lod2, object + far_a, object + far_b, 1);
+        object_parts((uint32_t *)(object + 0x14c), lod2, object + (int32_t)(uintptr_t)far_a,
+                     (uint32_t)(uintptr_t)(object + (int32_t)(uintptr_t)far_b));
     }
     return object;
 }
@@ -232,7 +223,7 @@ uint8_t *GAMEAPI object_create(uint8_t *model, uint32_t kind, int32_t size, int3
 static uint8_t *place_object(uint8_t *object, const uint8_t *record)
 {
     quat_from_angles(S16(record, 0xe), S16(record, 0x10), S16(record, 0x12), (int32_t *)(object + 0x58));
-    body_matrix((int32_t *)(object + 0x58), (int32_t *)(object + 0xc4));
+    body_matrix((int32_t *)(object + 0x58), (int16_t *)(object + 0xc4));
     grid_unlink_object(object);
     I32(object, 0x34) = SHL(S16(record, 8), 16);
     I32(object, 0x38) = SHL(S16(record, 0xa), 16);
@@ -245,7 +236,7 @@ static uint8_t *place_object(uint8_t *object, const uint8_t *record)
 
 static uint8_t *record_model(const uint8_t *record)
 {
-    return ((uint8_t **)PTR(g_track_info, 0x18))[U8(record, 3)];
+    return GP(PTR(g_track_info, 0x18) + U8(record, 3) * 4);
 }
 
 /* 0x401300: a moving track object of `kind` (0x19, 0x1f, 0x14 or 0x23). */
@@ -302,7 +293,8 @@ uint8_t *GAMEAPI track_marker_make(const uint8_t *record)
  * to the object list. */
 uint8_t *GAMEAPI track_object_spawn(const uint8_t *record)
 {
-    uint8_t **slot = g_object_list + g_object_list_count, *object;
+    uint32_t *slot = g_object_list + g_object_list_count;
+    uint8_t *object;
 
     switch (U8(record, 0x1f)) {
     case 3:
@@ -327,7 +319,7 @@ uint8_t *GAMEAPI track_object_spawn(const uint8_t *record)
         object = track_object_make_static(record);
         break;
     }
-    *slot = object;
+    *slot = (uint32_t)(uintptr_t)object;
     g_object_list_count++;
     return object;
 }
@@ -380,7 +372,7 @@ uint8_t *GAMEAPI light_sprite_spawn(int32_t x, int32_t y, int32_t z, uint32_t te
 {
     uint8_t *object = sprite_object_create(x, y, z, texture, a, 0x80);
 
-    g_lights[index] = object;
+    g_lights[index] = (uint32_t)(uintptr_t)object;
     U8(object, 0x108) = (uint8_t)c0;
     U32(object, 0) = 0xd;
     U8(object, 0x109) = (uint8_t)c1;
@@ -402,7 +394,7 @@ void GAMEAPI object_light_spawn(uint8_t *object, uint32_t i, int32_t *counter)
     int16_t pos[4] = {0, 0, 0, 0};
     uint16_t word;
 
-    light_place(object, point, pos);
+    light_place(object, (const uint32_t *)point, pos);
     light_sprite_spawn((uint16_t)pos[0] | (uint32_t)(uint16_t)pos[1] << 16,
                        (uint16_t)pos[1] | (uint32_t)(uint16_t)pos[2] << 16,
                        (uint16_t)pos[2] | (uint32_t)(uint16_t)pos[3] << 16, U16(type, 6), U8(type, 3),
@@ -411,7 +403,7 @@ void GAMEAPI object_light_spawn(uint8_t *object, uint32_t i, int32_t *counter)
     U16(object, 0x16a + i * 2) = (uint16_t)(((word ^ (uint16_t)*counter) & 0xfff) ^ word);
     ++*counter;
     if (U8(type, 4))
-        U8(g_lights[U16(object, 0x16a + i * 2) & 0xfff], 0x10c) = 1;
+        U8((uint8_t *)(uintptr_t)g_lights[U16(object, 0x16a + i * 2) & 0xfff], 0x10c) = 1;
 }
 
 /* 0x442680: an object's five light words from the record (+0x2e); type 2
@@ -468,7 +460,7 @@ void GAMEAPI track_blast_register(uint8_t *object, const uint8_t *record)
     U8(e, 7) = a;
     S16(e, 4) = (int16_t)(I32(object, 0x3c) >> 16);
     U8(e, 8) = c;
-    PTR(e, 0xc) = object;
+    U32(e, 0xc) = (uint32_t)(uintptr_t)object;
     U8(e, 9) = 0;
     g_blast_count++;
 }
@@ -503,7 +495,7 @@ void GAMEAPI object_lit_faces_register(uint8_t *object)
  * the polygon table (0x6bfb5c, by byte offset index >> 2, +2) is set. */
 void GAMEAPI faces_count_lit(const uint16_t *list, const uint8_t *model, int32_t *count)
 {
-    const uint8_t *table = *(uint8_t **)0x6bfb5c;
+    const uint8_t *table = GP(0x6bfb5c);
     uint32_t n = U16(model, 6);
     int32_t found = 0;
 
@@ -521,11 +513,11 @@ void GAMEAPI model_count_lit(const uint8_t *record, const uint8_t *model, int32_
     const uint8_t *lod2 = U16(model, 0x1e) ? model + U16(model, 0x1e) : 0;
     int32_t n = 0;
 
-    faces_count_lit((const uint16_t *)(*(uint8_t **)0x6bfb58 + U16(record, 0x28) * 2), model, &n);
+    faces_count_lit((const uint16_t *)(GP(0x6bfb58) + U16(record, 0x28) * 2), model, &n);
     if (lod1)
-        faces_count_lit((const uint16_t *)(*(uint8_t **)0x6bfb58 + U16(record, 0x2a) * 2), lod1, &n);
+        faces_count_lit((const uint16_t *)(GP(0x6bfb58) + U16(record, 0x2a) * 2), lod1, &n);
     if (lod2)
-        faces_count_lit((const uint16_t *)(*(uint8_t **)0x6bfb58 + U16(record, 0x2c) * 2), lod2, &n);
+        faces_count_lit((const uint16_t *)(GP(0x6bfb58) + U16(record, 0x2c) * 2), lod2, &n);
     *count = n;
 }
 
@@ -543,7 +535,7 @@ int32_t GAMEAPI track_models_mark_lit(int32_t count, const uint8_t *record)
 
         if (!(U8(record, 1) & 4))
             continue;
-        model = ((uint8_t **)PTR(models, 0x18))[U8(record, 3)];
+        model = GP(PTR(models, 0x18) + U8(record, 3) * 4);
         if (!model || (U8(model, 8) & 3))
             continue;
         n = 0;
@@ -622,7 +614,7 @@ int32_t GAMEAPI track_textures_load(int32_t count, int32_t first, int32_t n, con
             w = U16(records, 0);
             h = U16(records, 2);
         }
-        if (!texture_upload(i, w, h, pixels + offset, U16(records, 4) * 0x400 + palettes,
+        if (!texture_upload(i, (int32_t)w, (int32_t)h, pixels + offset, U16(records, 4) * 0x400 + palettes,
                             (i < first || i > last ? 0 : 1) | flags)) {
             U32(g_config, 0x48) = 4;
             return 0;
@@ -764,51 +756,51 @@ int32_t GAMEAPI race_setup(void)
     }
     for (offset = 0; offset < 0xb7318; offset += 0x1e884)
         U32(g_race, offset + 0x1fb20) = 8;
-    ((void_fn)0x46a040)();
+    GCALL(0x46a040, heap_and_views_init)();
     *(uint32_t *)0x6c0a50 = 0;
     *(uint32_t *)0x4c2458 = 0;
-    ((void_fn)0x41b370)();
+    GCALL(0x41b370, pads_reset)();
     *(uint32_t *)0x4d11ec = 0;
     *(uint32_t *)0x6b9cb8 = 0;
     *(uint32_t *)0x6b9b94 = 0;
-    ((void_fn)0x41aa40)();
-    ((void_fn)0x405050)();
-    ((void_fn)0x478340)();
-    ((void_fn)0x418fa0)();
-    ((void_fn)0x442660)();
-    name = (uint32_t)((arg_int_fn)0x465550)(0x6bfac0);
-    if (!((arg2_int_fn)0x43fa60)(name, 0x6bfac0))
+    GCALL(0x41aa40, specials_reset)();
+    GCALL(0x405050, explosions_reset)();
+    GCALL(0x478340, car_targets_reset)();
+    GCALL(0x418fa0, body_pools_setup)();
+    GCALL(0x442660, attached_points_reset)();
+    name = ((root_name_arg_fn)(uintptr_t)0x465550)(0x6bfac0);
+    if (!GCALL(0x43fa60, track_load)((const char *)GMEM(name), GMEM(0x6bfac0)))
         return 0;
-    ((void_fn)0x444080)();
-    ((void_fn)0x41aa60)();
-    ((void_fn)0x435110)();
-    ((void_fn)0x47c330)();
-    ((void_fn)0x441b90)();
-    ((void_fn)0x479af0)();
-    ((void_fn)0x46c210)();
-    ((void_fn)0x441d70)();
-    ((void_fn)0x46ba00)();
-    ((void_fn)0x4377c0)();
-    ((void_fn)0x47d980)();
-    ((void_fn)0x486780)();
-    ((void_fn)0x465270)();
+    GCALL(0x444080, viewports_setup)();
+    GCALL(0x41aa60, track_water_setup)();
+    GCALL(0x435110, clock_start)();
+    GCALL(0x47c330, model_buffers_init)();
+    GCALL(0x441b90, track_lights_init)();
+    GCALL(0x479af0, text_lists_reset)();
+    GCALL(0x46c210, shadows_reset)();
+    GCALL(0x441d70, lights_reset)();
+    GCALL(0x46ba00, bomblets_setup)();
+    GCALL(0x4377c0, hud_layout)();
+    GCALL(0x47d980, warp_init)();
+    GCALL(0x486780, snatch_texture_setup)();
+    GCALL(0x465270, messages_load)();
     if (U8(g_race, 0x58c))
-        ((arg_fn)0x463860)(U8(g_race, 0x58c));
-    ((void_fn)0x463990)();
-    ((void_fn)0x467120)();
-    ((void_fn)0x4583e0)();
-    ((void_fn)0x43a8d0)();
-    ((void_fn)0x479720)();
-    ((void_fn)0x46d2b0)();
-    ((void_fn)0x457f80)();
-    ((void_fn)0x47bd70)();
-    ((void_fn)0x433d30)();
-    ((void_fn)0x462360)();
-    ((void_fn)0x4040f0)();
-    ((void_fn)0x434380)();
-    ((void_fn)0x42a610)();
-    ((void_fn)0x46eab0)();
-    ((void_fn)0x41ab80)();
+        GCALL(0x463860, race_start_messages)(U8(g_race, 0x58c));
+    GCALL(0x463990, replay_state_clear)();
+    GCALL(0x467120, pickups_create)();
+    GCALL(0x4583e0, weapon_bodies_create)();
+    GCALL(0x43a8d0, freeze_setup)();
+    GCALL(0x479720, time_warp_reset)();
+    GCALL(0x46d2b0, shield_setup)();
+    GCALL(0x457f80, rock_setup)();
+    GCALL(0x47bd70, debris_init)();
+    GCALL(0x433d30, trail_prims_init)();
+    GCALL(0x462360, pieces_init)();
+    GCALL(0x4040f0, quarter_prims_init)();
+    GCALL(0x434380, markers_init)();
+    GCALL(0x42a610, effects_init)();
+    GCALL(0x46eab0, skid_marks_init)();
+    GCALL(0x41ab80, track_specials_setup)();
     /* swap the two halves of eight texture records after the track's */
     for (j = 1; j < 5; j++) {
         uint8_t *t = g_textures + (U16(g_track_info, 0x2e) + 0x91 + j) * 0x10;
@@ -824,39 +816,39 @@ int32_t GAMEAPI race_setup(void)
         U16(t, 4) = U16(t, 8);
         U16(t, 8) = a;
     }
-    ((arg_fn)0x423f00)(*(uint16_t *)0x4b1964);
-    ((void_fn)0x47b140)();
+    GCALL(0x423f00, view_zoom_set)(*(uint16_t *)0x4b1964);
+    GCALL(0x47b140, glow_flash_reset)();
     cars = U8(g_race, 0x54d);
     if (cars > 0) {
         i = 0;
         slot = g_car_slots;
         controller = g_controllers;
         do {
-            ((arg2_fn)0x40e670)((uint32_t)(uintptr_t)slot, (uint32_t)i);
+            GCALL(0x40e670, car_setup)(slot, i);
             if (i < cars) {
-                PTR(slot, 0x28) = controller;
-                ((arg3_fn)0x406be0)((uint32_t)i, U32(slot, 0), (uint32_t)(uintptr_t)controller);
-                ((arg2_fn)0x490390)(U32(slot, 0), g_car_serial);
+                U32(slot, 0x28) = (uint32_t)(uintptr_t)controller;
+                GCALL(0x406be0, camera_view_setup)(i, I32(slot, 0), (int32_t *)controller);
+                GCALL(0x490390, slot_glow_init)(PTR(slot, 0), (int32_t)g_car_serial);
                 g_car_serial++;
             } else {
                 U32(slot, 0x28) = 0x12345678;
             }
-            ((arg_fn)0x401470)((uint32_t)(uintptr_t)slot);
+            GCALL(0x401470, ai_car_race_start)(slot);
             U16(slot, 0x254) = 200;
             U8(slot, 0x256) = 0;
             U32(slot, 0x270) = 0;
-            U16(slot, 0x26c) = (uint16_t)((arg_int_fn)0x449ca0)((uint32_t)i);
+            U16(slot, 0x26c) = (uint16_t)GCALL(0x449ca0, player_car_choice)(i);
             U8(slot, 0x26b) = 0x32;
             U8(slot, 0x269) = 0x40;
             U8(slot, 0x26a) = 0;
             U8(slot, 0x268) = 0;
-            if (!U8(g_race, 0x58c) && ((arg_int_fn)0x449cd0)((uint32_t)i))
-                U8(slot, 0x268) = (uint8_t)((arg2_int_fn)0x428cc0)((uint32_t)i, (uint32_t)(uintptr_t)(slot + 0x26c));
+            if (!U8(g_race, 0x58c) && GCALL(0x449cd0, config_player_on)(i))
+                U8(slot, 0x268) = (uint8_t)GCALL(0x428cc0, pad_device_bound)(i, (const int16_t *)(slot + 0x26c));
             /* the analogue flags: the original pushes 0x81, 0x82, 0x84 before
              * calling 0x489fa0 (one argument), so they become 0x449d00's
              * steer/throttle/brake flags */
-            U16(slot, 0x26e) = (uint16_t)((arg5_int_fn)0x449d00)(
-                (uint32_t)i, (uint32_t)((arg_int_fn)0x489fa0)((uint32_t)(int32_t)S16(slot, 0x26c)), 0x84, 0x82, 0x81);
+            U16(slot, 0x26e) = (uint16_t)GCALL(0x449d00, pad_button_flags)(
+                i, (uint32_t)GCALL(0x489fa0, device_usable)((int32_t)S16(slot, 0x26c)), 0x84, 0x82, 0x81);
             i++;
             controller += 0x5c;
             slot += CAR_SLOT_SIZE;
@@ -864,22 +856,22 @@ int32_t GAMEAPI race_setup(void)
     }
     /* the models of the shared objects: seven by index (0x4b1968) and 8 */
     for (index = (const uint16_t *)0x4b1968; index < (const uint16_t *)0x4b1976; index++)
-        ((arg_fn)0x40f1e0)(U32(PTR(g_track, 0x18), S16(PTR(g_track, 0x58), *index * 2) * 4));
-    ((arg_fn)0x40f1e0)(U32(PTR(g_track, 0x18), S16(PTR(g_track, 0x58), 0x10) * 4));
-    ((void_fn)0x475090)();
-    ((void_fn)0x481e50)();
-    ((void_fn)0x483d90)();
-    ((void_fn)0x4730b0)();
-    ((arg_fn)0x41b460)(0x6bfb80);
+        GCALL(0x40f1e0, model_normals_make)(PTR(PTR(g_track, 0x18), S16(PTR(g_track, 0x58), *index * 2) * 4));
+    GCALL(0x40f1e0, model_normals_make)(PTR(PTR(g_track, 0x18), S16(PTR(g_track, 0x58), 0x10) * 4));
+    GCALL(0x475090, car_textures_setup)();
+    GCALL(0x481e50, tyre_trails_init)();
+    GCALL(0x483d90, weather_setup)();
+    GCALL(0x4730b0, race_sounds_init)();
+    GCALL(0x41b460, slots_controls_setup)(g_car_slots);
     if (U8(g_race, 0x58c))
-        ((arg_fn)0x463930)(U8(g_race, 0x58c));
-    ((arg_fn)0x429220)(0);
-    ((void_fn)0x4351a0)();
+        GCALL(0x463930, race_fade_init)(U8(g_race, 0x58c));
+    GCALL(0x429220, tick_sync)(0);
+    GCALL(0x4351a0, clock_restart)();
     *(uint32_t *)0x6cce94 = U8(g_race, 0x58b);
-    ((void_fn)0x46a940)();
-    ((void_fn)0x4430f0)();
+    GCALL(0x46a940, countdown_init)();
+    GCALL(0x4430f0, glints_clear)();
     if (U8(g_race, 0x555))
-        ((void_fn)0x485070)();
-    ((arg_fn)0x4291f0)(1);
+        GCALL(0x485070, weather_tint_setup)();
+    ((dx_error_ignore_arg_fn)(uintptr_t)0x4291f0)(1);
     return 1;
 }

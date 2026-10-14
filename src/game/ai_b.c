@@ -15,17 +15,18 @@
 #include "body.h"
 #include "fixed.h"
 #include "physics.h"
+#include "gamefn.h"
 
-#define g_race (*(uint8_t **)0x4b1960)
+#define g_race GP(0x4b1960)
 #define g_race_ticks (*(uint32_t *)0x6c0a50)
-#define g_lines (*(uint8_t **)(*(uint8_t **)0x6c1e30 + 0x60))
-#define g_lines_copy (*(uint8_t **)0x6bfb20)
+#define g_lines GP(GP(0x6c1e30) + 0x60)
+#define g_lines_copy GP(0x6bfb20)
 #define g_car_slots ((uint8_t *)0x6bfb80)
 #define CAR_SLOT_SIZE 0x274
 
 #define LINE_IN(lines, i) ((lines) + (uint16_t)(i) * 0xc)
 #define LINE(i) LINE_IN(g_lines, i)
-#define NODE(line, i) (*(uint8_t **)((line) + 8) + (uint16_t)(i) * 0x10)
+#define NODE(line, i) (GP((line) + 8) + (uint16_t)(i) * 0x10)
 #define S16(p, off) (*(int16_t *)((p) + (off)))
 #define U16(p, off) (*(uint16_t *)((p) + (off)))
 
@@ -51,33 +52,25 @@
 #define g_waypoints ((int16_t *)0x4b7db0)       /* 8 bytes per candidate */
 
 /* Objects and cars ahead (0x403200, 0x403a40) */
-#define g_objects (*(uint8_t **)0x600664) /* 36 x {object, u8 active} */
+#define g_objects GP(0x600664) /* 36 x {object, u8 active} */
 #define g_object_distance ((int32_t *)0x6d0e40)
 #define g_objects_ahead ((uint8_t *)0x6d0e00)
 #define g_objects_ahead_count (*(uint8_t *)0x4b5e54)
-#define g_bodies ((uint8_t **)0x6d0a80) /* 12-byte records, body first */
+#define g_body(k) GP(0x6d0a80 + (k) * 12) /* 12-byte records, body first */
 #define g_body_count (*(uint32_t *)0x4b5f98)
 #define g_body_distance ((int32_t *)0x6d0ce0)
 #define g_bodies_ahead ((uint8_t *)0x6d0dc0)
 #define g_bodies_ahead_count (*(uint32_t *)0x4b5f9c)
-#define g_hazards (*(uint8_t **)0x6c1eb0) /* +0xf6 count, +0xf8 8-byte records */
+#define g_hazards GP(0x6c1eb0) /* +0xf6 count, +0xf8 8-byte records */
 
 /* Still original (other parts of the AI) */
-typedef int32_t(GAMEAPI *crossing_fn)(uint32_t line, uint32_t node, int32_t *a, int32_t *b, int32_t *c);
-#define line_crossing ((crossing_fn)0x47f9f0)
-typedef int32_t(GAMEAPI *leg_cost_fn)(uint8_t *car, const int16_t *a, const int16_t *b, uint32_t section,
-                                      int32_t speed, int32_t length);
-#define leg_cost ((leg_cost_fn)0x403350)
-typedef int32_t(GAMEAPI *leg_blocked_fn)(const int16_t *a, const int16_t *b, uint32_t section, int32_t speed,
-                                         int32_t length);
-#define leg_blocked ((leg_blocked_fn)0x403ba0)
-typedef void(GAMEAPI *candidates_fn)(uint8_t *car, int32_t *n);
-#define ai_avoid_cars ((candidates_fn)0x480d70)
-#define ai_add_set_points ((candidates_fn)0x429350)
-typedef int32_t(GAMEAPI *slot_fn)(uint8_t *slot);
-#define slot_player_flag ((slot_fn)0x480030)
-typedef int32_t(GAMEAPI *in_list_fn)(uint32_t value, const uint16_t *list, int32_t count);
-#define u16_in_list ((in_list_fn)0x47f430)
+#define line_crossing GCALL(0x47f9f0, line_bend)
+#define leg_cost GCALL(0x403350, ai_hazards_cost)
+#define leg_blocked GCALL(0x403ba0, ai_obstacles_cost)
+#define ai_avoid_cars GCALL(0x480d70, ai_react_to_cars)
+#define ai_add_set_points GCALL(0x429350, ai_route_targets)
+#define slot_player_flag GCALL(0x480030, ai_may_attack)
+#define u16_in_list GCALL(0x47f430, u16_list_contains)
 
 static int32_t shl16(int32_t v)
 {
@@ -428,7 +421,7 @@ void GAMEAPI ai_find_objects_ahead(uint8_t *car)
 
         if (!entry[4])
             continue;
-        object = *(uint8_t **)entry;
+        object = GP(entry);
         d[0] = (int16_t)((int16_t)(I32(object, POSITION) >> 16) - me[0]);
         d[1] = (int16_t)((int16_t)(I32(object, POSITION + 4) >> 16) - me[1]);
         d[2] = (int16_t)((int16_t)(I32(object, POSITION + 8) >> 16) - me[2]);
@@ -457,7 +450,7 @@ void GAMEAPI ai_find_bodies_ahead(uint8_t *car)
     g_bodies_ahead_count = 0;
     for (i = 0; (i & 0xffff) < g_body_count; i++) {
         uint32_t k = i & 0xffff;
-        const uint8_t *body = g_bodies[k * 3];
+        const uint8_t *body = g_body(k);
         int16_t d[3];
         int32_t length;
 
@@ -519,7 +512,7 @@ int32_t GAMEAPI ai_line_cost(uint8_t *car, uint32_t line_index, uint32_t node, c
 void GAMEAPI ai_score_hazards(uint8_t *car, int32_t n)
 {
     uint32_t count = g_hazards[0xf6], k;
-    const uint8_t *last = *(uint8_t **)(g_hazards + 0xf8) + count * 8 - 8;
+    const uint8_t *last = GP(g_hazards + 0xf8) + count * 8 - 8;
     int32_t player = slot_player_flag(g_car_slots + *(uint16_t *)(car + 0x64e) * CAR_SLOT_SIZE), i;
 
     for (i = CAND_COUNT - 1; i > n; i--) {
@@ -584,7 +577,7 @@ void GAMEAPI ai_choose_target(uint8_t *car)
     memcpy(travel, car + VELOCITY, 12);
     if (speed > 1)
         vec_set_length(travel, 0x10000);
-    section = *(uint16_t *)(*(uint8_t **)(car + 0x10) + 0x32);
+    section = *(uint16_t *)(GP(car + 0x10) + 0x32);
     for (i = n + 1; i < CAND_COUNT; i++)
         if (U16(CAND(i), C_LINE) && !CAND(i)[C_OUT])
             ai_candidate_measure(i, VEC(car, POSITION), travel, I32(car, 0x654));

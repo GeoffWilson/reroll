@@ -22,9 +22,10 @@
 #include "body.h"
 #include "fixed.h"
 #include "physics.h"
+#include "gamefn.h"
 
-#define g_race (*(uint8_t **)0x4b1960)
-#define g_track (*(uint8_t **)0x6c1e30)
+#define g_race GP(0x4b1960)
+#define g_track GP(0x6c1e30)
 #define g_car_slots ((uint8_t *)0x6bfb80)
 #define CAR_SLOT_SIZE 0x274
 #define g_sim_ticks (*(uint32_t *)0x6c0a50)
@@ -37,22 +38,9 @@
 #define U32(p, off) (*(uint32_t *)((p) + (off)))
 #define S16(p, off) (*(int16_t *)((p) + (off)))
 #define U16(p, off) (*(uint16_t *)((p) + (off)))
-#define PTR(p, off) (*(uint8_t **)((p) + (off)))
+#define PTR(p, off) GP((p) + (off))
+#define PTR_SET(p, off, v) (U32(p, off) = (uint32_t)(uintptr_t)(v))
 #define SHL(x, n) ((int32_t)((uint32_t)(int32_t)(x) << (n)))
-
-/* Not ours. */
-typedef int32_t(GAMEAPI *checkpoints_fn)(uint8_t *slot, uint32_t probe);
-typedef void(GAMEAPI *slot_fn)(uint8_t *slot);
-typedef uint32_t(GAMEAPI *clock_fn)(void);
-typedef void(GAMEAPI *digits_fn)(int32_t all, uint8_t *slot);
-typedef int32_t(GAMEAPI *div_fn)(int32_t a, int32_t b);
-typedef void(GAMEAPI *award_send_fn)(uint32_t car, uint32_t which, uint32_t kind);
-#define checkpoints_follow ((checkpoints_fn)0x43d8e0)
-#define rejoin_plan ((slot_fn)0x47fbb0)
-#define clock_now ((clock_fn)0x4351c0)
-#define time_digits_show ((digits_fn)0x439910)
-#define div16 ((div_fn)0x42df70)
-#define award_send ((award_send_fn)0x45e800)
 
 /* --- small getters --- */
 
@@ -227,7 +215,7 @@ void GAMEAPI slot_nearest_line_node(uint8_t *slot)
         }
     }
     lines = PTR(g_track, 0x60);
-    v = U32(PTR(g_track, 0x7c), (*(uint32_t *)((uint32_t)PTR(car, 0xc) & ~1u) >> 22) * 4);
+    v = U32(PTR(g_track, 0x7c), (*(uint32_t *)GMEM(U32(car, 0xc) & ~1u) >> 22) * 4);
     cand = lines + (v >> 16) * 0xc;
     ci = (int32_t)(v & 0xffff);
     node = PTR(cand, 8) + (uint32_t)ci * 16;
@@ -237,7 +225,7 @@ void GAMEAPI slot_nearest_line_node(uint8_t *slot)
         cand = best_line;
         ci = best_idx;
     }
-    PTR(slot, 0x64) = cand;
+    PTR_SET(slot, 0x64, cand);
     I32(slot, 0x68) = ci;
 }
 
@@ -255,7 +243,7 @@ void GAMEAPI race_positions_update(void)
     for (i = 0, slot = g_car_slots; i < n; i++, slot += CAR_SLOT_SIZE)
         slot_nearest_line_node(slot);
     for (i = 0, slot = g_car_slots; i < n; i++, slot += CAR_SLOT_SIZE) {
-        checkpoints_follow(slot, 0);
+        GCALL(0x43d8e0, slot_checkpoints)(slot, 0);
         by_place[slot[0x2d]] = slot;
     }
     for (i = 0; i < n; i++)
@@ -326,8 +314,8 @@ void GAMEAPI slot_lap_record(uint8_t *slot)
     if (I32(slot, 0x40) == -1 || t < U32(slot, 0x40))
         U32(slot, 0x40) = t;
     U32(slot, 0x48) = t;
-    U32(slot, 0x5c) = clock_now();
-    time_digits_show(1, slot);
+    U32(slot, 0x5c) = GCALL(0x4351c0, race_clock)();
+    GCALL(0x439910, slot_time_digits)(1, slot);
     if (!slot[0x2c] || g_race[0x58c])
         return;
     if (g_race[0x551] == 1) {
@@ -368,7 +356,7 @@ void GAMEAPI race_results_update(uint32_t final)
             if (e == 0) {
                 v = 0xfffffff;
             } else {
-                q = div16(SHL(laps, 16), e);
+                q = GCALL(0x42df70, fix_div16)(SHL(laps, 16), e);
                 product = (int64_t)q * I32(slot, 0x44);
                 v = (uint32_t)product >> 16 | (uint32_t)((uint64_t)product >> 32) << 16;
             }
@@ -425,7 +413,7 @@ void GAMEAPI slot_finish_to_ai(uint8_t *slot)
             break;
         }
     slot_nearest_line_node(slot);
-    rejoin_plan(slot);
+    GCALL(0x47fbb0, ai_rejoin_plan)(slot);
     U16(car, 0x6b4) = 0;
     U16(car, 0x6b6) = 0;
     car[0x6b8] = 0;
@@ -452,12 +440,12 @@ void GAMEAPI car_award_weapon(uint8_t *car, uint32_t kind)
         return;
     if (car[0x67d] == 0xff) {
         car[0x67d] = (uint8_t)kind;
-        award_send(car_index_of(car), 0, kind);
+        GCALL(0x45e800, net_weapon_kind_send)((int32_t)car_index_of(car), 0, kind);
         return;
     }
     if (car[0x67c] == 0xff) {
         car[0x67c] = (uint8_t)kind;
-        award_send(car_index_of(car), 1, kind);
+        GCALL(0x45e800, net_weapon_kind_send)((int32_t)car_index_of(car), 1, kind);
     }
 }
 
@@ -498,7 +486,7 @@ void GAMEAPI slot_lap_weapon(uint8_t *slot)
             chance = 100;
             break;
         case 2:
-            other = (uint8_t *)(0x6bfdf4 - U16(PTR(slot, 0), 0x64e) * CAR_SLOT_SIZE);
+            other = (uint8_t *)GMEM(0x6bfdf4 - U16(PTR(slot, 0), 0x64e) * CAR_SLOT_SIZE);
             d = SHL(slot[0x2c], 16) - SHL(other[0x2c], 16) - I32(other, 0x34) + I32(slot, 0x34);
             if (d > 0x7fff)
                 chance = ((const uint8_t *)0x4b17f8)[(int32_t)k];
@@ -820,7 +808,7 @@ void GAMEAPI replay_step(uint8_t *car)
         S16(rec, 0) = (int16_t)(S16(rec, 0) + size);
         U16(rec, 0x4e2e) = U16(car, 0x700);
         U16(rec, 0x4e2c) = 1;
-        PTR(rec, 0x4e28) = out;
+        PTR_SET(rec, 0x4e28, out);
         if (REPLAY_STATE(rec) == 2) {
             S16(rec, 2)++;
             if (S16(rec, 0) >= 0x4e14)
@@ -865,7 +853,7 @@ void GAMEAPI replay_step(uint8_t *car)
             S16(rec, 0x1e87c)--;
             U16(rec, 0x4e2e) = (uint16_t)buttons;
             U16(rec, 0x4e2c) = (uint16_t)(run - 1);
-            PTR(rec, 0x4e28) = out;
+            PTR_SET(rec, 0x4e28, out);
             if (S16(rec, 0x1e87c) < -1)
                 REPLAY_STATE(rec) = 6;
         } else {

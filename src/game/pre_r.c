@@ -13,21 +13,22 @@
 #include <stdlib.h>
 #include "fixed.h"
 #include "physics.h"
+#include "gamefn.h"
 
-#define g_race (*(uint8_t **)0x4b1960)
-#define g_config (*(uint8_t **)0x4b2198)
+#define g_race GP(0x4b1960)
+#define g_config GP(0x4b2198)
 #define g_car_slots ((uint8_t *)0x6bfb80)
 #define CAR_SLOT_SIZE 0x274
-#define SLOT_CAR(slot) (*(uint8_t **)(slot))
+#define SLOT_CAR(slot) GP(slot)
 #define g_local_index (*(int32_t *)0x5d535c)
 #define g_net_players ((const uint32_t *)0x5d2ce8) /* 0x66c bytes each */
 #define g_sound_clock (*(uint32_t *)0x4be388)
 #define g_sim_steps (*(uint32_t *)0x4c2458)
 #define g_race_steps (*(uint32_t *)0x6c0a50)
 #define g_debug_flags (*(uint32_t *)0x6cce40)
-#define g_track_info (*(uint8_t **)0x6c1eb0)
+#define g_track_info GP(0x6c1eb0)
 #define g_vertex_copy_count (*(int32_t *)0x6c1eb4)
-#define g_vertex_copies (*(uint8_t **)0x6c1eb8)
+#define g_vertex_copies GP(0x6c1eb8)
 #define g_chat_separator ((const char *)0x4a7f94) /* ": " */
 
 #define I32(p, off) (*(int32_t *)((p) + (off)))
@@ -36,7 +37,7 @@
 #define U16(p, off) (*(uint16_t *)((p) + (off)))
 #define S8(p, off) (*(int8_t *)((p) + (off)))
 #define U8(p, off) (*(uint8_t *)((p) + (off)))
-#define PTR(p, off) (*(uint8_t **)((p) + (off)))
+#define PTR(p, off) GP((p) + (off))
 #define SHL(x, n) ((int32_t)((uint32_t)(int32_t)(x) << (n)))
 #define ABS(x) ((int32_t)((x) < 0 ? 0u - (uint32_t)(x) : (uint32_t)(x)))
 
@@ -52,41 +53,22 @@ static inline uint32_t byte_into(uint32_t hi, uint8_t b)
 }
 
 /* Still original. */
-typedef int32_t(GAMEAPI *int_fn)(void);
-typedef void(GAMEAPI *void_fn)(void);
-typedef void(GAMEAPI *ptr_fn)(void *p);
-typedef void(GAMEAPI *ptr_int_fn)(void *p, int32_t i);
-typedef void(GAMEAPI *int_arg_fn)(int32_t i);
-typedef uint32_t(GAMEAPI *sound_play_fn)(uint32_t sound, uint32_t a, uint32_t b, uint32_t c, const void *pos);
-typedef uint32_t(GAMEAPI *sound_moving_fn)(uint32_t kind, uint32_t sound, uint32_t a, uint32_t b, uint32_t c,
-                                           const void *pos, const void *vel);
-typedef void(GAMEAPI *voice_fn)(uint32_t voice);
-typedef void(GAMEAPI *voice2_fn)(uint32_t voice, uint32_t value);
-typedef void(GAMEAPI *voice3_fn)(uint32_t voice, uint32_t a, uint32_t b);
-typedef void(GAMEAPI *music_fn)(uint32_t kind, uint32_t a, uint32_t b);
-typedef void(GAMEAPI *pad_fn)(uint8_t *pad, uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e);
-typedef void(GAMEAPI *effect3_fn)(int32_t device, int32_t a, int32_t b);
-typedef void(GAMEAPI *effect4_fn)(int32_t device, int32_t a, int32_t b, int32_t c);
-typedef int32_t(GAMEAPI *dot_fn)(const void *a, const void *b);
-typedef void(GAMEAPI *chat_fn)(char *text);
-typedef void(GAMEAPI *particles_fn)(uint32_t buttons, uint32_t previous, int32_t skip);
-typedef int32_t(GAMEAPI *world_step_fn)(int32_t dt);
-
-#define sound_play ((sound_play_fn)0x471c90)
-#define sound_moving ((sound_moving_fn)0x471da0)
-#define voice_stop ((voice_fn)0x471f40)
-#define voice_reverb ((voice2_fn)0x471aa0)
-#define voice_pitch ((voice2_fn)0x471f80)
-#define voice_volume ((voice3_fn)0x471fc0)
-#define music_mode ((music_fn)0x471ac0)
-#define pad_effect ((pad_fn)0x41b4d0)
-#define ff_kick ((effect4_fn)0x489e10)
-#define ff_engine ((effect3_fn)0x489cd0)
-#define ff_road ((effect3_fn)0x489980)
-#define dot ((dot_fn)0x40d950)
-#define net_local_car ((int_fn)0x48cf20)
-#define net_is_game ((int_fn)0x45ef80)
-#define chat_send ((chat_fn)0x48d270)
+#define sound_play(s, a, b, c, pos) GCALL(0x471c90, sound_play_body)(s, a, b, c, (uint32_t)(uintptr_t)(pos))
+#define sound_moving(k, s, a, b, c, pos, vel)                                                                  \
+    GCALL(0x471da0, sound_moving_body)(k, s, a, b, c, (uint32_t)(uintptr_t)(pos), (uint32_t)(uintptr_t)(vel))
+#define voice_stop GCALL(0x471f40, sound_voice_stop)
+#define voice_reverb GCALL(0x471aa0, voice_set_near)
+#define voice_pitch GCALL(0x471f80, voice_set_pitch)
+#define voice_volume GCALL(0x471fc0, voice_set_volume)
+#define music_mode GCALL(0x471ac0, sound_settings_set)
+#define pad_effect GCALL(0x41b4d0, pad_effect_request)
+#define ff_kick GCALL(0x489e10, ff_periodic_play)
+#define ff_engine GCALL(0x489cd0, ff_engine_set)
+#define ff_road GCALL(0x489980, ff_road_set)
+#define dot(a, b) GCALL(0x40d950, vec_dot)((const int32_t *)(a), (const int32_t *)(b))
+#define net_local_car GCALL(0x48cf20, net_local_slot)
+#define net_is_game GCALL(0x45ef80, net_state_game)
+#define chat_send GCALL(0x48d270, net_chat_send)
 
 /* 0x48cef0: the local player's car index (0 outside a network game). */
 int32_t GAMEAPI local_car_index(void)
@@ -291,12 +273,12 @@ void GAMEAPI car_extra_buttons(uint8_t *slot)
 #define g_boom_voice (*(uint32_t *)0x4b2044)
 #define g_gear_volumes ((const int32_t *)0x4b2024)
 #define g_surface_sounds ((const uint8_t *)0x4b1ee4) /* 0x14 bytes each */
-#define g_tunes ((uint8_t *const *)0x4b2180)
+#define g_tunes(k) GP(0x4b2180 + (k) * 4)
 #define g_warp_state (*(int32_t *)0x5d9b20)
-#define g_warp_car (*(uint8_t **)0x5d9b24)
+#define g_warp_car GP(0x5d9b24)
 #define g_warp_scale (*(uint32_t *)0x5d9b2c)
 #define g_voice_live ((const uint8_t *)0x5ff4a0) /* 0x30 bytes each */
-#define g_track (*(uint8_t ***)0x6c1e30) /* +0: the section pointers */
+#define g_track GP(0x6c1e30) /* +0: the section pointers */
 
 /* 0x473250: a car's engine, surface, boost and horn sounds and its
  * force feedback, once per step. `p`: its player index. */
@@ -307,7 +289,7 @@ void GAMEAPI car_sounds(uint8_t *car, int32_t p)
     uint8_t rev_boost = U8(car, 0x63d);
     int airborne = (U8(car, 0x4ac) | U8(car, 0x570)) & 1;
     uint8_t kind = U8(g_race, p + 0x1c);
-    const uint8_t *tune = g_tunes[kind];
+    const uint8_t *tune = g_tunes(kind);
     uint32_t moving_kind = (p == 1 && U8(g_race, 0x551) == 2) ? 2 : 1;
     int32_t level = I32(e, E_LEVEL), revs = S16(e, E_REVS), half, surface = 0;
     uint32_t warp = 0, voice;
@@ -376,7 +358,7 @@ void GAMEAPI car_sounds(uint8_t *car, int32_t p)
             moving_kind = 2;
     }
     if (I32(car, 0x11c) != -1) {
-        if (U8(((uint8_t **)g_track[0])[U32(car, 0x11c) & 0xff], 4) & 2) {
+        if (U8(GP(GP(g_track) + (U32(car, 0x11c) & 0xff) * 4), 4) & 2) {
             if (g_music_player == -1 && U8(car, 0x70c) != 8) {
                 g_music_player = p;
                 music_mode(1, 0x400, 0x7fff);
@@ -579,7 +561,7 @@ void GAMEAPI car_sounds(uint8_t *car, int32_t p)
  * `count` steps this frame: the last one draws. 0 when the race ends. */
 int32_t GAMEAPI sim_step(int32_t network, int32_t step, int32_t count)
 {
-    int32_t local = ((int_fn)0x48cef0)(), i, n;
+    int32_t local = GCALL(0x48cef0, local_car_index)(), i, n;
     uint8_t *slot, *local_car;
 
     (void)network;
@@ -592,84 +574,84 @@ int32_t GAMEAPI sim_step(int32_t network, int32_t step, int32_t count)
             every = e ? atoi(e) : 0;
         }
         if (every > 0 && U8(g_race, 0x54d) > 1 && ++steps % every == 0)
-            ((int32_t(GAMEAPI *)(const uint8_t *, int32_t))0x479890)(g_car_slots + CAR_SLOT_SIZE, 0);
+            GCALL(0x479890, time_warp_start)(g_car_slots + CAR_SLOT_SIZE, 0);
     }
 #endif
     for (i = 0; i < U8(g_race, 0x54d); i++)
-        ((ptr_fn)0x48e7b0)(SLOT_CAR(g_car_slots + i * CAR_SLOT_SIZE));
+        GCALL(0x48e7b0, car_step_buttons)(SLOT_CAR(g_car_slots + i * CAR_SLOT_SIZE));
     for (i = 0; i < U8(g_race, 0x54d); i++) {
         uint8_t *car = SLOT_CAR(g_car_slots + i * CAR_SLOT_SIZE);
 
         if (U8(car, 0x70c) == 8)
-            ((ptr_fn)0x4015e0)(car);
+            GCALL(0x4015e0, ai_think)(car);
     }
     for (i = 0; i < U8(g_race, 0x54d); i++) {
         uint8_t *car = SLOT_CAR(g_car_slots + i * CAR_SLOT_SIZE);
 
         if (U8(car, 0x70c) == 8)
-            ((ptr_fn)0x425ad0)(car);
+            GCALL(0x425ad0, ai_drive)(car);
     }
     for (i = 0; i < U8(g_race, 0x54d); i++)
-        ((ptr_int_fn)0x473250)(SLOT_CAR(g_car_slots + i * CAR_SLOT_SIZE), i);
+        GCALL(0x473250, car_sounds)(SLOT_CAR(g_car_slots + i * CAR_SLOT_SIZE), i);
     for (i = 0, slot = g_car_slots; i < U8(g_race, 0x54d); i++, slot += CAR_SLOT_SIZE) {
-        ((ptr_int_fn)0x41b520)(SLOT_CAR(slot), i);
-        ((ptr_fn)0x41c7a0)(slot);
+        GCALL(0x41b520, car_controls_read)(SLOT_CAR(slot), i);
+        GCALL(0x41c7a0, car_extra_buttons)(slot);
     }
-    ((void_fn)0x48e7e0)();
+    GCALL(0x48e7e0, cars_network_controls)();
     for (i = 0; i < U8(g_race, 0x54d); i++)
-        ((ptr_fn)0x41b7d0)(SLOT_CAR(g_car_slots + i * CAR_SLOT_SIZE));
-    ((void_fn)0x41ac50)();
-    ((void_fn)0x43e570)();
-    ((void_fn)0x43d350)();
-    ((void_fn)0x4112e0)();
-    ((world_step_fn)0x461410)(0x10000);
-    ((void_fn)0x442840)();
-    ((void_fn)0x468450)();
+        GCALL(0x41b7d0, car_controls_apply)(SLOT_CAR(g_car_slots + i * CAR_SLOT_SIZE));
+    GCALL(0x41ac50, track_animation_update)();
+    GCALL(0x43e570, track_vertices_copy)();
+    GCALL(0x43d350, race_positions_update)();
+    GCALL(0x4112e0, cars_catch_up)();
+    GCALL(0x461410, physics_world_step)(0x10000);
+    GCALL(0x442840, bodies_points_update)();
+    GCALL(0x468450, fallen_bodies_update)();
     for (i = 0, slot = g_car_slots; i < U8(g_race, 0x54d); i++, slot += CAR_SLOT_SIZE) {
-        ((ptr_fn)0x438620)(slot);
-        ((ptr_fn)0x47aa00)(slot);
+        GCALL(0x438620, car_speed_and_clock)(slot);
+        GCALL(0x47aa00, car_boost)(slot);
     }
-    if (U8(g_config, 0x2a) && ((int_fn)0x46e3c0)())
-        ((void_fn)0x46d0c0)();
-    if (U8(g_config, 0x28) && ((int_fn)0x4906c0)())
-        ((void_fn)0x486540)();
-    ((void_fn)0x48dc40)();
-    ((void_fn)0x47ab40)();
-    ((void_fn)0x458010)();
-    ((void_fn)0x46a9c0)();
+    if (U8(g_config, 0x2a) && GCALL(0x46e3c0, texture_anim_active)())
+        GCALL(0x46d0c0, shield_texture_animate)();
+    if (U8(g_config, 0x28) && GCALL(0x4906c0, snatch_active)())
+        GCALL(0x486540, snatch_texture_animate)();
+    GCALL(0x48dc40, snatch_update)();
+    GCALL(0x47ab40, weapons_update)();
+    GCALL(0x458010, rock_update)();
+    GCALL(0x46a9c0, race_early_ticks)();
     for (i = 0, slot = g_car_slots; i < U8(g_race, 0x54d); i++, slot += CAR_SLOT_SIZE) {
-        ((ptr_fn)0x40de60)(SLOT_CAR(slot));
-        ((ptr_fn)0x406e30)(slot);
+        GCALL(0x40de60, car_wheels_place)(SLOT_CAR(slot));
+        GCALL(0x406e30, camera_update)(slot);
     }
-    ((void_fn)0x47b8f0)();
-    ((void_fn)0x462840)();
-    n = ((int_fn)0x40d040)();
+    GCALL(0x47b8f0, cars_glow)();
+    GCALL(0x462840, pieces_update)();
+    n = GCALL(0x40d040, view_count)();
     for (i = 0; i < n; i++)
-        ((int_arg_fn)0x408360)(i);
-    ((void_fn)0x484080)();
-    ((void_fn)0x405140)();
-    ((void_fn)0x42b990)();
-    ((void_fn)0x46c300)();
-    ((void_fn)0x47c210)();
-    ((void_fn)0x481f20)();
-    ((void_fn)0x4751b0)();
-    ((void_fn)0x43e270)();
-    ((void_fn)0x405f70)();
-    ((void_fn)0x46bfa0)();
-    ((void_fn)0x443180)();
+        GCALL(0x408360, camera_director)(i);
+    GCALL(0x484080, weather_update)();
+    GCALL(0x405140, explosions_update)();
+    GCALL(0x42b990, sprites_update)();
+    GCALL(0x46c300, shadows_update)();
+    GCALL(0x47c210, debris_update)();
+    GCALL(0x481f20, tyre_trails_update)();
+    GCALL(0x4751b0, car_textures_update)();
+    GCALL(0x43e270, ripple_update)();
+    GCALL(0x405f70, crumble_update)();
+    GCALL(0x46bfa0, bomblet_update)();
+    GCALL(0x443180, glint_update)();
     if (step == count - 1) {
-        ((void_fn)0x443b50)(); /* race_draw */
-        ((void_fn)0x442890)();
+        GCALL(0x443b50, race_draw_body)(); /* race_draw */
+        GCALL(0x442890, trigger_queue_process)();
         local_car = SLOT_CAR(g_car_slots + local * CAR_SLOT_SIZE);
-        ((particles_fn)0x441450)(U32(local_car, 0x700), U32(local_car, 0x6fc), 0);
-        ((void_fn)0x41c2c0)();
+        GCALL(0x441450, particles_update)(U32(local_car, 0x700), U32(local_car, 0x6fc), 0);
+        GCALL(0x41c2c0, rumble_update)();
     } else {
-        ((void_fn)0x442890)();
+        GCALL(0x442890, trigger_queue_process)();
         local_car = SLOT_CAR(g_car_slots + local * CAR_SLOT_SIZE);
-        ((particles_fn)0x441450)(U32(local_car, 0x700), U32(local_car, 0x6fc), 1);
+        GCALL(0x441450, particles_update)(U32(local_car, 0x700), U32(local_car, 0x6fc), 1);
     }
-    ((void_fn)0x472040)();
-    if (((int_fn)0x46a530)())
+    GCALL(0x472040, sound_mix_jump)();
+    if (GCALL(0x46a530, race_progress)())
         return 0;
     g_sim_steps++;
     g_race_steps++;

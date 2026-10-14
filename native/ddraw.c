@@ -63,7 +63,13 @@ typedef LONG HRESULT;
 #define DDSCAPS_VIDEOMEMORY 0x4000
 #define DDSCAPS_ZBUFFER 0x20000
 
-/* ---- objects ---- */
+/* ---- objects ----
+ *
+ * Objects live in low memory (the game keeps them in 32-bit slots); only
+ * our code reads them past the vtable pointer. Out-parameters are 4-byte
+ * slots in game memory: OUT() stores an object there. */
+
+#define OUT(slot, p) (*(slot) = (uint32_t)(uintptr_t)(p))
 
 struct com {
     void **vtable;
@@ -128,7 +134,7 @@ void *nt_named_stub(const char *module, const char *name); /* loader.c */
 
 static void **make_vtable(const char *interface, int count)
 {
-    void **v = nt_lowmem_calloc((size_t)count, sizeof *v);
+    void **v = nt_lowmem_calloc((uint32_t)count, (uint32_t)sizeof *v);
     int i;
     for (i = 0; i < count; i++) {
         char name[64];
@@ -242,7 +248,7 @@ static struct surface *new_surface(int w, int h, int bits, DWORD caps)
         *(DWORD *)(s->desc + SD_FORMAT + 4) = 0x60; /* RGB | PALETTEINDEXED8 */
     }
     *(DWORD *)(s->desc + SD_CAPS) = caps;
-    s->pixels = nt_lowmem_calloc(1, (size_t)*(DWORD *)(s->desc + SD_PITCH) * (size_t)(h ? h : 1) + 16);
+    s->pixels = nt_lowmem_calloc(1, *(DWORD *)(s->desc + SD_PITCH) * (uint32_t)(h ? h : 1) + 16);
     s->own_pixels = 1;
     return s;
 }
@@ -267,15 +273,15 @@ static int sbytes(const struct surface *s)
     return (int)*(const DWORD *)(s->desc + SD_BITS) / 8;
 }
 
-static HRESULT WINAPI surface_query(struct surface *s, const void *iid, void **out)
+static HRESULT WINAPI surface_query(struct surface *s, const void *iid, uint32_t *out)
 {
     if (iid_is(iid, IID_TEXTURE2)) {
-        *out = &s->texture;
+        OUT(out, &s->texture);
         s->refs++;
         return DD_OK;
     }
     if (iid_is(iid, IID_SURFACE2) || iid_is(iid, IID_SURFACE3)) {
-        *out = s;
+        OUT(out, s);
         s->refs++;
         return DD_OK;
     }
@@ -384,20 +390,22 @@ static HRESULT WINAPI surface_flip(struct surface *s, struct surface *target, DW
     return DD_OK; /* presenting is the renderer's (the flip 0x4876f0 is hooked) */
 }
 
-static HRESULT WINAPI surface_get_attached(struct surface *s, const DWORD *caps, struct surface **out)
+static HRESULT WINAPI surface_get_attached(struct surface *s, const DWORD *caps, uint32_t *out)
 {
+    struct surface *a;
     if ((*caps & DDSCAPS_ZBUFFER) && s->zbuffer)
-        *out = s->zbuffer;
+        a = s->zbuffer;
     else if (*caps & DDSCAPS_BACKBUFFER) {
         if (!s->back)
             s->back = new_surface(sw(s), sh(s), sbytes(s) * 8,
                                   DDSCAPS_BACKBUFFER | DDSCAPS_3DDEVICE | DDSCAPS_VIDEOMEMORY);
-        *out = s->back;
+        a = s->back;
     } else {
         *out = 0;
         return (HRESULT)DDERR_NOTFOUND;
     }
-    (*out)->refs++;
+    a->refs++;
+    OUT(out, a);
     return DD_OK;
 }
 
@@ -448,12 +456,13 @@ static HRESULT WINAPI surface_lock(struct surface *s, const int32_t *rect, uint8
     (void)event;
     memcpy(desc, s->desc, SD_SIZE);
     *(DWORD *)(desc + SD_FLAGS) |= DDSD_LPSURFACE;
-    *(uint8_t **)(desc + SD_SURFACE) =
-        s->pixels + (rect ? rect[1] * spitch(s) + rect[0] * sbytes(s) : 0);
+    /* lpSurface: a 32-bit field; the pixels are low memory */
+    *(uint32_t *)(desc + SD_SURFACE) =
+        (uint32_t)(uintptr_t)(s->pixels + (rect ? rect[1] * spitch(s) + rect[0] * sbytes(s) : 0));
     return DD_OK;
 }
 
-static HRESULT WINAPI surface_get_dc(struct surface *s, HANDLE *dc)
+static HRESULT WINAPI surface_get_dc(struct surface *s, uint32_t *dc)
 {
     (void)s;
     *dc = 0;
@@ -464,7 +473,7 @@ static HRESULT WINAPI surface_get_dc(struct surface *s, HANDLE *dc)
 
 #define TEX_OWNER(t) (((struct {void **v; struct surface *owner;} *)(t))->owner)
 
-static HRESULT WINAPI texture_query(void *t, const void *iid, void **out)
+static HRESULT WINAPI texture_query(void *t, const void *iid, uint32_t *out)
 {
     return surface_query(TEX_OWNER(t), iid, out);
 }
@@ -501,19 +510,19 @@ static HRESULT WINAPI texture_load(void *t, void *source)
 
 /* ---- IDirectDraw / IDirectDraw2 ---- */
 
-static HRESULT WINAPI ddraw_query(struct com *o, const void *iid, void **out)
+static HRESULT WINAPI ddraw_query(struct com *o, const void *iid, uint32_t *out)
 {
     (void)o;
     if (iid_is(iid, IID_DIRECTDRAW2)) {
-        *out = &ddraw2;
+        OUT(out, &ddraw2);
         return DD_OK;
     }
     if (iid_is(iid, IID_DIRECTDRAW)) {
-        *out = &ddraw;
+        OUT(out, &ddraw);
         return DD_OK;
     }
     if (iid_is(iid, IID_DIRECT3D2)) {
-        *out = &d3d;
+        OUT(out, &d3d);
         return DD_OK;
     }
     nt_log("ddraw: QueryInterface %08x: no", iid ? *(const uint32_t *)iid : 0);
@@ -521,18 +530,18 @@ static HRESULT WINAPI ddraw_query(struct com *o, const void *iid, void **out)
     return (HRESULT)E_NOINTERFACE;
 }
 
-static HRESULT WINAPI ddraw_create_clipper(struct com *o, DWORD flags, struct com **out, void *outer)
+static HRESULT WINAPI ddraw_create_clipper(struct com *o, DWORD flags, uint32_t *out, void *outer)
 {
     static struct com clipper;
     (void)o;
     (void)flags;
     (void)outer;
     clipper.vtable = clipper_vtable;
-    *out = &clipper;
+    OUT(out, &clipper);
     return DD_OK;
 }
 
-static HRESULT WINAPI ddraw_create_palette(struct com *o, DWORD flags, const void *entries, struct com **out,
+static HRESULT WINAPI ddraw_create_palette(struct com *o, DWORD flags, const void *entries, uint32_t *out,
                                            void *outer)
 {
     struct com *p = nt_lowmem_calloc(1, sizeof *p);
@@ -541,11 +550,11 @@ static HRESULT WINAPI ddraw_create_palette(struct com *o, DWORD flags, const voi
     (void)entries;
     (void)outer;
     p->vtable = palette_vtable;
-    *out = p;
+    OUT(out, p);
     return DD_OK;
 }
 
-static HRESULT WINAPI ddraw_create_surface(struct com *o, const uint8_t *desc, struct surface **out, void *outer)
+static HRESULT WINAPI ddraw_create_surface(struct com *o, const uint8_t *desc, uint32_t *out, void *outer)
 {
     DWORD flags = *(const DWORD *)(desc + SD_FLAGS), caps = *(const DWORD *)(desc + SD_CAPS);
     int w = (flags & DDSD_WIDTH) ? (int)*(const DWORD *)(desc + SD_WIDTH) : display_w;
@@ -572,15 +581,22 @@ static HRESULT WINAPI ddraw_create_surface(struct com *o, const uint8_t *desc, s
     }
     if ((caps & DDSCAPS_PRIMARYSURFACE) && (flags & DDSD_BACKBUFFERCOUNT))
         s->back = new_surface(w, h, bits, DDSCAPS_BACKBUFFER | DDSCAPS_3DDEVICE | DDSCAPS_VIDEOMEMORY);
-    *out = s;
+    OUT(out, s);
     return DD_OK;
 }
 
 /* modes offered: 640x480 .. 1600x1200 in 16 and 32 bits */
 static const int modes[][2] = {{640, 480}, {800, 600}, {1024, 768}, {1280, 960}, {1600, 1200}};
 
+/* The enumeration callbacks are game functions (src/game: dd_mode_enum_cb,
+ * dd_driver_enum_cb, d3d_enum_device, d3d_texture_format_cb), declared
+ * there with uint32_t or pointer arguments: they are called with
+ * pointer-width arguments (zero-extended), right for either. What they are
+ * given is low memory (the game thread's stack). */
+typedef HRESULT(WINAPI *desc_cb)(uint8_t *desc, void *ctx);
+
 static HRESULT WINAPI ddraw_enum_modes(struct com *o, DWORD flags, const uint8_t *filter, void *ctx,
-                                       HRESULT(WINAPI *callback)(uint8_t *desc, void *ctx))
+                                       desc_cb callback)
 {
     size_t i;
     int b;
@@ -637,8 +653,8 @@ static HRESULT WINAPI ddraw_get_display_mode(struct com *o, uint8_t *desc)
     struct surface *s = new_surface(display_w, display_h, display_bits, 0);
     (void)o;
     memcpy(desc, s->desc, SD_SIZE);
-    free(s->pixels);
-    free(s);
+    nt_lowmem_free(s->pixels);
+    nt_lowmem_free(s);
     return DD_OK;
 }
 
@@ -690,42 +706,47 @@ static HRESULT WINAPI d3d_enum_devices(struct com *o,
 
 static struct device the_device;
 
-static HRESULT WINAPI d3d_create_device(struct com *o, const void *clsid, struct surface *target, struct device **out)
+static HRESULT WINAPI d3d_create_device(struct com *o, const void *clsid, struct surface *target, uint32_t *out)
 {
-    uint16_t cw;
     (void)o;
-    /* as Direct3D does unless DDSCL_FPUPRESERVE (the game asks for FPUSETUP):
-     * x87 single precision, round to nearest, exceptions masked */
-    __asm__ volatile("fnstcw %0" : "=m"(cw));
-    cw = (uint16_t)((cw & ~0xf3f) | 0x3f);
-    __asm__ volatile("fldcw %0" : : "m"(cw));
+#if defined(__i386__)
+    {
+        /* as Direct3D does unless DDSCL_FPUPRESERVE (the game asks for FPUSETUP):
+         * x87 single precision, round to nearest, exceptions masked. (x86-64:
+         * the C's float arithmetic is SSE, which the x87 setting doesn't touch.) */
+        uint16_t cw;
+        __asm__ volatile("fnstcw %0" : "=m"(cw));
+        cw = (uint16_t)((cw & ~0xf3f) | 0x3f);
+        __asm__ volatile("fldcw %0" : : "m"(cw));
+    }
+#endif
     (void)clsid;
     (void)target;
     the_device.vtable = device_vtable;
     the_device.refs = 1;
-    *out = &the_device;
+    OUT(out, &the_device);
     return DD_OK;
 }
 
-static HRESULT WINAPI d3d_create_viewport(struct com *o, struct viewport **out, void *outer)
+static HRESULT WINAPI d3d_create_viewport(struct com *o, uint32_t *out, void *outer)
 {
     struct viewport *v = nt_lowmem_calloc(1, sizeof *v);
     (void)o;
     (void)outer;
     v->vtable = viewport_vtable;
     v->refs = 1;
-    *out = v;
+    OUT(out, v);
     return DD_OK;
 }
 
-static HRESULT WINAPI d3d_create_material(struct com *o, struct material **out, void *outer)
+static HRESULT WINAPI d3d_create_material(struct com *o, uint32_t *out, void *outer)
 {
     struct material *m = nt_lowmem_calloc(1, sizeof *m);
     (void)o;
     (void)outer;
     m->vtable = material_vtable;
     m->refs = 1;
-    *out = m;
+    OUT(out, m);
     return DD_OK;
 }
 
@@ -744,8 +765,7 @@ static HRESULT WINAPI device_get_caps(struct device *d, void *hw, void *hel)
 }
 
 /* texture formats: RGB565, ARGB1555, ARGB4444 (the game takes 565) */
-static HRESULT WINAPI device_enum_texture_formats(struct device *d, HRESULT(WINAPI *callback)(uint8_t *desc, void *ctx),
-                                                  void *ctx)
+static HRESULT WINAPI device_enum_texture_formats(struct device *d, desc_cb callback, void *ctx)
 {
     static const uint32_t formats[3][4] = {
         {0xf800, 0x07e0, 0x001f, 0}, {0x7c00, 0x03e0, 0x001f, 0x8000}, {0x0f00, 0x00f0, 0x000f, 0xf000}};
@@ -962,13 +982,13 @@ static HRESULT WINAPI draw_indexed(void *s, DWORD a, DWORD b, DWORD c, DWORD d, 
     return DD_OK;
 }
 
-HRESULT WINAPI DirectDrawCreate(const void *guid, struct com **out, void *outer)
+HRESULT WINAPI DirectDrawCreate(const void *guid, uint32_t *out, void *outer)
 {
     (void)guid;
     (void)outer;
     build_vtables();
     ddraw.refs = 1;
-    *out = &ddraw;
+    OUT(out, &ddraw);
     return DD_OK;
 }
 

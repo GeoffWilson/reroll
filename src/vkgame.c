@@ -42,11 +42,11 @@ void nt_profile_flush(void);
 #include <stdlib.h>
 #include <string.h>
 
-#define G32(a) (*(uint32_t *)(a))
-#define G_WINDOW (*(HWND *)0x6c8000)
+#define G32(a) (*(uint32_t *)(uintptr_t)(a))
+#define G_WINDOW ((HWND)(uintptr_t)G32(0x6c8000))
 #define G_SCREEN_W (*(int32_t *)0x4acc38)
 #define G_SCREEN_H (*(int32_t *)0x4acc3c)
-#define G_BACK_BUFFER (*(void ***)0x4d5f4c)
+#define G_BACK_BUFFER G32(0x4d5f4c) /* a surface (32-bit pointer) */
 
 #define TEX_SLOTS 64
 #define TEX_SLOT(s) ((uint8_t *)0x4ba6fc + (s) * 0x24)
@@ -105,18 +105,18 @@ static int readable(uint32_t address, uint32_t len)
     for (i = 0; i < 8; i++)
         if (address >= start[i] && address + len <= end[i])
             return 1;
-    if (!VirtualQuery((const void *)address, &info, sizeof info) || info.state != MEM_COMMIT)
+    if (!VirtualQuery((const void *)(uintptr_t)address, &info, sizeof info) || info.state != MEM_COMMIT)
         return 0;
     i = next++ & 7;
-    start[i] = (uint32_t)info.base_address;
-    end[i] = start[i] + info.region_size;
+    start[i] = (uint32_t)(uintptr_t)info.base_address;
+    end[i] = start[i] + (uint32_t)info.region_size;
     return address + len <= end[i];
 }
 
 static const uint8_t *memory_read(void *ctx, uint32_t address, uint32_t len)
 {
     (void)ctx;
-    return readable(address, len) ? (const uint8_t *)address : 0;
+    return readable(address, len) ? (const uint8_t *)(uintptr_t)address : 0;
 }
 
 /* DrawPrim: one packet as a walk of its own, from a table at the fake
@@ -215,7 +215,7 @@ static uint8_t *convert(const uint8_t *desc, uint32_t key_low, uint32_t key_high
     uint32_t w = *(const uint32_t *)(desc + 0xc), h = *(const uint32_t *)(desc + 8);
     uint32_t pitch = *(const uint32_t *)(desc + 0x10), bits = *(const uint32_t *)(desc + 0x54);
     const uint32_t *masks = (const uint32_t *)(desc + 0x58);
-    const uint8_t *pixels = *(const uint8_t *const *)(desc + 0x24);
+    const uint8_t *pixels = (const uint8_t *)(uintptr_t)*(const uint32_t *)(desc + 0x24); /* lpSurface */
     uint32_t *out, x, y, sum = 2166136261u;
 
     if (!w || !h || w > 4096 || h > 4096 || !(out = (uint32_t *)rgba_buffer(w * h)))
@@ -253,22 +253,25 @@ static uint8_t *convert(const uint8_t *desc, uint32_t key_low, uint32_t key_high
     return rgba;
 }
 
-typedef int32_t(__stdcall *lock_fn)(void *, void *, uint8_t *, DWORD, void *);
-typedef int32_t(__stdcall *unlock_fn)(void *, void *);
-typedef int32_t(__stdcall *color_key_fn)(void *, DWORD, uint32_t *);
+/* IDirectDrawSurface methods (native/ddraw.c): the vtable holds pointers */
+typedef int32_t(WINAPI *lock_fn)(void *, void *, uint8_t *, DWORD, void *);
+typedef int32_t(WINAPI *unlock_fn)(void *, DWORD);
+typedef int32_t(WINAPI *color_key_fn)(void *, DWORD, uint32_t *);
+#define SURFACE_METHOD(s, index, type) ((type)(*(void *const *const *)(uintptr_t)(s))[index])
 
-static int lock(void **surface, uint8_t desc[0x6c])
+static int lock(uint32_t surface, uint8_t desc[0x6c])
 {
-    if (!surface || !readable((uint32_t)surface, 4))
+    if (!surface || !readable(surface, 4))
         return 0;
     memset(desc, 0, 0x6c);
     *(uint32_t *)desc = 0x6c;
-    return ((lock_fn)((void **)*surface)[0x64 / 4])(surface, 0, desc, 1 | 0x10 /* WAIT | READONLY */, 0) == 0;
+    return SURFACE_METHOD(surface, 25, lock_fn)((void *)(uintptr_t)surface, 0, desc,
+                                                1 | 0x10 /* WAIT | READONLY */, 0) == 0;
 }
 
-static void unlock(void **surface)
+static void unlock(uint32_t surface)
 {
-    ((unlock_fn)((void **)*surface)[0x80 / 4])(surface, 0);
+    SURFACE_METHOD(surface, 32, unlock_fn)((void *)(uintptr_t)surface, 0);
 }
 
 /* ---- textures ---- */
@@ -278,13 +281,13 @@ static void unlock(void **surface)
 static void texture_slot(int slot, int force)
 {
     uint8_t *rec = TEX_SLOT(slot), desc[0x6c];
-    void **surface = *(void ***)(rec + 4);
+    uint32_t surface = G32(rec + 4);
     uint32_t key[2] = {0, 0}, sum = 0; /* no key set: texel 0 is see-through, as the captures were checked */
     const uint8_t *pixels;
 
     if (!lock(surface, desc))
         return;
-    ((color_key_fn)((void **)*surface)[0x40 / 4])(surface, 8 /* DDCKEY_SRCBLT */, key);
+    SURFACE_METHOD(surface, 16, color_key_fn)((void *)(uintptr_t)surface, 8 /* DDCKEY_SRCBLT */, key);
     pixels = convert(desc, key[0], key[1], &sum);
     unlock(surface);
     if (pixels && (force || sum != tex_checksum[slot])) {
@@ -427,7 +430,7 @@ static void check_leak(uint32_t start)
                     uint32_t h = hist[(steps + k) & 7];
                     if (h)
                         len += snprintf(line + len, sizeof line - (size_t)len, " %x/%x", h,
-                                        h >= 0x10000 ? (uint32_t)((const uint8_t *)h)[7] : 0u);
+                                        h >= 0x10000 ? (uint32_t)((const uint8_t *)(uintptr_t)h)[7] : 0u);
                 }
                 log_printf("leak: from list entry %x:%s -> world %x", entry, line, a);
             }
@@ -438,7 +441,7 @@ static void check_leak(uint32_t start)
         if (!readable(a, 8))
             return;
         hist[steps & 7] = a;
-        word = *(const uint32_t *)a;
+        word = *(const uint32_t *)(uintptr_t)a;
     }
 }
 
@@ -533,7 +536,7 @@ static void draw_walk(rd_read_fn read, void *ctx, uint32_t start)
 /* A frame with no packets: the back buffer (the loading pictures). */
 static void draw_back_buffer(void)
 {
-    void **surface = G_BACK_BUFFER;
+    uint32_t surface = G_BACK_BUFFER;
     uint8_t desc[0x6c];
     const uint8_t *pixels;
     struct rd_list list;
@@ -618,8 +621,8 @@ static int start(void)
     {
         struct win_rect rect;
         GetClientRect(window, &rect);
-        log_printf("vulkan: window %p (%dx%d), foreground %p", (uint32_t)window, rect.right, rect.bottom,
-                   (uint32_t)GetForegroundWindow());
+        log_printf("vulkan: window %p (%dx%d), foreground %p", (uint32_t)(uintptr_t)window, rect.right, rect.bottom,
+                   (uint32_t)(uintptr_t)GetForegroundWindow());
     }
     return 1;
 }
@@ -646,10 +649,10 @@ int vkgame_prim(uint32_t packet)
         return 1;
     one.table = packet;
     one.address = packet;
-    one.size = packet_size((const uint8_t *)packet);
+    one.size = packet_size((const uint8_t *)(uintptr_t)packet);
     if (!readable(packet, one.size))
         return 1;
-    memcpy(one.copy, (const void *)packet, one.size);
+    memcpy(one.copy, (const void *)(uintptr_t)packet, one.size);
     *(uint32_t *)one.copy = 0xffffffff;
     draw_walk(packet_read, &one, 0x10);
     return 1;
@@ -685,8 +688,8 @@ int vkgame_flip(void)
         frame_walks = 0;
     }
     if (presents < 400 && (presents < 3 || presents % 100 == 0))
-        log_printf("vulkan: frame %u: %d walks, window %p, foreground %p", presents, frame_walks, (uint32_t)win.parent,
-                   (uint32_t)GetForegroundWindow());
+        log_printf("vulkan: frame %u: %d walks, window %p, foreground %p", presents, frame_walks, (uint32_t)(uintptr_t)win.parent,
+                   (uint32_t)(uintptr_t)GetForegroundWindow());
     t0 = now();
     vkwin_present(&win);
     widescreen_frame_end();
@@ -758,7 +761,7 @@ static void patch_image_tile_call(void)
         log_printf("vulkan: unexpected bytes at 0x420582, loading pictures stay on the old path");
         return;
     }
-    *(int32_t *)(call + 1) = (int32_t)((uint32_t)image_tile - 0x420587);
+    *(int32_t *)(call + 1) = (int32_t)((uint32_t)(uintptr_t)image_tile - 0x420587);
 }
 
 /* 0x4771c0(unused, x, y, w, h, fullscreen): the game's window, created the

@@ -13,8 +13,9 @@
 #include "body.h"
 #include "fixed.h"
 #include "physics.h"
+#include "gamefn.h"
 
-#define g_race (*(uint8_t **)0x4b1960)
+#define g_race GP(0x4b1960)
 #define g_game_mode (*(int32_t *)0x6cf6a0)
 #define g_random_seed (*(uint32_t *)0x4b11dc)
 #define g_view_distance ((const int16_t *)0x4a77e4)
@@ -23,7 +24,7 @@
 #define g_slot_cameras ((uint8_t *)0x6bfba8) /* slot +0x28 */
 #define CAR_SLOT_SIZE 0x274
 
-#define CAM_BODY(cam) (*(uint8_t **)(cam))
+#define CAM_BODY(cam) GP(cam)
 #define S16(p, off) (*(int16_t *)((p) + (off)))
 
 /* 0x480940: v turned by the quaternion q (q v q*). */
@@ -203,7 +204,7 @@ void GAMEAPI camera_mode(uint8_t *cam, uint32_t pressed, uint32_t held)
         S16(cam, 0x58) = -1;
     }
     for (i = 0, slot_cam = g_slot_cameras; slot_cam < (uint8_t *)0x6c0090; i++, slot_cam += CAR_SLOT_SIZE)
-        if (*(uint8_t **)slot_cam == cam)
+        if (GP(slot_cam) == cam)
             break;
     if (slot_cam >= (uint8_t *)0x6c0090 || i > 1)
         return;
@@ -478,8 +479,8 @@ void GAMEAPI camera_track(uint8_t *cam, const uint8_t *car)
 /* 0x406e30: the camera body is moved by force only: no spin. */
 void GAMEAPI camera_update(uint8_t *slot)
 {
-    uint8_t *car = *(uint8_t **)slot, *cam = *(uint8_t **)(slot + 0x28), *body = CAM_BODY(cam);
-    const uint8_t *target = *(uint8_t **)(cam + 4);
+    uint8_t *car = GP(slot), *cam = GP(slot + 0x28), *body = CAM_BODY(cam);
+    const uint8_t *target = GP(cam + 4);
 
     memset(body + ANGULAR_MOMENTUM, 0, 12);
     memset(body + TORQUE, 0, 12);

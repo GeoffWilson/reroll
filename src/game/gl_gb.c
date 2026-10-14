@@ -20,6 +20,7 @@
 #include "../runtime.h"
 #include "fixed.h"
 #include "physics.h"
+#include "gamefn.h"
 
 #define U8(p, off) (*(uint8_t *)((uint8_t *)(p) + (off)))
 #define S8(p, off) (*(int8_t *)((uint8_t *)(p) + (off)))
@@ -27,40 +28,43 @@
 #define S16(p, off) (*(int16_t *)((uint8_t *)(p) + (off)))
 #define U32(p, off) (*(uint32_t *)((uint8_t *)(p) + (off)))
 #define I32(p, off) (*(int32_t *)((uint8_t *)(p) + (off)))
-#define PTR(p, off) (*(uint8_t **)((uint8_t *)(p) + (off)))
-#define G8(a) (*(uint8_t *)(a))
-#define G16(a) (*(uint16_t *)(a))
-#define GS16(a) (*(int16_t *)(a))
-#define G32(a) (*(uint32_t *)(a))
-#define GI32(a) (*(int32_t *)(a))
-#define GF(a) (*(float *)(a))
-#define GD(a) (*(double *)(a))
+#define PTR(p, off) ((uint8_t *)(uintptr_t)U32(p, off)) /* 32-bit pointers in game memory */
+#define G8(a) (*(uint8_t *)(uintptr_t)(a))
+#define G16(a) (*(uint16_t *)(uintptr_t)(a))
+#define GS16(a) (*(int16_t *)(uintptr_t)(a))
+#define G32(a) (*(uint32_t *)(uintptr_t)(a))
+#define GI32(a) (*(int32_t *)(uintptr_t)(a))
+#define GF(a) (*(float *)(uintptr_t)(a))
+#define GD(a) (*(double *)(uintptr_t)(a))
 #define A(p) ((uint32_t)(uintptr_t)(p))
-
-typedef uint32_t(GAMEAPI *f0)(void);
-typedef uint32_t(GAMEAPI *f1)(uint32_t);
-typedef uint32_t(GAMEAPI *f2)(uint32_t, uint32_t);
-typedef uint32_t(GAMEAPI *f3)(uint32_t, uint32_t, uint32_t);
-typedef uint32_t(GAMEAPI *f4)(uint32_t, uint32_t, uint32_t, uint32_t);
-typedef uint32_t(GAMEAPI *f5)(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
-typedef uint32_t(GAMEAPI *f6)(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
-typedef uint32_t(GAMEAPI *f7)(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
-typedef uint32_t(GAMEAPI *f9)(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t,
-                              uint32_t);
-#define CALL0(a) ((f0)(a))()
-#define CALL1(a, x) ((f1)(a))(A(x))
-#define CALL2(a, x, y) ((f2)(a))(A(x), A(y))
-#define CALL3(a, x, y, z) ((f3)(a))(A(x), A(y), A(z))
-#define CALL4(a, x, y, z, w) ((f4)(a))(A(x), A(y), A(z), A(w))
 
 /* Every x87 register, for asm blocks that use the FPU stack. */
 #define X87 "st", "st(1)", "st(2)", "st(3)", "st(4)", "st(5)", "st(6)", "st(7)"
 #define FTOL 0x497a80 /* C runtime _ftol: st(0) -> edx:eax, truncating */
 
-#define g_config (*(uint8_t **)0x4b2198)
-#define g_race (*(uint8_t **)0x4b1960)
-#define g_track_info (*(uint8_t **)0x6c1eb0)
-#define g_textures (*(uint8_t **)0x6c1e14)
+#if !defined(__i386__)
+/* x86-64: _ftol's steps on an x87 value (rounding set to chop around a
+ * fistp qword; the low dword). The asm blocks below hand it st(0) stored
+ * at full width (fstpt), where i386 calls _ftol itself. */
+static inline int32_t x87_ftol(long double v)
+{
+    uint16_t cw, chop;
+    int64_t q;
+
+    __asm__ volatile("fnstcw %0" : "=m"(cw));
+    chop = (uint16_t)(cw | 0xc00);
+    __asm__ volatile("fldt %2\n\tfldcw %3\n\tfistpll %0\n\tfldcw %1"
+                     : "=m"(q)
+                     : "m"(cw), "m"(v), "m"(chop)
+                     : "st", "memory");
+    return (int32_t)q;
+}
+#endif
+
+#define g_config GP(0x4b2198)
+#define g_race GP(0x4b1960)
+#define g_track_info GP(0x6c1eb0)
+#define g_textures GP(0x6c1e14)
 #define g_texture_count GI32(0x6c1e10)
 
 /* ------------------------------------------------------------------ */
@@ -99,7 +103,7 @@ void GAMEAPI shock_falloff_apply(void)
         uint8_t *rec = (uint8_t *)0x6d06e0 + i * 0x10;
         int32_t s = S8(rec, 6);
         if (s > 0) {
-            s -= (int32_t)CALL1(0x405210, rec);
+            s -= (int32_t)GCALL(0x405210, shock_falloff)(GMEM(rec));
             if (s <= 0)
                 s = 0;
             U8(rec, 6) = (uint8_t)s;
@@ -118,8 +122,9 @@ int32_t GAMEAPI game_clock_read(void)
     double d;
     int32_t r;
 
-    q[0] = CALL0(0x43692a);
+    q[0] = GCALL(0x43692a, game_time_get)();
     q[1] = 0;
+#if defined(__i386__)
     __asm__ volatile("fildll %2\n\t"
                      "fstpl %1\n\t"
                      "fldl %1\n\t"
@@ -129,6 +134,22 @@ int32_t GAMEAPI game_clock_read(void)
                      : "=a"(r), "=m"(d)
                      : "m"(*(const uint64_t *)q), "m"(GD(0x4a3368)), "m"(GD(0x4a3360)), "c"(FTOL)
                      : "edx", "memory", "cc", X87);
+#else
+    {
+        long double t;
+
+        __asm__ volatile("fildll %2\n\t"
+                         "fstpl %1\n\t"
+                         "fldl %1\n\t"
+                         "fdivl %3\n\t"
+                         "fmull %4\n\t"
+                         "fstpt %0"
+                         : "=m"(t), "=m"(d)
+                         : "m"(*(const uint64_t *)q), "m"(GD(0x4a3368)), "m"(GD(0x4a3360))
+                         : "memory", X87);
+        r = x87_ftol(t);
+    }
+#endif
     return r;
 }
 
@@ -164,7 +185,7 @@ void GAMEAPI car_hit_ai_hard(uint8_t *car, uint8_t *other, int32_t force)
 {
     if (force < 0x14 || U8(other, 0x70c) == 8 || U8(car, 0x6b9) == 1)
         return;
-    CALL3(0x40feb0, car, other, force);
+    GCALL(0x40feb0, ai_grudge_add)(GMEM(car), GMEM(other), force);
 }
 
 /* 0x410090: a hit by an object kind 0xc / 0x11 on a non-human car. */
@@ -173,16 +194,16 @@ void GAMEAPI car_hit_ai_object(uint8_t *car, uint8_t *other, int32_t kind)
     if (other == 0 || U8(other, 0x70c) == 8)
         return;
     if (kind == 0xc)
-        CALL3(0x40feb0, car, other, 0x96);
+        GCALL(0x40feb0, ai_grudge_add)(GMEM(car), GMEM(other), 0x96);
     else if (kind == 0x11)
-        CALL3(0x40feb0, car, other, 0x19);
+        GCALL(0x40feb0, ai_grudge_add)(GMEM(car), GMEM(other), 0x19);
 }
 
 /* 0x4100e0: an AI car's hit on the human car (0x40fe00). */
 void GAMEAPI car_hit_human(uint8_t *car, uint8_t *other, int32_t force)
 {
     if (U8(other, 0x70c) == 8 && U8(other, 0x6b9) == 1)
-        CALL3(0x40fe00, other, car, force);
+        GCALL(0x40fe00, ai_grudge_reduce)(GMEM(other), GMEM(car), force);
 }
 
 /* 0x410110: a hit by an object kind 0xc / 0x11 on the human car. */
@@ -191,9 +212,9 @@ void GAMEAPI car_hit_human_object(uint8_t *car, uint8_t *other, int32_t kind)
     if (other == 0 || U8(other, 0x70c) != 8)
         return;
     if (kind == 0xc)
-        CALL3(0x40fe00, other, car, 0x96);
+        GCALL(0x40fe00, ai_grudge_reduce)(GMEM(other), GMEM(car), 0x96);
     else if (kind == 0x11)
-        CALL3(0x40fe00, other, car, 0x19);
+        GCALL(0x40fe00, ai_grudge_reduce)(GMEM(other), GMEM(car), 0x19);
 }
 
 static int32_t mul16(int32_t a, int32_t b)
@@ -212,7 +233,7 @@ int32_t GAMEAPI car_hit_callback(uint8_t *car, uint8_t *obj, uint8_t *hit)
     int sparks;
 
     if (obj == 0) {
-        int32_t d = (int32_t)CALL2(0x40d950, hit + 0x38, car + 0x40);
+        int32_t d = (int32_t)GCALL(0x40d950, vec_dot)(GMEM(hit + 0x38), GMEM(car + 0x40));
         force = ((d ^ (d >> 31)) - (d >> 31)) >> 14;
         if (force > 0x7f)
             force = 0x7f;
@@ -221,13 +242,13 @@ int32_t GAMEAPI car_hit_callback(uint8_t *car, uint8_t *obj, uint8_t *hit)
         if (kind == 0xc) {
             uint8_t *who = PTR(obj, 0x18c);
             if (U8(car, 0x70c) == 8) {
-                CALL3(0x410090, car, who, 0xc);
+                GCALL(0x410090, car_hit_ai_object)(GMEM(car), GMEM(who), 0xc);
                 return 1;
             }
-            CALL3(0x410110, car, who, 0xc);
+            GCALL(0x410110, car_hit_human_object)(GMEM(car), GMEM(who), 0xc);
             return 1;
         }
-        force = (int32_t)CALL1(0x427960, (uint32_t)mul16(I32(hit, 0x64), I32(hit, 0x64)) +
+        force = (int32_t)GCALL(0x427960, fix_sqrt_table)((uint32_t)mul16(I32(hit, 0x64), I32(hit, 0x64)) +
                                               (uint32_t)mul16(I32(hit, 0x60), I32(hit, 0x60)) +
                                               (uint32_t)mul16(I32(hit, 0x5c), I32(hit, 0x5c))) >>
                 7;
@@ -235,17 +256,17 @@ int32_t GAMEAPI car_hit_callback(uint8_t *car, uint8_t *obj, uint8_t *hit)
             force = 0x7f;
         if (kind == 3) {
             if (U8(car, 0x70c) == 8)
-                CALL3(0x410050, car, obj, force);
+                GCALL(0x410050, car_hit_ai_hard)(GMEM(car), GMEM(obj), force);
             else
-                CALL3(0x4100e0, car, obj, force);
+                GCALL(0x4100e0, car_hit_human)(GMEM(car), GMEM(obj), force);
             if (U8(car, 0x70c) == 8 && U8(obj, 0x70c) != 8)
-                CALL2(0x40fd40, car, force);
+                GCALL(0x40fd40, car_hit_timer_start)(GMEM(car), force);
         } else if (kind == 0x11) {
             uint8_t *who = PTR(obj, 0x180);
             if (U8(car, 0x70c) == 8)
-                CALL3(0x410090, car, who, 0x11);
+                GCALL(0x410090, car_hit_ai_object)(GMEM(car), GMEM(who), 0x11);
             else
-                CALL3(0x410110, car, who, 0x11);
+                GCALL(0x410110, car_hit_human_object)(GMEM(car), GMEM(who), 0x11);
         }
     }
     if (force > (int32_t)U8(car, 0x65f)) {
@@ -255,14 +276,14 @@ int32_t GAMEAPI car_hit_callback(uint8_t *car, uint8_t *obj, uint8_t *hit)
         dir[0] = I32(car, 0x34) - (int32_t)((uint32_t)I32(hit, 0x2c) << 8);
         dir[1] = I32(car, 0x38) - (int32_t)((uint32_t)I32(hit, 0x30) << 8);
         dir[2] = I32(car, 0x3c) - (int32_t)((uint32_t)I32(hit, 0x34) << 8);
-        CALL1(0x407e90, dir);
-        len = (int32_t)CALL1(0x480cd0, dir);
+        GCALL(0x407e90, direction_fit)(GMEM(dir));
+        len = (int32_t)GCALL(0x480cd0, vec_length)(GMEM(dir));
         if (len < 0x40) {
             dir[0] = I32(car, 0x664);
             dir[1] = I32(car, 0x668);
             dir[2] = I32(car, 0x66c);
         } else {
-            CALL2(0x486e90, dir, len);
+            GCALL(0x486e90, vec_div)(GMEM(dir), len);
         }
     }
     v[0] = I32(hit, 0x38) >> 8;
@@ -295,9 +316,9 @@ int32_t GAMEAPI car_hit_callback(uint8_t *car, uint8_t *obj, uint8_t *hit)
         sound = 0x17;
     }
     if (S16(car, 0x658) > 3)
-        CALL3(0x45be10, car, hit + 0xc, sound);
+        GCALL(0x45be10, contact_particle)(GMEM(car), GMEM(hit + 0xc), sound);
     if (sparks && force >= 0x30)
-        CALL3(0x46d760, car, v, force);
+        GCALL(0x46d760, blast_mark)(GMEM(car), GMEM(v), force);
     return 1;
 }
 
@@ -341,8 +362,8 @@ void GAMEAPI car_wheels_setup(uint8_t *car, uint32_t model, uint32_t side)
         U32(w, 0x5c) = 1000;
         U32(w, 0x58) = 0;
         U32(w, 0x78) = 0;
-        U32(w, 0x6c) = CALL4(0x460ba0, model, 0x8c0b, 0x180, 0);
-        CALL3(0x40dff0, w, car, i < 2 ? saved : 0);
+        U32(w, 0x6c) = A(GCALL(0x460ba0, object_create)(GMEM(model), 0x8c0b, 0x180, 0));
+        GCALL(0x40dff0, wheel_place)(GMEM(w), GMEM(car), i < 2 ? saved : 0);
         U16(w, 0x70) = (uint16_t)tab[0];
         U16(w, 0x72) = (uint16_t)tab[1];
         U16(w, 0x74) = (uint16_t)tab[2];
@@ -378,10 +399,10 @@ void GAMEAPI car_wheels_setup(uint8_t *car, uint32_t model, uint32_t side)
         v[0] = (int32_t)((uint32_t)(int32_t)S16(vec, 0) << 8);
         v[1] = (int32_t)((uint32_t)(int32_t)S16(vec, 2) << 8);
         v[2] = (int32_t)((uint32_t)(int32_t)S16(vec, 4) << 8);
-        d = (int32_t)CALL2(0x40d950, v, v);
-        r = (int32_t)CALL1(0x40d9d0, d);
+        d = (int32_t)GCALL(0x40d950, vec_dot)(GMEM(v), GMEM(v));
+        r = (int32_t)GCALL(0x40d9d0, fix_isqrt)(d);
         I32(w, 0xbc) = mul16(d, I32(car, 0xa8));
-        I32(w, 0xc0) = (int32_t)CALL2(0x42df70, 0x10000, r);
+        I32(w, 0xc0) = (int32_t)GCALL(0x42df70, fix_div16)(0x10000, r);
     }
     U32(car, 0x634) = 0;
     U8(car, 0x63f) = 0;
@@ -408,14 +429,14 @@ void GAMEAPI object_face_blast(uint8_t *obj, int32_t face, int32_t *vel)
     gte_load_matrix(obj + 0xc4);
     G32(0x6ccc64) = w0;
     G32(0x6ccc68) = w1 & 0xffff;
-    CALL0(0x428090);
+    GCALL(0x428090, gte_rotate)();
     pos[0] = (int32_t)((G32(0x6cccc8) << 16) + U32(obj, 0x34));
     pos[1] = (int32_t)((G32(0x6ccccc) << 16) + U32(obj, 0x38));
     pos[2] = (int32_t)((G32(0x6cccd0) << 16) + U32(obj, 0x3c));
     pos[1] -= (int32_t)(((U32(f, 0xc) >> 10) & 0x7ff) << 14);
-    ((f5)0x42aa30)(A(pos), A(vel), 4, 0x26, 0x11);
+    GCALL(0x42aa30, explosion_effects)(pos, vel, 4, 0x26, 0x11);
     pos[1] += (int32_t)(((U32(f, 0xc) >> 10) & 0x7ff) << 15);
-    ((f5)0x42aa30)(A(pos), A(vel), 4, 0x26, 0x11);
+    GCALL(0x42aa30, explosion_effects)(pos, vel, 4, 0x26, 0x11);
 }
 
 /* ------------------------------------------------------------------ */
@@ -431,14 +452,28 @@ void GAMEAPI smoke_pool_init(void)
     uint8_t *pool, *rec, *src, *dst;
     uint32_t i, n, base;
 
+#if defined(__i386__)
     __asm__ volatile("flds %1\n\t"
                      "fmuls %2\n\t"
                      "call *%3"
                      : "=a"(n)
                      : "m"(GF(g_config + 0x68)), "m"(GF(0x4a3384)), "c"(FTOL)
                      : "edx", "memory", "cc", X87);
+#else
+    {
+        long double t;
+
+        __asm__ volatile("flds %1\n\t"
+                         "fmuls %2\n\t"
+                         "fstpt %0"
+                         : "=m"(t)
+                         : "m"(GF(g_config + 0x68)), "m"(GF(0x4a3384))
+                         : "memory", X87);
+        n = (uint32_t)x87_ftol(t);
+    }
+#endif
     G32(0x4ac728) = n;
-    pool = (uint8_t *)(uintptr_t)CALL1(0x460af0, n << 8);
+    pool = (uint8_t *)(uintptr_t)GCALL(0x460af0, link_pool_take)(n << 8);
     G32(0x6ccb88) = A(pool);
     G32(0x6ccb5c) = A(pool);
     G32(0x6ccb84) = (G32(0x4ac728) << 8) + A(pool);
@@ -447,7 +482,7 @@ void GAMEAPI smoke_pool_init(void)
         U16(rec, 0x96) = 0;
         U8(rec, 0x17) = 0x9a;
         U32(rec, 0x10) = (U32(rec, 0x10) & 0xffffff) | 0xc000000;
-        CALL2(0x460b20, rec, 9);
+        GCALL(0x460b20, grid_link_init)(GMEM(rec), 9);
     }
     base = U16(g_track_info, 0x2e);
     G16(0x6ccb9c) = (uint16_t)(base + 0x2e);
@@ -504,12 +539,13 @@ void GAMEAPI effects_init(void)
 
     G32(0x6ccbac) = 0;
     G32(0x6cca54) = 0;
-    CALL0(0x42a710);
-    CALL0(0x42a8f0);
-    CALL0(0x42c2b0);
-    CALL1(0x42a9e0, 1);
-    CALL0(0x42c1d0);
-    CALL0(0x42c200);
+    GCALL(0x42a710, smoke_pool_init)();
+    GCALL(0x42a8f0, smoke_clouds_init)();
+    GCALL(0x42c2b0, shock_waves_init)();
+    /* flashes_init reads no argument; the original pushes 1 */
+    ((void(GAMEAPI *)(uint32_t))(uintptr_t)0x42a9e0)(1);
+    GCALL(0x42c1d0, palette_ramp_init)();
+    GCALL(0x42c200, flares_init)();
     G32(0x6ccb7c) = 0;
     G32(0x4be12c) = 0;
     G32(0x4be130) = 0;
@@ -559,9 +595,9 @@ void GAMEAPI projection_init(void)
     uint16_t sw;
     uint32_t f;
 
-    CALL3(0x476f50, 0x6ccbe0, 0, 0x104);
-    CALL3(0x476f50, 0x6ccd00, 0, 0x720);
-    CALL3(0x4283d0, 0x96, 400, 0x1fb);
+    GCALL(0x476f50, mem_fill)(GMEM(0x6ccbe0), 0, 0x104);
+    GCALL(0x476f50, mem_fill)(GMEM(0x6ccd00), 0, 0x720);
+    GCALL(0x4283d0, depth_range_set)(0x96, 400, 0x1fb);
     G32(0x6ccd88) = 0x200;
     G32(0x6ccd04) = 0x40000000;
     G32(0x6ccd08) = 0x477fff00;
@@ -602,7 +638,7 @@ void GAMEAPI projection_init(void)
     G32(0x6cce0c) = 0x3f800000;
     G32(0x6cce1c) = 0x3f800000;
     G32(0x6cce2c) = 0x3f800000;
-    if (CALL0(0x401110) != 0) {
+    if (GCALL(0x401110, cpu_3dnow_get)() != 0) {
         G32(0x6ccd80) = 0x4291f0;
         G32(0x6ccd78) = 0x4268c0;
         G32(0x6ccd7c) = 0x4268c0;
@@ -703,7 +739,7 @@ void GAMEAPI sky_packets_build(uint8_t *arc)
         tex = g_textures + (uint32_t)U16(rec, 0x20) * 0x10;
         U32(pk, 4) = 0x30303030;
         sky_packet_texture(pk, tex);
-        CALL2(0x4270e0, pk, 1);
+        GCALL(0x4270e0, prim_flag2_set)(GMEM(pk), 1);
         dst += 0x20;
         rec += 0x22;
     }
@@ -711,7 +747,7 @@ void GAMEAPI sky_packets_build(uint8_t *arc)
     dst = (uint8_t *)(uintptr_t)G32(0x6d0a38);
     horizon = (int32_t)0xfffff448;
     G32(0x6cd400) = 0x40;
-    CALL1(0x404980, &horizon);
+    GCALL(0x404980, dome_scale)(GMEM(&horizon));
     G32(0x6cd400) = saved;
     m = 0;
     n = G32(0x6d0a00);
@@ -936,8 +972,8 @@ void GAMEAPI hud_layout(void)
         G8(0x6c7f61) = 0;
         break;
     }
-    CALL2(0x427a70, 0x6ce5f0, 2);
-    CALL2(0x427a70, 0x6ce5f8, 2);
+    GCALL(0x427a70, ot_clear_reverse)(GMEM(0x6ce5f0), 2);
+    GCALL(0x427a70, ot_clear_reverse)(GMEM(0x6ce5f8), 2);
     G32(0x6ce608) = 0x6ce5f0;
     {
         uint32_t t = U16(g_textures, ((uint32_t)(int32_t)GS16(0x6c7ed4) + U16(g_track_info, 0x2e)) * 0x10 + 2);
@@ -1022,18 +1058,18 @@ void GAMEAPI hud_layout(void)
                 U8(m, 1) = (uint8_t)(U8(tex, 1) + 6);
             U16(m, 4) = 6;
             U16(m, 6) = 6;
-            CALL2(0x428070, m - 0x14, m - 0xc);
+            GCALL(0x428070, list_push)(GMEM(m - 0x14), GMEM(m - 0xc));
         }
     }
-    CALL3(0x4387d0, 2, 0, -1);
-    CALL3(0x4387d0, 3, 0, -1);
+    GCALL(0x4387d0, hud_sprite_set)(2, 0, -1);
+    GCALL(0x4387d0, hud_sprite_set)(3, 0, -1);
     for (i = 0x6c7fe1; i < 0x6c7ff9; i += 4) {
         G8(i - 1) = 0;
         G8(i) = 0;
         G8(i + 1) = 0;
     }
-    CALL3(0x439d70, 0, 0, 0);
-    CALL0(0x478ff0);
+    GCALL(0x439d70, hud_fade_apply)(0, 0, 0);
+    GCALL(0x478ff0, text_reset)();
     if (U8(g_race, 0x552) != 0) {
         uint32_t v = G32(0x6c7fb0) & 0xff000000;
         G32(0x6c7fb0) = v;
@@ -1082,7 +1118,16 @@ static uint8_t colour_scale(uint8_t v)
                      : "m"(n), "m"(GF(0x6ccdc0)), "m"(GF(0x4a332c))
                      : "cc", X87);
     sel = (sw & 0x100) ? t : 0x437f0000;
+#if defined(__i386__)
     __asm__ volatile("flds %1\n\tcall *%2" : "=a"(r) : "m"(sel), "c"(FTOL) : "edx", "memory", "cc", X87);
+#else
+    {
+        long double t;
+
+        __asm__ volatile("flds %1\n\tfstpt %0" : "=m"(t) : "m"(sel) : "memory", X87);
+        r = x87_ftol(t);
+    }
+#endif
     return (uint8_t)r;
 }
 
@@ -1101,7 +1146,7 @@ int32_t GAMEAPI track_load(const char *name, uint8_t *track)
     uint32_t local_4, local_8, local_10, local_c, local_14, local_18, light_base;
     const char *ext;
 
-    if (CALL0(0x429340) != 0) {
+    if (GCALL(0x429340, textures_unusable_thunk)() != 0) {
         str_copy((char *)0x6c1dc0, name);
         str_cat((char *)0x6c1dc0, (const char *)0x4af4d4);
         str_copy((char *)0x6c1e60, name);
@@ -1113,10 +1158,10 @@ int32_t GAMEAPI track_load(const char *name, uint8_t *track)
         ext = (const char *)0x4af4bc;
     }
     str_cat((char *)0x6c1e60, ext);
-    v = CALL1(0x43b660, 0x6c1dc0);
+    v = GCALL(0x43b660, archive_load_by_name)(GMEM(0x6c1dc0));
     g_track_base = v;
     G32(0x6c1eb0) = v;
-    CALL1(0x460aa0, (int32_t)S16(g_track_info, 0x11e));
+    GCALL(0x460aa0, object_pool_reset)((int32_t)S16(g_track_info, 0x11e));
     v = U32(g_track_info, 0x54);
     G32(0x4af4b8) = v;
     G8(0x6cd4b9) = (uint8_t)(U8(g_track_info, 0x30) << 1);
@@ -1125,13 +1170,12 @@ int32_t GAMEAPI track_load(const char *name, uint8_t *track)
     G8(0x6cdd2a) = G8(0x6cd4ba);
     G8(0x6cd4bb) = (uint8_t)(U8(g_track_info, 0x32) << 1);
     G8(0x6cdd2b) = G8(0x6cd4bb);
-    CALL3(0x428350, v, (v >> 8) & 0xff, G8(0x4af4ba));
-    CALL3(0x428390, (uint8_t)(U8(g_track_info, 0x30) << 1), (uint8_t)(U8(g_track_info, 0x31) << 1),
-          (uint8_t)(U8(g_track_info, 0x32) << 1));
+    GCALL(0x428350, ambient_colour_set)(v, (v >> 8) & 0xff, G8(0x4af4ba));
+    GCALL(0x428390, clear_colour_store)((uint8_t)(U8(g_track_info, 0x30) << 1), (uint8_t)(U8(g_track_info, 0x31) << 1), (uint8_t)(U8(g_track_info, 0x32) << 1));
     n = I32(g_track_info, 8);
-    packets = (uint8_t *)(uintptr_t)CALL1(0x4445e0, (uint32_t)n * 0x120);
+    packets = (uint8_t *)(uintptr_t)GCALL(0x4445e0, kr_malloc)((uint32_t)n * 0x120);
     if (G32(0x4beb84) == 0) {
-        v = CALL1(0x4445e0, 0x60ae0);
+        v = GCALL(0x4445e0, kr_malloc)(0x60ae0);
         G32(0x4beb84) = v;
         G32(0x6c1e1c) = v + 0x30570;
         G32(0x6c1e34) = v + 0x30570;
@@ -1263,9 +1307,10 @@ int32_t GAMEAPI track_load(const char *name, uint8_t *track)
     }
     INFO_REL(0x60);
     INFO_REL(0x84);
-    CALL2(0x404480, U32(g_track_info, 0x60), U16(g_track_info, 0x64));
-    CALL2(0x4044c0, U16(g_track_info, 0x5c), U16(g_track_info, 0x5e));
-    arc2 = (uint8_t *)(uintptr_t)CALL1(0x43b660, 0x6c1e60);
+    /* sky_set reads one argument; the original pushes two */
+    ((void(GAMEAPI *)(uint8_t *, uint32_t))(uintptr_t)0x404480)(GP(g_track_info + 0x60), U16(g_track_info, 0x64));
+    GCALL(0x4044c0, track_tables_alloc)(U16(g_track_info, 0x5c), U16(g_track_info, 0x5e));
+    arc2 = (uint8_t *)(uintptr_t)GCALL(0x43b660, archive_load_by_name)(GMEM(0x6c1e60));
     g_texture_count = I32(arc2, 0x10);
     G32(0x6c1e14) = U32(g_track_info, 0x110) + g_track_base;
     G32(0x6c1e40) = U32(g_track_info, 0x114) + g_track_base;
@@ -1292,11 +1337,11 @@ int32_t GAMEAPI track_load(const char *name, uint8_t *track)
             U8(q, 0x81) = U8(tex, 0xb);
         }
     }
-    v = CALL0(0x429340) != 0 ? 2 : 0;
-    if (((f7)0x428130)(U16(arc2, 0x34), U8(arc2, 0x32), U8(arc2, 0x33), A(a38), A(a3c), A(arc2 + U32(arc2, 0x24)),
-                       v) == 0)
+    v = GCALL(0x429340, textures_unusable_thunk)() != 0 ? 2 : 0;
+    if (GCALL(0x428130, track_textures_load)(U16(arc2, 0x34), U8(arc2, 0x32), U8(arc2, 0x33), (const uint8_t *)a38,
+                                             A(a3c), A(arc2 + U32(arc2, 0x24)), v) == 0)
         return 0;
-    CALL1(0x404550, arc2);
+    GCALL(0x404550, sky_packets_build)(GMEM(arc2));
     cnt = I32(arc2, 0x14);
     U32(track, 4) = A(packets);
     U32(track, 0) = A(objs);
@@ -1340,7 +1385,7 @@ int32_t GAMEAPI track_load(const char *name, uint8_t *track)
     U32(track, 0x88) = U8(g_track_info, 0xb4);
     U32(track, 0x98) = U32(g_track_info, 0xcc) + g_track_base;
     U32(track, 0x9c) = U32(g_track_info, 0xd8) + g_track_base;
-    list = (uint8_t *)(uintptr_t)CALL1(0x4445e0, (uint32_t)cnt * 4);
+    list = (uint8_t *)(uintptr_t)GCALL(0x4445e0, kr_malloc)((uint32_t)cnt * 4);
     /* the objects */
     for (i = 0; i < cnt; i++) {
         uint8_t *rec = recs + i * 0x38;
@@ -1350,8 +1395,7 @@ int32_t GAMEAPI track_load(const char *name, uint8_t *track)
 
         switch (kindw & 0x3ff) {
         case 0:
-            obj = (uint8_t *)(uintptr_t)CALL4(0x460ba0, U32(PTR(g_track_info, 0x18), U8(rec, 3) * 4), kindw, 0x1b4,
-                                              rec + 0x1c);
+            obj = (uint8_t *)(uintptr_t)GCALL(0x460ba0, object_create)(GMEM(U32(PTR(g_track_info, 0x18), U8(rec, 3) * 4)), kindw, 0x1b4, (int32_t)A(rec + 0x1c));
             U8(obj, 0x169) = U8(rec, 0x26);
             for (k = 0; k < 3; k++)
                 U32(obj, 0x180 + k * 4) = U16(rec, 0x20 + k * 2) + local_8;
@@ -1386,45 +1430,47 @@ int32_t GAMEAPI track_load(const char *name, uint8_t *track)
             U32(obj, 0x194) = local_4 + (uint32_t)U16(rec, 0x14) * 4;
             for (k = 0x34; k < 0x10c; k += 4)
                 U32(obj, k) = 0;
-            CALL4(0x480a80, (int32_t)S16(rec, 0xe), (int32_t)S16(rec, 0x10), (int32_t)S16(rec, 0x12), obj + 0x58);
-            CALL2(0x480780, obj + 0x58, obj + 0xc4);
+            GCALL(0x480a80, quat_from_angles)((int32_t)S16(rec, 0xe), (int32_t)S16(rec, 0x10), (int32_t)S16(rec, 0x12), GMEM(obj + 0x58));
+            GCALL(0x480780, quat_to_matrix)(GMEM(obj + 0x58), GMEM(obj + 0xc4));
             I32(obj, 0x34) = (int32_t)((uint32_t)(int32_t)S16(rec, 8) << 16);
             I32(obj, 0x38) = (int32_t)((uint32_t)(int32_t)S16(rec, 0xa) << 16);
             I32(obj, 0x3c) = (int32_t)((uint32_t)(int32_t)S16(rec, 0xc) << 16);
-            CALL3(0x442680, obj, rec, &lights);
-            CALL1(0x460fb0, obj);
+            GCALL(0x442680, object_lights_setup)(GMEM(obj), GMEM(rec), GMEM(&lights));
+            GCALL(0x460fb0, object_grid_link)(GMEM(obj));
             if (U8(obj, 0x19a) == 2)
-                CALL2(0x405070, obj, rec);
-            CALL1(0x478370, obj);
+                GCALL(0x405070, track_blast_register)(GMEM(obj), GMEM(rec));
+            GCALL(0x478370, object_lit_faces_register)(GMEM(obj));
             if (U8(obj, 0x19a) == 0)
-                CALL1(0x403a20, obj);
+                GCALL(0x403a20, track_static_add)(A(obj));
             break;
         case 2:
-            ((f6)0x47dbc0)(U16(rec, 8), U16(rec, 0xa), U16(rec, 0xc), U16(rec, 6), U8(rec, 4), U8(rec, 5));
+            GCALL(0x47dbc0, sprite_spawn_marker)(U16(rec, 8), U16(rec, 0xa), U16(rec, 0xc), U16(rec, 6), U8(rec, 4),
+                                                 U8(rec, 5));
             break;
         case 0xd:
-            ((f9)0x47dc30)(U16(rec, 8), U16(rec, 0xa), U16(rec, 0xc), U16(rec, 6), U8(rec, 4), U8(rec, 0x1c),
-                           (kindw & 0xff00) | U8(rec, 0x1d), U8(rec, 0x1e), (uint32_t)lights);
+            GCALL(0x47dc30, light_sprite_spawn)(U16(rec, 8), U16(rec, 0xa), U16(rec, 0xc), U16(rec, 6), U8(rec, 4),
+                                                U8(rec, 0x1c), (kindw & 0xff00) | U8(rec, 0x1d), U8(rec, 0x1e),
+                                                (int32_t)lights);
             lights++;
             break;
         case 0x18:
-            v = CALL1(0x41aa70, rec);
-            CALL3(0x442680, v, rec, &lights);
-            CALL2(0x4039d0, rec, v);
+            v = A(GCALL(0x41aa70, track_object_spawn)(GMEM(rec)));
+            GCALL(0x442680, object_lights_setup)(GMEM(v), GMEM(rec), GMEM(&lights));
+            GCALL(0x4039d0, object_triggers_register)(GMEM(rec), v);
             break;
         }
     }
-    CALL2(0x478f80, cnt, arc2 + U32(arc2, 0x28));
+    GCALL(0x478f80, track_models_mark_lit)(cnt, GMEM(arc2 + U32(arc2, 0x28)));
     for (j = 0; j < (int32_t)U16(g_track_info, 0x96); j++) {
         uint8_t *slot = PTR(track, 0x7c) + j * 4;
         v = U32(slot, 0);
         if (v < 0x10000)
             U32(slot, 0) = U32(list, v * 4);
     }
-    CALL1(0x444570, list);
-    CALL1(0x444570, arc2);
+    GCALL(0x444570, kr_free)(A(list));
+    GCALL(0x444570, kr_free)(A(arc2));
     G32(0x6c1e2c) = U16(g_track_info, 0xc8);
-    G32(0x6c1e3c) = CALL1(0x4445e0, (uint32_t)U16(g_track_info, 0xc8) << 5);
+    G32(0x6c1e3c) = GCALL(0x4445e0, kr_malloc)((uint32_t)U16(g_track_info, 0xc8) << 5);
     {
         uint8_t *info = g_track_info;
         uint32_t lit = 0;
@@ -1446,6 +1492,6 @@ int32_t GAMEAPI track_load(const char *name, uint8_t *track)
             G32(0x4b65f4) = lit;
         }
     }
-    CALL0(0x40b5b0);
+    GCALL(0x40b5b0, track_tv_spots)();
     return 1;
 }

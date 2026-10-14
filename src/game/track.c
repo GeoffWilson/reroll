@@ -11,19 +11,20 @@
 #include "../runtime.h"
 #include "body.h"
 #include "fixed.h"
+#include "gamefn.h"
 #include "physics.h"
 #include "../coverage.h"
 
 
-#define g_track_rows (*(uint8_t **)0x6bfad4)
-#define g_track_cells (*(uint8_t **)0x6bfaf8)
-#define g_track_tiles (*(uint8_t ***)0x6bfac0)
-#define g_track_planes (*(uint32_t **)0x6bfadc)
-#define g_track_objects (*(uint8_t ***)0x6bfb3c)
-#define g_track_polygon_lists (*(uint8_t **)0x6bfb40)
-#define g_contact_slots (*(uint8_t **)0x6ce740)
-#define g_contact_list (*(uint8_t **)0x6ce74c)
-#define g_bodies (*(uint8_t ***)0x6b9b80)
+#define g_track_rows (GP(0x6bfad4))
+#define g_track_cells (GP(0x6bfaf8))
+#define g_track_tiles GP(0x6bfac0) /* pointers to the tiles */
+#define g_track_planes (((uint32_t *)GP(0x6bfadc)))
+#define g_track_objects GP(0x6bfb3c) /* pointers to the objects */
+#define g_track_polygon_lists (GP(0x6bfb40))
+#define g_contact_slots (GP(0x6ce740))
+#define g_contact_list (GP(0x6ce74c))
+#define g_bodies GP(0x6b9b80) /* pointers to the bodies */
 #define g_sin_table ((const int16_t *)0x4b24f8)
 #define g_cos_table ((const int16_t *)0x4b2578)
 #define g_body_count (*(uint32_t *)0x6b9b84 & 0xffff)
@@ -48,7 +49,7 @@ uint8_t *GAMEAPI track_nearest_cell(uint8_t *rows, int16_t z, uint32_t x)
             ok = row < 0x100;
         }
         if (ok) {
-            uint8_t *r = rows + row * 0x10, *cells = *(uint8_t **)(r + 0xc);
+            uint8_t *r = rows + row * 0x10, *cells = GP(r + 0xc);
             if (cells) {
                 int n;
                 for (n = 0; n < 6; n++, r += 2) {
@@ -90,7 +91,7 @@ uint8_t *GAMEAPI track_cell(int32_t x, int32_t y, int32_t z, int32_t *off_track)
 {
     uint32_t row_z = (uint32_t)((z >> 24) + 0x80), column = (uint32_t)((x >> 24) + 0x80);
     uint32_t height = (uint32_t)((y >> 24) + 0x20) & 0xffff, column16 = column & 0xffff;
-    uint8_t *row = g_track_rows + (row_z & 0xffff) * 0x10, *cells = *(uint8_t **)(row + 0xc), *layer;
+    uint8_t *row = g_track_rows + (row_z & 0xffff) * 0x10, *cells = GP(row + 0xc), *layer;
     uint16_t *cell = 0;
     int32_t index = 0, n;
 
@@ -140,8 +141,8 @@ uint8_t *GAMEAPI track_cell(int32_t x, int32_t y, int32_t z, int32_t *off_track)
 void GAMEAPI object_polygon_test(uint8_t *body, uint8_t *object, const uint8_t *polygon, uint8_t *slot,
                                  int32_t *out, int32_t dt)
 {
-    const uint8_t *model = *(uint8_t **)(object + 0x10), *planes = *(uint8_t **)(object + 0x2c), *face;
-    const int16_t *vertices = (const int16_t *)(*(uint8_t **)(model + 0x40) - 8);
+    const uint8_t *model = GP(object + 0x10), *planes = GP(object + 0x2c), *face;
+    const int16_t *vertices = (const int16_t *)(GP(model + 0x40) - 8);
     uint32_t info = U32(polygon, 0x10), i;
     int16_t x = (int16_t)(U32(object, 0x34) >> 16), y = (int16_t)(U32(object, 0x38) >> 16),
             z = (int16_t)(U32(object, 0x3c) >> 16);
@@ -204,7 +205,7 @@ void GAMEAPI object_polygon_test(uint8_t *body, uint8_t *object, const uint8_t *
 int32_t GAMEAPI object_contacts(uint8_t *body, uint8_t *object, uint8_t *slot, int32_t dt)
 {
     uint32_t count = *(uint16_t *)(body + 0x15e), angle = 0x100 - object[0x199];
-    uint8_t *entry = *(uint8_t **)(body + 0x158) + count * 16, *model = *(uint8_t **)(object + 0x10);
+    uint8_t *entry = GP(body + 0x158) + count * 16, *model = GP(object + 0x10);
     const uint8_t *polygon = model + *(const uint16_t *)(model + 0x34);
     int32_t x = I32(slot, 0x08), z = I32(slot, 0x10), vx = I32(slot, 0x14), vz = I32(slot, 0x1c);
     int32_t ox = I32(object, 0x34) >> 8, oz = I32(object, 0x3c) >> 8, dx = x - ox, dz = z - oz;
@@ -216,13 +217,13 @@ int32_t GAMEAPI object_contacts(uint8_t *body, uint8_t *object, uint8_t *slot, i
     I32(slot, 0x1c) = fix_mul8(-vx, s) + fix_mul8(vz, c);
     I32(slot, 0x14) = fix_mul8(vz, s) + fix_mul8(vx, c);
     for (i = 0; i < model[0x27]; i++, polygon += 0x14) {
-        if (((*(uint32_t **)(object + 0x194))[i] & 0xf000000) == 0x5000000 || !(U32(polygon, 0x10) & 0x1f0000))
+        if (((((uint32_t *)GP(object + 0x194)))[i] & 0xf000000) == 0x5000000 || !(U32(polygon, 0x10) & 0x1f0000))
             continue;
         object_polygon_test(body, object, polygon, slot, out, dt);
         if (out[7]) {
             count++;
-            U32(entry, 0xc) = (uint32_t)polygon;
-            U32(entry, 8) = (uint32_t)object;
+            U32(entry, 0xc) = (uint32_t)(uintptr_t)polygon;
+            U32(entry, 8) = (uint32_t)(uintptr_t)object;
             entry[1] = object[0x199];
             U32(entry, 4) = 0xfffffffc;
             entry[0] = (uint8_t)((entry[0] & 0xf1) | 1);
@@ -241,12 +242,12 @@ int32_t GAMEAPI object_contacts(uint8_t *body, uint8_t *object, uint8_t *slot, i
  * kind 5). */
 void GAMEAPI body_object_contacts(uint8_t *body, uint8_t *slot, int32_t dt)
 {
-    uint32_t record = *(uint32_t *)(U32(body, 0x0c) & ~1u), n = (record >> 19) & 7;
-    uint8_t **object = (uint8_t **)((uint8_t *)g_track_objects + 4 + (record >> 22) * 4);
+    uint32_t record = *(uint32_t *)(uintptr_t)(U32(body, 0x0c) & ~1u), n = (record >> 19) & 7;
+    uint8_t *object = g_track_objects + 4 + (record >> 22) * 4;
 
-    for (; n; n--, object++)
-        if ((*object)[0x19a] != 5)
-            object_contacts(body, *object, slot, dt);
+    for (; n; n--, object += 4)
+        if (GP(object)[0x19a] != 5)
+            object_contacts(body, GP(object), slot, dt);
 }
 
 /* A track contact as recorded in a body's list (16 bytes from +0x154):
@@ -261,7 +262,7 @@ static void add_contact(uint8_t *entry, uint32_t kind, uint32_t corner, uint8_t 
     U32(entry, 4) = key;
     entry[0] = (uint8_t)((entry[0] & 0xf0) | (kind & 0xf));
     U32(entry, 8) = plane;
-    U32(entry, 0xc) = (uint32_t)vertex;
+    U32(entry, 0xc) = (uint32_t)(uintptr_t)vertex;
     entry[1] = (uint8_t)corner;
 }
 
@@ -311,18 +312,18 @@ void GAMEAPI polygon_contacts(uint8_t *slot, const uint8_t *polygons, uint8_t *b
     uint32_t w0 = *(const uint16_t *)polygons, w2 = *(const uint16_t *)(polygons + 4);
     uint32_t column = w0 >> 10, row = w0 & 0x3ff, rows = (w2 >> 8) & 0xf, columns = w2 >> 12;
     uint32_t tile_index = polygons[2] & 0x7f, radius = w2 & 0xff;
-    uint8_t *tile = g_track_tiles[tile_index];
+    uint8_t *tile = GP(g_track_tiles + tile_index * 4);
     int32_t width = I32(tile, 8), stride = width + 1, skip = width - (int32_t)columns;
     int32_t first = stride * (int32_t)row + (int32_t)column;
-    const int16_t *vertex = (const int16_t *)(U32(tile, 0x20) + first * 8), *v;
-    const uint8_t *plane_row = (const uint8_t *)(U32(tile, 0x50) + (first - (int32_t)row) * 8);
+    const int16_t *vertex = (const int16_t *)(uintptr_t)(U32(tile, 0x20) + first * 8), *v;
+    const uint8_t *plane_row = (const uint8_t *)(uintptr_t)(U32(tile, 0x50) + (first - (int32_t)row) * 8);
     int32_t cx = centre[0], cy = centre[1], cz = centre[2];
     int32_t threshold = (int32_t)(radius * radius + (uint32_t)reach) >> 6;
     uint32_t nearest_distance = 0x7fffffff, nearest_key = 0, key, start_key;
     uint16_t distances[256], *d;
     int32_t last_plane = 0, test = 0;
     uint32_t r, c;
-    uint8_t *list = *(uint8_t **)(body + 0x154), *entry;
+    uint8_t *list = GP(body + 0x154), *entry;
 
     start_key = tile_index | (column & 0xff) << 8 | row << 16;
     d = distances;
@@ -477,7 +478,7 @@ void GAMEAPI polygon_contacts(uint8_t *slot, const uint8_t *polygons, uint8_t *b
 
             if (side == 0 ? column != left : columns + column != right)
                 continue;
-            walls = (const uint16_t *)(U32(tile, 0x38) + row * 4);
+            walls = (const uint16_t *)(uintptr_t)(U32(tile, 0x38) + row * 4);
             index = (int32_t)(row + 1) * stride;
             key = start_key;
             if (side == 0) {
@@ -489,7 +490,7 @@ void GAMEAPI polygon_contacts(uint8_t *slot, const uint8_t *polygons, uint8_t *b
                 kind = 7;
                 index = index + ((int32_t)right - width) - 1;
             }
-            at = (const int16_t *)(U32(tile, 0x20) + index * 8);
+            at = (const int16_t *)(uintptr_t)(U32(tile, 0x20) + index * 8);
             for (r = 0; r < rows; r++) {
                 uint16_t wall = side == 0 ? walls[0] : walls[1];
 
@@ -528,16 +529,16 @@ void GAMEAPI polygon_contacts(uint8_t *slot, const uint8_t *polygons, uint8_t *b
 void GAMEAPI track_contacts_find(int32_t dt)
 {
     uint8_t *slots = g_contact_slots, *cursor = g_contact_list;
-    uint8_t **bodies = g_bodies;
+    uint8_t *bodies = g_bodies;
     uint32_t n = g_body_count, i;
 
     for (i = 0; i < n; i++) {
-        uint8_t *b = bodies[i];
+        uint8_t *b = GP(bodies + i * 4);
         uint8_t *slot = slots + b[(int8_t)b[RIGIDITY] + 0x140] * 0x48, *cell, *list;
         int32_t hx, hy, hz, cx, cy, cz, off_track, reach, count;
         int16_t centre[3];
 
-        U32(b, 0x154) = (uint32_t)cursor;
+        U32(b, 0x154) = (uint32_t)(uintptr_t)cursor;
         I32(slot, 0x08) = I32(b, POSITION) >> 8;
         I32(slot, 0x0c) = I32(b, POSITION + 4) >> 8;
         I32(slot, 0x10) = I32(b, POSITION + 8) >> 8;
@@ -561,7 +562,7 @@ void GAMEAPI track_contacts_find(int32_t dt)
                 U32(b, 0x128) = 0x10;
                 continue;
             }
-            cell = (uint8_t *)(U32(b, 0x0c) & ~1u);
+            cell = (uint8_t *)(uintptr_t)(U32(b, 0x0c) & ~1u);
         }
         centre[0] = (int16_t)(cx >> 8);
         centre[1] = (int16_t)(cy >> 8);
@@ -586,9 +587,9 @@ void GAMEAPI track_contacts_find(int32_t dt)
     n = g_body_count;
     bodies = g_bodies;
     for (i = 0; i < n; i++) {
-        uint8_t *b = bodies[i];
+        uint8_t *b = GP(bodies + i * 4);
 
-        U32(b, 0x158) = (uint32_t)cursor;
+        U32(b, 0x158) = (uint32_t)(uintptr_t)cursor;
         if ((U32(b, FLAGS) & 0x200) || (U32(b, FLAGS) & 0x1ff) == 4)
             continue;
         body_object_contacts(b, slots + b[(int8_t)b[RIGIDITY] + 0x140] * 0x48, dt);

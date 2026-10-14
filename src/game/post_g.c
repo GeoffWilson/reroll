@@ -19,10 +19,11 @@
 #include "../runtime.h"
 #include "body.h"
 #include "fixed.h"
+#include "gamefn.h"
 #include "physics.h"
 
-#define g_race (*(uint8_t **)0x4b1960)
-#define g_snatch (*(uint8_t **)0x5d1fc0)
+#define g_race GP(0x4b1960)
+#define g_snatch GP(0x5d1fc0)
 #define g_early_ticks (*(int32_t *)0x4d3dac)
 #define g_snatches_live (*(uint8_t *)0x6b9d43)
 #define g_voice_count (*(int32_t *)0x4b1c8c)
@@ -38,14 +39,15 @@
 #define g_grudge_levels ((const uint16_t *)0x4a7c68)
 #define g_car_slots ((uint8_t *)0x6bfb80)
 #define CAR_SLOT_SIZE 0x274
-#define SLOT_CAR(i) (*(uint8_t **)(g_car_slots + (i) * CAR_SLOT_SIZE))
+#define SLOT_CAR(i) GP(g_car_slots + (i) * CAR_SLOT_SIZE)
 #define SLOT_DISTANCE(i) (*(int32_t *)(g_car_slots + (i) * CAR_SLOT_SIZE + 0x34))
 
 #define I32(p, off) (*(int32_t *)((p) + (off)))
 #define S16(p, off) (*(int16_t *)((p) + (off)))
 #define U16(p, off) (*(uint16_t *)((p) + (off)))
 #define SHL(x, n) ((int32_t)((uint32_t)(int32_t)(x) << (n)))
-#define PTR(p, off) (*(uint8_t **)((p) + (off)))
+#define PTR(p, off) GP((p) + (off))
+#define PTR_SET(p, off, v) (*(uint32_t *)((p) + (off)) = (uint32_t)(uintptr_t)(v))
 
 #define STATE 0x188
 #define STEPS 0x180
@@ -55,45 +57,31 @@
 #define GRAB_TIME 0x2a37
 
 /* Still original. */
-typedef void(GAMEAPI *body_fn)(uint8_t *body);
-typedef void(GAMEAPI *place_fn)(uint8_t *body, int32_t x, int32_t y, int32_t z);
-typedef void(GAMEAPI *sound_at_fn)(int32_t sound, int32_t a, int32_t b, int32_t c, const void *pos, uint32_t id);
-typedef uint32_t(GAMEAPI *sound_move_fn)(int32_t a, int32_t sound, int32_t b, int32_t c, int32_t d, const void *pos,
-                                         const void *vel, uint32_t id);
-typedef void(GAMEAPI *voice_stop_fn)(uint32_t voice);
-typedef void(GAMEAPI *blast_fn)(const int32_t *pos, const int32_t *dir, int32_t a, int32_t b, int32_t c);
-typedef int32_t(GAMEAPI *place_test_fn)(uint8_t *car, int32_t *pos, uint8_t *orientation, int32_t *matrix, int32_t a,
-                                        int32_t *out);
-typedef void(GAMEAPI *car_int_fn)(uint8_t *car, int32_t a);
-typedef void(GAMEAPI *place_car_fn)(uint8_t *car, int32_t *pos, uint8_t *orientation, int32_t *matrix, uint32_t line,
-                                    uint32_t node, int32_t found);
-typedef int32_t(GAMEAPI *int_fn)(void);
-typedef void(GAMEAPI *void_fn)(void);
-typedef void(GAMEAPI *hit_message_fn)(uint32_t victim, uint32_t attacker, int32_t kind);
-
-#define sprite_unlink ((body_fn)0x4612a0)
-#define sprite_place ((place_fn)0x460ff0)
-#define body_remove ((body_fn)0x419300)
-#define sound_at ((sound_at_fn)0x471d50)
-#define sound_moving ((sound_move_fn)0x471e60)
-#define sound_stop ((voice_stop_fn)0x471f40)
-#define blast ((blast_fn)0x42aa30)
-#define car_place_test ((place_test_fn)0x4687f0)
-#define car_place_reset ((car_int_fn)0x468f80)
-#define car_place ((place_car_fn)0x468bb0)
-#define net_is_game ((int_fn)0x45ef80)
-#define net_is_host ((int_fn)0x45eed0)
-#define net_local_car ((int_fn)0x48cf20)
-#define net_send_snatched ((void_fn)0x460a90)
-#define hit_message ((hit_message_fn)0x4600a0)
-#define snatch_mesh ((body_fn)0x48f930)
+#define sprite_unlink GCALL(0x4612a0, object_grid_unlink2)
+#define sprite_place GCALL(0x460ff0, object_grid_link2_at)
+#define body_remove GCALL(0x419300, body_retire)
+#define sound_at(sound, a, b, c, pos, id) \
+    GCALL(0x471d50, sound_play_flagged)(sound, a, b, c, (uint32_t)(uintptr_t)(pos), id)
+#define sound_moving(a, sound, b, c, d, pos, vel, id) \
+    GCALL(0x471e60, sound_moving_flagged)(a, sound, b, c, d, (uint32_t)(uintptr_t)(pos), (uint32_t)(uintptr_t)(vel), id)
+#define sound_stop GCALL(0x471f40, sound_voice_stop)
+#define blast GCALL(0x42aa30, explosion_effects)
+#define car_place_test GCALL(0x4687f0, respawn_try)
+#define car_place_reset GCALL(0x468f80, car_respawn_sparks)
+#define car_place GCALL(0x468bb0, respawn_place)
+#define net_is_game GCALL(0x45ef80, net_state_game)
+#define net_is_host GCALL(0x45eed0, net_state_host)
+#define net_local_car GCALL(0x48cf20, net_local_slot)
+#define net_send_snatched GCALL(0x460a90, net_snatched_send)
+#define hit_message GCALL(0x4600a0, net_kill_message)
+#define snatch_mesh GCALL(0x48f930, snatch_mesh_update)
 
 /* 0x46e3c0: any of the six animated textures (0x6002e0, 0x84 apart) on. */
 int32_t GAMEAPI texture_anim_active(void)
 {
     const uint8_t *p;
 
-    for (p = (const uint8_t *)0x6002e0; (uint32_t)p < 0x6005f8; p += 0x84)
+    for (p = (const uint8_t *)0x6002e0; (uint32_t)(uintptr_t)p < 0x6005f8; p += 0x84)
         if (*p)
             return 1;
     return 0;
@@ -316,7 +304,7 @@ void GAMEAPI snatch_pick_target(uint8_t *owner, uint8_t *snatch)
     uint8_t *target = (uint8_t *)1;
 
     if (!count) {
-        PTR(snatch, TARGET) = (uint8_t *)1;
+        PTR_SET(snatch, TARGET, 1);
         return;
     }
     for (i = 0; i < count; i++) {
@@ -332,7 +320,7 @@ void GAMEAPI snatch_pick_target(uint8_t *owner, uint8_t *snatch)
             best = d;
         }
     }
-    PTR(snatch, TARGET) = target;
+    PTR_SET(snatch, TARGET, target);
 }
 
 /* 0x48ea80: where the snatch aims: ahead of the target's nose, plus its velocity. */
@@ -765,21 +753,22 @@ void GAMEAPI snatch_swap(uint8_t *snatch)
     uint32_t slot;
 
     snatch_drop_point(snatch, g_snatch_drop);
-    if (!car_place_test(PTR(snatch, TARGET), g_snatch_drop, orientation, g_snatch_matrix, 0, &found)) {
+    if (!car_place_test(PTR(snatch, TARGET), g_snatch_drop, (const int32_t *)orientation, (int16_t *)g_snatch_matrix, 0,
+                        (uint32_t *)&found)) {
         I32(snatch, STATE) = 4;
         I32(snatch, STEPS) = 0;
         return;
     }
     slot = U16(PTR(snatch, OWNER), 0x64e);
     car_place_reset(PTR(snatch, TARGET), 1);
-    car_place(PTR(snatch, TARGET), g_snatch_drop, orientation, g_snatch_matrix,
-              *(uint32_t *)(g_car_slots + slot * CAR_SLOT_SIZE + 0x64),
-              *(uint32_t *)(g_car_slots + slot * CAR_SLOT_SIZE + 0x68), found);
+    car_place(PTR(snatch, TARGET), g_snatch_drop, (const int32_t *)orientation, (const int16_t *)g_snatch_matrix,
+              GP(g_car_slots + slot * CAR_SLOT_SIZE + 0x64),
+              *(uint32_t *)(g_car_slots + slot * CAR_SLOT_SIZE + 0x68), (uint32_t)found);
     sound_at(0x23, 6, 0x400, 16000, snatch + 0x34, PTR(snatch, OWNER)[0x6a4]);
     snatch_copy_motion(snatch);
     t = PTR(snatch, TARGET);
     o = PTR(snatch, OWNER);
-    PTR(t, 0x680) = o;
+    PTR_SET(t, 0x680, o);
     t[0x688] = 0x5a;
     I32(t, 0x684) = I32(t, 0x6fc);
     car_kick_forward(o, 2);

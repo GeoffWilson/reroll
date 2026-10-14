@@ -20,6 +20,7 @@
  * else is called by address. */
 #include "../runtime.h"
 #include "physics.h"
+#include "gamefn.h"
 
 #define U8(p, off) (*(uint8_t *)((uint8_t *)(uintptr_t)(p) + (off)))
 #define U16(p, off) (*(uint16_t *)((uint8_t *)(uintptr_t)(p) + (off)))
@@ -32,41 +33,35 @@
 #define A(x) ((uint32_t)(uintptr_t)(x))
 #define PTR(a) ((uint8_t *)(uintptr_t)(a))
 
-typedef int32_t(GAMEAPI *xc_fn0)(void);
-typedef int32_t(GAMEAPI *xc_fn1)(uint32_t a);
-typedef int32_t(GAMEAPI *xc_fn2)(uint32_t a, uint32_t b);
-typedef int32_t(GAMEAPI *xc_fn3)(uint32_t a, uint32_t b, uint32_t c);
-typedef int32_t(GAMEAPI *xc_fn4)(uint32_t a, uint32_t b, uint32_t c, uint32_t d);
-typedef int32_t(GAMEAPI *xc_fn5)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e);
-
-#define CALL0(a) (((xc_fn0)(a))())
-#define CALL1(a, x) (((xc_fn1)(a))(A(x)))
-#define CALL2(a, x, y) (((xc_fn2)(a))(A(x), A(y)))
-#define CALL3(a, x, y, z) (((xc_fn3)(a))(A(x), A(y), A(z)))
-#define CALL4(a, x, y, z, w) (((xc_fn4)(a))(A(x), A(y), A(z), A(w)))
-#define CALL5(a, x, y, z, w, v) (((xc_fn5)(a))(A(x), A(y), A(z), A(w), A(v)))
-
 #define X87 "st", "st(1)", "st(2)", "st(3)", "st(4)", "st(5)", "st(6)", "st(7)"
 
 #define CONFIG PTR(G32(0x4b2198))
 #define RACE PTR(G32(0x4b1960))
 
-#define CHOICE_CALLBACK 0x450c00 /* menu_choice_callback(cmd, text, max, &value, key) */
-#define ONOFF_STEP 0x447f20      /* option_onoff_step(value, 1, cmd) -> new value */
-#define MENU_TEXT_GET 0x4481a0   /* (text, -1, key, index) */
-#define SPRINTF 0x4979f0
-#define FE_REPEAT_SELECT 0x4475f0
-#define FE_MENU_GOTO 0x4479d0
-#define FE_MENU_BACK 0x447ab0
-#define SND_SETTINGS_APPLY 0x4705d0
-#define VOICE_PLAY_PLAIN 0x472a90
-#define MENU_STATE_RESET 0x452730
-#define GAME_TIME 0x43692a
+#define choice_callback GCALL(0x450c00, menu_choice_callback) /* (cmd, text, max, &value, key) */
+#define onoff_step GCALL(0x447f20, option_onoff_step)        /* (value, 1, cmd) -> new value */
+#define menu_text(text, key, index) \
+    GCALL(0x4481a0, menu_text_get)((char *)PTR(text), -1, (const char *)PTR(key), index)
+#define xc_sprintf(text, fmt, n) GCALL(0x4979f0, msvc_sprintf)((char *)PTR(text), (const char *)PTR(fmt), n)
+#define repeat_select GCALL(0x4475f0, fe_repeat_select)
+#define menu_goto GCALL(0x4479d0, fe_menu_goto)
+#define menu_back GCALL(0x447ab0, fe_menu_back)
+#define snd_apply GCALL(0x4705d0, snd_settings_apply)
+#define voice_plain GCALL(0x472a90, voice_play_plain)
+#define state_reset GCALL(0x452730, menu_state_reset)
+#define game_time GCALL(0x43692a, game_time_get)
 #define CRT_FTOL 0x497a80
+#if defined(__i386__)
+/* network_restart reads no arguments; the original pushes (1, 0) */
+#define net_restart() ((int32_t(GAMEAPI *)(int32_t, int32_t))(uintptr_t)0x48a840)(1, 0)
+#else
+#define net_restart() GCALL(0x48a840, network_restart)()
+#endif
 
 /* fld dword v; call _ftol: the low dword. */
 static inline int32_t xc_ftol(uint32_t v)
 {
+#if defined(__i386__)
     int32_t r;
 
     __asm__ volatile("flds %1\n\t"
@@ -75,6 +70,14 @@ static inline int32_t xc_ftol(uint32_t v)
                      : "m"(v), "r"(CRT_FTOL)
                      : "ecx", "edx", "memory", "cc", X87);
     return r;
+#else
+    /* _ftol truncates to 64 bits (0x8000000000000000 out of range); eax is
+     * the low half */
+    float f;
+
+    memcpy(&f, &v, 4);
+    return (int32_t)(uint32_t)(int64_t)f;
+#endif
 }
 
 /* ===================================================== comms options */
@@ -85,7 +88,7 @@ static int32_t comm_choice(int32_t cmd, uint32_t text, uint32_t off, uint32_t ma
 {
     uint32_t value = U8(CONFIG, off);
 
-    if (CALL5(CHOICE_CALLBACK, cmd, text, max, &value, key) == 0)
+    if (choice_callback(cmd, (int32_t)text, (int32_t)max, (int32_t *)&value, (int32_t)key) == 0)
         return 0;
     U8(CONFIG, off) = (uint8_t)value;
     return 1;
@@ -114,7 +117,7 @@ int32_t GAMEAPI comm_flowcontrol_option(int32_t cmd, uint32_t text)
 /* 0x450e50: weapons on / off (race +0xa86); returns setting == 0. */
 int32_t GAMEAPI setup_weapons_toggle(int32_t cmd)
 {
-    uint32_t v = (uint32_t)CALL3(ONOFF_STEP, U8(RACE, 0xa86), 1, cmd);
+    uint32_t v = onoff_step(U8(RACE, 0xa86), 1, cmd);
     U8(RACE, 0xa86) = (uint8_t)v;
     return U8(RACE, 0xa86) == 0;
 }
@@ -122,7 +125,7 @@ int32_t GAMEAPI setup_weapons_toggle(int32_t cmd)
 /* 0x450f10: rear view mirror on / off (config +0x25); returns setting == 0. */
 int32_t GAMEAPI setup_mirror_toggle(int32_t cmd)
 {
-    uint32_t v = (uint32_t)CALL3(ONOFF_STEP, U8(CONFIG, 0x25), 1, cmd);
+    uint32_t v = onoff_step(U8(CONFIG, 0x25), 1, cmd);
     U8(CONFIG, 0x25) = (uint8_t)v;
     return U8(CONFIG, 0x25) == 0;
 }
@@ -136,7 +139,7 @@ static int32_t byte_choice(int32_t cmd, uint32_t text, uint32_t base_ptr, uint32
     case 0:
         if (U8(G32(base_ptr), off) > max)
             U8(G32(base_ptr), off) = (uint8_t)max;
-        CALL4(MENU_TEXT_GET, text, -1, key, U8(G32(base_ptr), off) + 2);
+        menu_text(text, key, U8(G32(base_ptr), off) + 2);
         return 1;
     case 1:
         return 1;
@@ -175,7 +178,7 @@ int32_t GAMEAPI setup_daytime_choice(int32_t cmd, uint32_t text)
 void GAMEAPI audio_music_volume_slider(uint32_t value)
 {
     int32_t v = xc_ftol(value);
-    CALL2(0x471b30, v, v);
+    GCALL(0x471b30, sound_cd_volume_keep)((uint32_t)v, (uint32_t)v);
     G16(0x4af610) = U16(RACE, 0xa7e);
 }
 
@@ -184,7 +187,7 @@ void GAMEAPI audio_music_volume_slider(uint32_t value)
 void GAMEAPI audio_effects_volume_slider(uint32_t value)
 {
     int32_t v = xc_ftol(value);
-    CALL1(0x471b80, v);
+    GCALL(0x471b80, sound_volume_set)((uint32_t)v);
     G16(0x4af610) = U16(RACE, 0xa7c);
 }
 
@@ -192,9 +195,9 @@ void GAMEAPI audio_effects_volume_slider(uint32_t value)
  * is up (0x4cb46c). */
 static void sound_switch(uint32_t a, int32_t cmd)
 {
-    G32(a) = (uint32_t)CALL3(ONOFF_STEP, G32(a), 1, cmd);
+    G32(a) = onoff_step(G32(a), 1, cmd);
     if (G32(0x4cb46c) != 0)
-        CALL0(SND_SETTINGS_APPLY);
+        snd_apply();
 }
 
 /* 0x451360: switch 0x4d4548; returns it == 0. */
@@ -209,7 +212,7 @@ int32_t GAMEAPI audio_toggle_4d4548(int32_t cmd)
 int32_t GAMEAPI audio_toggle_4b1c84(int32_t cmd)
 {
     sound_switch(0x4b1c84, cmd);
-    if (CALL0(0x470eb0) == 0)
+    if (GCALL(0x470eb0, sound_voice_flag8)() == 0)
         return 1;
     if (G32(0x4b1c88) != 0)
         return 0;
@@ -220,12 +223,12 @@ int32_t GAMEAPI audio_toggle_4b1c84(int32_t cmd)
  * when sound is up); returns 1 if 0x470e70 says no, else it == 0. */
 int32_t GAMEAPI audio_toggle_4b1c88(int32_t cmd)
 {
-    G32(0x4b1c88) = (uint32_t)CALL3(ONOFF_STEP, G32(0x4b1c88), 1, cmd);
+    G32(0x4b1c88) = onoff_step(G32(0x4b1c88), 1, cmd);
     if (G32(0x4cb46c) != 0) {
-        CALL0(SND_SETTINGS_APPLY);
+        snd_apply();
         G32(0x4cb58c) = 1;
     }
-    if (CALL0(0x470e70) == 0)
+    if (GCALL(0x470e70, sound_voices_crowded)() == 0)
         return 1;
     return G32(0x4b1c88) == 0;
 }
@@ -280,17 +283,17 @@ int32_t GAMEAPI audio_channels_choice(int32_t cmd, uint32_t text)
             n = 8;
         else if (n > 0x40)
             n = 0x40;
-        CALL3(SPRINTF, text, 0x4b0230, n);
+        xc_sprintf(text, 0x4b0230, n);
         return 1;
     case 1:
-        CALL3(SPRINTF, text, 0x4b022c, 0x40);
+        xc_sprintf(text, 0x4b022c, 0x40);
         return 1;
     case 2:
-        CALL1(0x470640, -step);
+        GCALL(0x470640, snd_channel_count_add)(-step);
         return 1;
     case 3:
     case 4:
-        CALL1(0x470640, step);
+        GCALL(0x470640, snd_channel_count_add)(step);
         return 1;
     default:
         return 0;
@@ -307,17 +310,17 @@ int32_t GAMEAPI audio_speaker_choice(int32_t cmd, uint32_t text)
     switch ((uint32_t)(cmd - 0x12)) {
     case 0:
         index = GI32(0x4d454c) == 1 ? 3 : GI32(0x4d454c) == 2 ? 4 : 2;
-        CALL4(MENU_TEXT_GET, text, -1, 0x4b04e8, index);
+        menu_text(text, 0x4b04e8, index);
         return 1;
     case 1:
-        CALL4(MENU_TEXT_GET, text, -1, 0x4b04e8, 1);
+        menu_text(text, 0x4b04e8, 1);
         return 1;
     case 2:
-        CALL2(0x4705f0, 1, 0);
+        GCALL(0x4705f0, snd_speaker_cycle)(1, 0);
         return 1;
     case 3:
     case 4:
-        CALL2(0x4705f0, 0, 0);
+        GCALL(0x4705f0, snd_speaker_cycle)(0, 0);
         return 1;
     default:
         return 0;
@@ -328,8 +331,8 @@ int32_t GAMEAPI audio_speaker_choice(int32_t cmd, uint32_t text)
  * select key's repeat passed, 0x496c60 (next CD track); returns 1, else 0. */
 int32_t GAMEAPI audio_cd_track_action(int32_t action)
 {
-    if (action == 6 && CALL1(FE_REPEAT_SELECT, 0) != 0) {
-        CALL0(0x496c60);
+    if (action == 6 && repeat_select(0) != 0) {
+        GCALL(0x496c60, cdaudio_replay_request)();
         return 1;
     }
     return 0;
@@ -344,10 +347,10 @@ int32_t GAMEAPI audio_cd_shuffle_choice(int32_t cmd, uint32_t text)
 
     switch ((uint32_t)(cmd - 0x12)) {
     case 0:
-        CALL4(MENU_TEXT_GET, text, -1, 0x4b0504, U16(RACE, 0x61e) + 2);
+        menu_text(text, 0x4b0504, U16(RACE, 0x61e) + 2);
         return 1;
     case 1:
-        CALL4(MENU_TEXT_GET, text, -1, 0x4b0504, 1);
+        menu_text(text, 0x4b0504, 1);
         return 1;
     case 2:
         step = 0xffff;
@@ -364,7 +367,7 @@ int32_t GAMEAPI audio_cd_shuffle_choice(int32_t cmd, uint32_t text)
     U16(RACE, 0x61e) = (uint16_t)(U16(RACE, 0x61e) + step);
     if (U16(RACE, 0x61e) > 2)
         U16(RACE, 0x61e) = wrap;
-    CALL1(0x496c50, U16(RACE, 0x61e));
+    GCALL(0x496c50, cdaudio_set_shuffle)(U16(RACE, 0x61e));
     return 1;
 }
 
@@ -375,7 +378,13 @@ int32_t GAMEAPI audio_cd_shuffle_choice(int32_t cmd, uint32_t text)
 int32_t GAMEAPI series_cursor_arrived(int32_t index, int32_t value)
 {
     (void)index;
-    return CALL1(0x4498d0, value);
+#if defined(__i386__)
+    /* what config_series_set leaves in eax */
+    return ((int32_t(GAMEAPI *)(int32_t))(uintptr_t)0x4498d0)(value);
+#else
+    GCALL(0x4498d0, config_series_set)(value);
+    return value; /* the original's eax there: its argument */
+#endif
 }
 
 /* The controls menu's player 0x4cb7e8: config + 0x90 * player. */
@@ -384,7 +393,7 @@ int32_t GAMEAPI series_cursor_arrived(int32_t index, int32_t value)
 /* 0x452350: the player's on / off byte +0x1a2; returns it == 0. */
 int32_t GAMEAPI control_toggle_1a2(int32_t cmd)
 {
-    uint32_t v = (uint32_t)CALL3(ONOFF_STEP, PLAYER_CONFIG(0x1a2), 1, cmd);
+    uint32_t v = onoff_step(PLAYER_CONFIG(0x1a2), 1, cmd);
     PLAYER_CONFIG(0x1a2) = (uint8_t)v;
     return PLAYER_CONFIG(0x1a2) == 0;
 }
@@ -392,7 +401,7 @@ int32_t GAMEAPI control_toggle_1a2(int32_t cmd)
 /* 0x4523c0: the player's on / off byte +0x1a3; returns it == 0. */
 int32_t GAMEAPI control_toggle_1a3(int32_t cmd)
 {
-    uint32_t v = (uint32_t)CALL3(ONOFF_STEP, PLAYER_CONFIG(0x1a3), 1, cmd);
+    uint32_t v = onoff_step(PLAYER_CONFIG(0x1a3), 1, cmd);
     PLAYER_CONFIG(0x1a3) = (uint8_t)v;
     return PLAYER_CONFIG(0x1a3) == 0;
 }
@@ -400,8 +409,8 @@ int32_t GAMEAPI control_toggle_1a3(int32_t cmd)
 /* The sound after a binding change, then the menu's state reset. */
 static int32_t binding_done(void)
 {
-    CALL3(VOICE_PLAY_PLAIN, 0x1b, 0x800, 0x36b0);
-    CALL0(MENU_STATE_RESET);
+    voice_plain(0x1b, 0x800, 0x36b0);
+    state_reset();
     return 1;
 }
 
@@ -425,17 +434,17 @@ int32_t GAMEAPI control_binding_action(int32_t action)
     }
     cursor = GS8(0x4cb588);
     value = U32(G32(0x4cb4b8), cursor * 0x730 + 0x4f8);
-    got = CALL1(0x48a420, U8(CONFIG, player * 0x90 + 0x1a1));
+    got = GCALL(0x48a420, input_capture_binding)(U8(CONFIG, player * 0x90 + 0x1a1));
     if (action < 6)
         return 0;
     if (action <= 7) {
-        if (CALL1(FE_REPEAT_SELECT, 0) == 0)
+        if (repeat_select(0) == 0)
             return 1;
-        CALL0(0x48a560);
+        GCALL(0x48a560, input_capture_any)();
         item = PTR(G32(0x4cb4b8) + GS8(0x4cb588) * 0x730);
         G32(0x4cb7ec) = 1;
         item[7] = 3;
-        CALL3(VOICE_PLAY_PLAIN, 0x20, 0x400, 0x36b0);
+        voice_plain(0x20, 0x400, 0x36b0);
         return 1;
     }
     if (action != 0xa)
@@ -443,11 +452,11 @@ int32_t GAMEAPI control_binding_action(int32_t action)
     if (G32(0x4cb7ec) != 0) {
         if (G32(0x4af448) != 0) {
             if (G32(0x4af43c) != 0x1b)
-                CALL5(0x452640, player, value, 2, 0, G32(0x4af438));
+                GCALL(0x452640, control_entry_set)(player, (int32_t)value, 2, 0, GI32(0x4af438));
         } else {
             if (got == 0)
                 return 1;
-            CALL5(0x452640, player, value, G32(0x5d6238), G32(0x5d6234), G32(0x5d623c));
+            GCALL(0x452640, control_entry_set)(player, (int32_t)value, GI32(0x5d6238), GI32(0x5d6234), GI32(0x5d623c));
         }
         G32(0x4cb7ec) = 0;
         return binding_done();
@@ -462,7 +471,7 @@ int32_t GAMEAPI control_binding_action(int32_t action)
         kind = 2;
     else
         return 1;
-    CALL3(0x4526f0, player, value, kind);
+    GCALL(0x4526f0, control_type_set)(player, (int32_t)value, kind);
     return binding_done();
 }
 
@@ -482,14 +491,14 @@ int32_t GAMEAPI control_pad_choice(int32_t cmd, uint8_t *text)
         return 0;
     pad = U8(CONFIG, player * 0x90 + 0x1a1);
     local = pad;
-    count = CALL0(0x48a010);
+    count = GCALL(0x48a010, joy_device_count_thunk)();
     switch ((uint32_t)(cmd - 0x12)) {
     case 0:
         if (pad == 0xff || count == 0) {
-            CALL4(0x42e6d0, text, 0x20, 0x4b05dc, 0);
+            GCALL(0x42e6d0, text_line_get)(text, 0x20, (const char *)0x4b05dc, 0);
             return 1;
         }
-        name = PTR(CALL1(0x48a590, local));
+        name = GCALL(0x48a590, joy_record)(local);
         if (name == 0) {
             U32(text, 0) = G32(0x4b05f4);
             U32(text, 4) = G32(0x4b05f8);
@@ -536,7 +545,7 @@ int32_t GAMEAPI control_pad_choice(int32_t cmd, uint8_t *text)
     default:
         return 0;
     }
-    CALL2(0x452900, player, local);
+    GCALL(0x452900, control_button_set)(player, local);
     G32(0x4cb58c) = 1;
     return 1;
 }
@@ -562,21 +571,21 @@ int32_t GAMEAPI menu_countdown_handler(int32_t action)
 int32_t GAMEAPI net_host_menu_handler(int32_t action)
 {
     if (action == 0xb) {
-        CALL0(0x452c20);
+        GCALL(0x452c20, net_host_boxes_place)();
         if (G32(0x4cb540) != 0 || G32(0x4af8a0) != 0)
             G32(0x4cb58c) = 1;
         G32(0x4af8a0) = G32(0x4cb540);
         return 0;
     }
     if (action == 0xa) {
-        if (CALL0(0x48d490) == 0) {
+        if (GCALL(0x48d490, net_joined)() == 0) {
             G32(0x4cb524) = 0;
-            CALL2(FE_MENU_GOTO, 0x46, 0);
+            menu_goto(0x46, 0);
         }
-        if (CALL1(0x435d43, 2) == 3) {
+        if (GCALL(0x435d43, network_session_poll)(2) == 3) {
             G32(0x4cb524) = 0;
-            CALL1(0x45f790, 0);
-            CALL2(FE_MENU_GOTO, 0x53, 0);
+            GCALL(0x45f790, network_flag9_set)(0);
+            menu_goto(0x53, 0);
         }
     }
     return 0;
@@ -587,20 +596,20 @@ int32_t GAMEAPI net_host_menu_handler(int32_t action)
 int32_t GAMEAPI net_join_menu_handler(int32_t action)
 {
     if (action == 0xb) {
-        CALL0(0x452c20);
+        GCALL(0x452c20, net_host_boxes_place)();
         if (G32(0x4cb540) != 0 || G32(0x4af8a4) != 0)
             G32(0x4cb58c) = 1;
         G32(0x4af8a4) = G32(0x4cb540);
         return 0;
     }
     if (action == 0xa) {
-        if (CALL0(0x48d490) == 0) {
+        if (GCALL(0x48d490, net_joined)() == 0) {
             G32(0x4cb524) = 0;
-            CALL2(FE_MENU_GOTO, 0x46, 0);
+            menu_goto(0x46, 0);
         }
-        if (CALL1(0x435d43, 0) == 2) {
+        if (GCALL(0x435d43, network_session_poll)(0) == 2) {
             G32(0x4cb524) = 0;
-            CALL2(FE_MENU_GOTO, 0x5b, 0);
+            menu_goto(0x5b, 0);
         }
     }
     return 0;
@@ -626,7 +635,7 @@ int32_t GAMEAPI net_sessions_handler(int32_t action)
     int32_t n;
 
     if (action == 0xb) {
-        CALL0(0x452ce0);
+        GCALL(0x452ce0, net_sessions_box_place)();
         G32(0x4cb58c) = 1;
         return 0;
     }
@@ -638,27 +647,27 @@ int32_t GAMEAPI net_sessions_handler(int32_t action)
         G32(0x4cb168) = (uint32_t)n;
         if (n != 0)
             goto waiting;
-        if (CALL2(0x48a840, 1, 0) == 0) {
-            CALL0(FE_MENU_BACK);
+        if (net_restart() == 0) {
+            menu_back();
             return 0;
         }
-        G32(0x4cb578) = G32(0x4cb57c) = (uint32_t)CALL0(GAME_TIME);
-        if (CALL0(0x48b610) == 0) {
-            CALL0(FE_MENU_BACK);
+        G32(0x4cb578) = G32(0x4cb57c) = game_time();
+        if (GCALL(0x48b610, net_sessions_search_start)() == 0) {
+            menu_back();
             return 0;
         }
         n = GI32(0x4cb168);
     }
     if (n != 0)
         goto waiting;
-    if ((uint32_t)CALL0(GAME_TIME) <= G32(0x4cb57c) + 0x1f4)
+    if (game_time() <= G32(0x4cb57c) + 0x1f4)
         goto waiting;
-    if (CALL0(0x48b6d0) == 0) {
-        CALL0(FE_MENU_BACK);
+    if (GCALL(0x48b6d0, net_sessions_search_poll)() == 0) {
+        menu_back();
         return 0;
     }
-    G32(0x4cb57c) = (uint32_t)CALL0(GAME_TIME);
-    if (CALL4(0x48b780, 0x32, 0x4cb0d8, 0x4c3018, 0x4c98f4) != 1)
+    G32(0x4cb57c) = game_time();
+    if (GCALL(0x48b780, network_sessions_list)(0x32, (int32_t *)0x4cb0d8, (uint32_t *)0x4c3018, (uint32_t *)0x4c98f4) != 1)
         return 0;
     if (CONFIG[0x80] < 2 || GI32(0x4cb0d8) <= 0)
         return 0;
@@ -669,13 +678,13 @@ waiting:
     if (G32(0x4cb580) == 0) {
         if (G32(0x4cb168) != 0)
             return 0;
-        if ((uint32_t)CALL0(GAME_TIME) <= G32(0x4cb578) + wait * 1000)
+        if (game_time() <= G32(0x4cb578) + wait * 1000)
             return 0;
     }
     if (G32(0x4cb168) == 0)
-        CALL0(0x48b6d0);
+        GCALL(0x48b6d0, net_sessions_search_poll)();
     G32(0x4cb524) = 0;
-    CALL2(FE_MENU_GOTO, 0x55, 0);
+    menu_goto(0x55, 0);
     return 0;
 }
 
@@ -696,7 +705,7 @@ int32_t GAMEAPI pickup_fallen_hit(uint8_t *body, uint8_t *other, int32_t event)
 {
     (void)other;
     (void)event;
-    CALL1(0x458320, body);
+    GCALL(0x458320, pickup_fallen)(body);
     return 0;
 }
 
@@ -709,14 +718,14 @@ int32_t GAMEAPI homer_hit(uint8_t *body, uint8_t *other, int32_t event)
 {
     uint8_t *owner;
 
-    CALL2(0x459610, body, 0);
+    GCALL(0x459610, homer_end)(body, 0);
     if (other == 0)
         return 0;
     if ((U32(other, 0) & 0x1ff) == 3) {
-        CALL2(0x4599c0, other, event);
+        GCALL(0x4599c0, car_blast_hit)(other, (const uint8_t *)(uintptr_t)(uint32_t)event);
         owner = PTR(U32(body, 0x18c));
         if (owner != 0 && U8(other, 0x70c) != 8)
-            CALL3(0x4600a0, U16(other, 0x64e), U16(owner, 0x64e), 0xa);
+            GCALL(0x4600a0, net_kill_message)(U16(other, 0x64e), U16(owner, 0x64e), 0xa);
     }
     U32(U32(body, 0x18c), 0) |= 0x20000;
     return 0;
@@ -728,7 +737,7 @@ int32_t GAMEAPI snatch_hit(uint8_t *body, uint8_t *other, int32_t event)
 {
     (void)other;
     (void)event;
-    CALL2(0x48ddd0, body, 1);
+    GCALL(0x48ddd0, snatch_finish)(body, 1);
     return 0;
 }
 
@@ -753,14 +762,21 @@ int32_t GAMEAPI name_entry_action(uint32_t key)
     if (b < 0 && b >= (int32_t)G32(0x4cb49c))
         return 0;
     r = G32(0x4cb4b8) + (uint32_t)b * 0x730;
-    return ((int32_t GAMEAPI(*)(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t))0x449160)(
-        key, U32(r, 0x518), U32(r, 0x51c), U32(r, 0x520), U32(r, 0x524), U32(r, 0x528), U32(r, 0x52c), U32(r, 0x530));
+    return GCALL(0x449160, name_entry_input)(key, PTR(U32(r, 0x518)), (int32_t)U32(r, 0x51c), (int32_t)U32(r, 0x520),
+                                             U32(r, 0x524), (int32_t)U32(r, 0x528), U32(r, 0x52c), U32(r, 0x530));
 }
 
 /* 0x44ffa0: jmp 0x405320 (the records menu's reset action, slot
  * 0x4ca300): the same stack, so a jump. */
 void records_reset_thunk(void); /* asm */
+#if defined(__i386__)
 __asm__(".globl records_reset_thunk\n"
         "records_reset_thunk:\n\t"
         "movl $0x405320, %eax\n\t"
         "jmp *%eax\n");
+#else
+void records_reset_thunk(void)
+{
+    GCALL(0x405320, records_defaults)();
+}
+#endif

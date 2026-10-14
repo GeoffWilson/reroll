@@ -45,18 +45,23 @@
 #include "../runtime.h"
 #include "physics.h"
 #include "winapi.h"
+#include "gamefn.h"
 
 #define U8(p, off) (*(uint8_t *)((uint8_t *)(p) + (off)))
 #define S8(p, off) (*(int8_t *)((uint8_t *)(p) + (off)))
 #define U16(p, off) (*(uint16_t *)((uint8_t *)(p) + (off)))
 #define I32(p, off) (*(int32_t *)((uint8_t *)(p) + (off)))
 #define U32(p, off) (*(uint32_t *)((uint8_t *)(p) + (off)))
-#define PTR(p, off) (*(uint8_t **)((uint8_t *)(p) + (off)))
-#define G8(a) (*(uint8_t *)(a))
-#define G16(a) (*(uint16_t *)(a))
-#define G32(a) (*(uint32_t *)(a))
-#define GI32(a) (*(int32_t *)(a))
-#define GPTR(a) (*(uint8_t **)(a))
+/* pointers in game memory are 32 bits: PTR / GPTR read one, SETPTR /
+ * GSETPTR store one */
+#define PTR(p, off) ((uint8_t *)(uintptr_t)U32(p, off))
+#define SETPTR(p, off, v) (U32(p, off) = A(v))
+#define G8(a) (*(uint8_t *)(uintptr_t)(a))
+#define G16(a) (*(uint16_t *)(uintptr_t)(a))
+#define G32(a) (*(uint32_t *)(uintptr_t)(a))
+#define GI32(a) (*(int32_t *)(uintptr_t)(a))
+#define GPTR(a) ((uint8_t *)(uintptr_t)G32(a))
+#define GSETPTR(a, v) (G32(a) = A(v))
 
 #define STDCALL __attribute__((stdcall))
 
@@ -75,26 +80,16 @@ uint8_t *GAMEAPI crtc_getptd(void);
 
 /* ------------------------------------------------- other groups' functions */
 
-typedef void *(GAMEAPI *malloc_fn)(uint32_t size);
-typedef void(GAMEAPI *free_fn)(void *p);
-typedef void *(GAMEAPI *calloc_fn)(uint32_t n, uint32_t size);
-typedef char *(GAMEAPI *strcpy_fn)(char *dst, const char *src);
-typedef char *(GAMEAPI *strncpy_fn)(char *dst, const char *src, uint32_t n);
-typedef int32_t(GAMEAPI *vsnprintf_fn)(char *buf, uint32_t n, const char *fmt, __builtin_va_list ap);
-typedef int32_t(GAMEAPI *isctype_fn)(int32_t c, int32_t mask);
-typedef int32_t(STDCALL *winmain_fn)(uint32_t inst, uint32_t prev, uint8_t *cmdline, uint32_t show);
-typedef void(GAMEAPI *exit_fn)(int32_t code);
-typedef void(GAMEAPI *vfn)(void);
-#define rt_malloc ((malloc_fn)0x4982c2)
-#define rt_free ((free_fn)0x49827a)
-#define rt_calloc ((calloc_fn)0x49946c)
-#define rt_strcpy ((strcpy_fn)0x498450)
-#define rt_strcat ((strcpy_fn)0x498460)
-#define rt_strncpy ((strncpy_fn)0x498350)
-#define rt_vsnprintf ((vsnprintf_fn)0x49972a)
-#define rt_isctype ((isctype_fn)0x498051)
-#define game_winmain ((winmain_fn)0x4351e0)
-#define rt_exit ((exit_fn)0x498c89)
+#define rt_malloc(n) ((uint8_t *)GCALL(0x4982c2, msvc_malloc)(n))
+#define rt_free(p) GCALL(0x49827a, msvc_free)(p)
+#define rt_calloc(n, size) ((uint8_t *)GCALL(0x49946c, msvc_calloc)(n, size))
+#define rt_strcpy GCALL(0x498450, msvc_strcpy)
+#define rt_strcat GCALL(0x498460, msvc_strcat)
+#define rt_strncpy GCALL(0x498350, msvc_strncpy)
+#define rt_vsnprintf GCALL(0x49972a, msvc_vsnprintf)
+#define rt_isctype GCALL(0x498051, msvc_isctype)
+#define game_winmain GCALL(0x4351e0, game_main)
+#define rt_exit GCALL(0x498c89, msvc_exit)
 
 /* ------------------------------------------------------------ runtime data */
 
@@ -172,6 +167,9 @@ typedef void(GAMEAPI *vfn)(void);
 #define F_FILE(s) I32(s, 0x10)
 #define F_BUFSIZ(s) I32(s, 0x18)
 #define F_TMPFNAME(s) PTR(s, 0x1c)
+#define F_PTR_SET(s, v) SETPTR(s, 0, v)
+#define F_BASE_SET(s, v) SETPTR(s, 8, v)
+#define F_TMPFNAME_SET(s, v) SETPTR(s, 0x1c, v)
 
 #define IOREAD 0x1
 #define IOWRT 0x2
@@ -357,7 +355,7 @@ static void lock_file(uint8_t *s)
     if (a >= g_iob && a <= 0x4b50a0)
         crtc_lock((int32_t)((a - g_iob) >> 5) + 0x1c);
     else
-        EnterCriticalSection((void **)(s + 0x20));
+        EnterCriticalSection((uint32_t *)(s + 0x20));
 }
 
 static void unlock_file(uint8_t *s)
@@ -366,7 +364,7 @@ static void unlock_file(uint8_t *s)
     if (a >= g_iob && a <= 0x4b50a0)
         crtc_unlock((int32_t)((a - g_iob) >> 5) + 0x1c);
     else
-        LeaveCriticalSection((void **)(s + 0x20));
+        LeaveCriticalSection((uint32_t *)(s + 0x20));
 }
 
 /* 0x49adb7 / 0x49ae09: the same by index into __piob. */
@@ -375,7 +373,7 @@ static void lock_file2(int32_t i, uint8_t *s)
     if (i < 0x14)
         crtc_lock(i + 0x1c);
     else
-        EnterCriticalSection((void **)(s + 0x20));
+        EnterCriticalSection((uint32_t *)(s + 0x20));
 }
 
 static void unlock_file2(int32_t i, uint8_t *s)
@@ -383,7 +381,7 @@ static void unlock_file2(int32_t i, uint8_t *s)
     if (i < 0x14)
         crtc_unlock(i + 0x1c);
     else
-        LeaveCriticalSection((void **)(s + 0x20));
+        LeaveCriticalSection((uint32_t *)(s + 0x20));
 }
 
 /* =================================================== low-level handles */
@@ -395,17 +393,17 @@ static void lock_fhandle(int32_t fh)
     if (I32(io, 8) == 0) {
         crtc_lock(0x11);
         if (I32(io, 8) == 0) {
-            InitializeCriticalSection((void **)(io + 0xc));
+            InitializeCriticalSection((uint32_t *)(io + 0xc));
             I32(io, 8)++;
         }
         crtc_unlock(0x11);
     }
-    EnterCriticalSection((void **)(pioinfo(fh) + 0xc));
+    EnterCriticalSection((uint32_t *)(pioinfo(fh) + 0xc));
 }
 
 static void unlock_fhandle(int32_t fh)
 {
-    LeaveCriticalSection((void **)(pioinfo(fh) + 0xc));
+    LeaveCriticalSection((uint32_t *)(pioinfo(fh) + 0xc));
 }
 
 static void ioinfo_block_init(uint8_t *block)
@@ -431,7 +429,7 @@ static int32_t alloc_osfhnd(void)
             block = rt_malloc(0x480);
             if (block != 0) {
                 g_nhandle += 0x20;
-                GPTR(g_pioinfo + 4 * i) = block;
+                GSETPTR(g_pioinfo + 4 * i, block);
                 ioinfo_block_init(block);
                 fh = i << 5;
                 lock_fhandle(fh);
@@ -444,18 +442,18 @@ static int32_t alloc_osfhnd(void)
             if (I32(p, 8) == 0) {
                 crtc_lock(0x11);
                 if (I32(p, 8) == 0) {
-                    InitializeCriticalSection((void **)(p + 0xc));
+                    InitializeCriticalSection((uint32_t *)(p + 0xc));
                     I32(p, 8)++;
                 }
                 crtc_unlock(0x11);
             }
-            EnterCriticalSection((void **)(p + 0xc));
+            EnterCriticalSection((uint32_t *)(p + 0xc));
             if (!(U8(p, 4) & FOPEN)) {
                 I32(p, 0) = -1;
                 fh = (int32_t)((p - GPTR(g_pioinfo + 4 * i)) / 0x24) + i * 0x20;
                 goto done;
             }
-            LeaveCriticalSection((void **)(p + 0xc));
+            LeaveCriticalSection((uint32_t *)(p + 0xc));
         }
     }
 done:
@@ -983,17 +981,17 @@ static int32_t crt_isatty(int32_t fh)
 static void getbuf(uint8_t *s)
 {
     g_cflush++;
-    F_BASE(s) = rt_malloc(0x1000);
+    F_BASE_SET(s, rt_malloc(0x1000));
     if (F_BASE(s) == 0) {
         F_FLAG(s) |= IONBF;
-        F_BASE(s) = s + 0x14;
+        F_BASE_SET(s, s + 0x14);
         F_BUFSIZ(s) = 2;
     } else {
         F_FLAG(s) |= IOMYBUF;
         F_BUFSIZ(s) = 0x1000;
     }
     F_CNT(s) = 0;
-    F_PTR(s) = F_BASE(s);
+    F_PTR_SET(s, F_BASE(s));
 }
 
 /* 0x49eb58: _freebuf. */
@@ -1002,8 +1000,8 @@ static void freebuf(uint8_t *s)
     if ((F_FLAG(s) & (IOREAD | IOWRT | IORW)) && (F_FLAG(s) & IOMYBUF)) {
         rt_free(F_BASE(s));
         U16(s, 0xc) &= 0xfbf7;
-        F_PTR(s) = 0;
-        F_BASE(s) = 0;
+        F_PTR_SET(s, 0);
+        F_BASE_SET(s, 0);
         F_CNT(s) = 0;
     }
 }
@@ -1025,7 +1023,7 @@ static int32_t flush(uint8_t *s)
         }
     }
     F_CNT(s) = 0;
-    F_PTR(s) = F_BASE(s);
+    F_PTR_SET(s, F_BASE(s));
     return r;
 }
 
@@ -1091,7 +1089,7 @@ static int32_t flsbuf(int32_t ch, uint8_t *s)
         F_CNT(s) = 0;
         if (!(flag & IOEOF))
             goto error;
-        F_PTR(s) = F_BASE(s);
+        F_PTR_SET(s, F_BASE(s));
         F_FLAG(s) = flag & ~IOREAD;
     }
     flag = F_FLAG(s);
@@ -1103,7 +1101,7 @@ static int32_t flsbuf(int32_t ch, uint8_t *s)
     if (U16(s, 0xc) & (IOMYBUF | IOYOURBUF)) {
         uint8_t *base = F_BASE(s);
         count = (int32_t)(F_PTR(s) - base);
-        F_PTR(s) = base + 1;
+        F_PTR_SET(s, base + 1);
         F_CNT(s) = F_BUFSIZ(s) - 1;
         if (count > 0) {
             written = crt_write(fh, (const char *)base, (uint32_t)count);
@@ -1129,7 +1127,7 @@ error:
 static int32_t putc_lk(int32_t ch, uint8_t *s)
 {
     if (--F_CNT(s) >= 0) {
-        *F_PTR(s)++ = (uint8_t)ch;
+        *(uint8_t *)(uintptr_t)U32(s, 0)++ = (uint8_t)ch;
         return ch & 0xff;
     }
     return flsbuf(ch, s);
@@ -1149,7 +1147,7 @@ static int32_t filbuf(uint8_t *s)
     if (!(flag & (IOMYBUF | IONBF | IOYOURBUF)))
         getbuf(s);
     else
-        F_PTR(s) = F_BASE(s);
+        F_PTR_SET(s, F_BASE(s));
     F_CNT(s) = crt_read(F_FILE(s), (char *)F_BASE(s), (uint32_t)F_BUFSIZ(s));
     if (F_CNT(s) == 0 || F_CNT(s) == -1) {
         F_FLAG(s) |= F_CNT(s) != 0 ? IOERR : IOEOF;
@@ -1165,7 +1163,7 @@ static int32_t filbuf(uint8_t *s)
     if (F_BUFSIZ(s) == 0x200 && (F_FLAG(s) & IOMYBUF) && !(F_FLAG(s) & IOSETVBUF))
         F_BUFSIZ(s) = 0x1000;
     F_CNT(s)--;
-    return *F_PTR(s)++;
+    return *(uint8_t *)(uintptr_t)U32(s, 0)++;
 }
 
 /* 0x4990bd: _fread_lk. */
@@ -1181,7 +1179,7 @@ static uint32_t fread_lk(uint8_t *data, uint32_t size, uint32_t num, uint8_t *s)
             copy_bytes(data, F_PTR(s), n);
             count -= n;
             F_CNT(s) -= (int32_t)n;
-            F_PTR(s) += n;
+            U32(s, 0) += n;
             data += n;
         } else if (count >= bufsize) {
             uint32_t n = bufsize ? count - count % bufsize : count;
@@ -1230,7 +1228,7 @@ static uint32_t fwrite_lk(const char *data, uint32_t size, uint32_t num, uint8_t
             uint32_t n = count < (uint32_t)F_CNT(s) ? count : (uint32_t)F_CNT(s);
             copy_bytes(F_PTR(s), data, n);
             F_CNT(s) -= (int32_t)n;
-            F_PTR(s) += n;
+            U32(s, 0) += n;
             count -= n;
             data += n;
         } else if (count >= bufsize) {
@@ -1283,16 +1281,16 @@ static int32_t stbuf(uint8_t *s)
     if (*slot == 0) {
         *slot = A(rt_malloc(0x1000));
         if (*slot == 0) {
-            F_BASE(s) = s + 0x14;
-            F_PTR(s) = s + 0x14;
+            F_BASE_SET(s, s + 0x14);
+            F_PTR_SET(s, s + 0x14);
             F_BUFSIZ(s) = 2;
             F_CNT(s) = 2;
             goto done;
         }
     }
     F_BUFSIZ(s) = 0x1000;
-    F_BASE(s) = (uint8_t *)(uintptr_t)*slot;
-    F_PTR(s) = (uint8_t *)(uintptr_t)*slot;
+    U32(s, 8) = *slot;
+    U32(s, 0) = *slot;
     F_CNT(s) = 0x1000;
 done:
     U16(s, 0xc) |= 0x1102; /* IOWRT | IOYOURBUF | IOFLRTN */
@@ -1306,8 +1304,8 @@ static void ftbuf(int32_t flag, uint8_t *s)
         flush(s);
         U8(s, 0xd) &= 0xee;
         F_BUFSIZ(s) = 0;
-        F_PTR(s) = 0;
-        F_BASE(s) = 0;
+        F_PTR_SET(s, 0);
+        F_BASE_SET(s, 0);
     }
 }
 
@@ -1324,6 +1322,10 @@ int32_t GAMEAPI crtc_fputs(const char *str, uint8_t *s)
     return done == len ? 0 : -1;
 }
 
+#if !defined(__i386__)
+uint32_t crt_args_pack(const char *fmt, __builtin_va_list ap, uint32_t *words, uint32_t max); /* crt_cb.c */
+#endif
+
 /* 0x497f7a: printf: _vsnprintf (group CB's engine) into a buffer, then the
  * text through the stream as _output puts it (stops at the first failed
  * write: -1). */
@@ -1335,14 +1337,28 @@ int32_t GAMEAPI crtc_printf(const char *format, ...)
     int32_t buffing, n, i, r;
     lock_file2(1, g_stdout);
     buffing = stbuf(g_stdout);
+#if defined(__i386__)
     __builtin_va_start(ap, format);
-    n = rt_vsnprintf(small, sizeof small, format, ap);
+    n = rt_vsnprintf(small, sizeof small, format, (const uint8_t *)ap);
     __builtin_va_end(ap);
+#else
+    /* x86-64: the arguments as the 32-bit stack words _vsnprintf reads
+     * (crt_cb.c's packer, by the format) */
+    uint32_t words[128];
+    __builtin_va_start(ap, format);
+    crt_args_pack(format, ap, words, 128);
+    __builtin_va_end(ap);
+    n = rt_vsnprintf(small, sizeof small, format, (const uint8_t *)words);
+#endif
     if (n < 0) { /* longer than 4 KB: the stdout lock guards the big buffer */
         text = big;
+#if defined(__i386__)
         __builtin_va_start(ap, format);
-        n = rt_vsnprintf(big, sizeof big, format, ap);
+        n = rt_vsnprintf(big, sizeof big, format, (const uint8_t *)ap);
         __builtin_va_end(ap);
+#else
+        n = rt_vsnprintf(big, sizeof big, format, (const uint8_t *)words);
+#endif
         if (n < 0)
             n = sizeof big;
     }
@@ -1368,10 +1384,10 @@ static uint8_t *getstream(void)
     for (i = 0; i < g_nstream; i++) {
         uint8_t *s = PTR(g_piob, 4 * i);
         if (s == 0) {
-            PTR(g_piob, 4 * i) = rt_malloc(0x38);
+            SETPTR(g_piob, 4 * i, rt_malloc(0x38));
             if (PTR(g_piob, 4 * i) != 0) {
-                InitializeCriticalSection((void **)(PTR(g_piob, 4 * i) + 0x20));
-                EnterCriticalSection((void **)(PTR(g_piob, 4 * i) + 0x20));
+                InitializeCriticalSection((uint32_t *)(PTR(g_piob, 4 * i) + 0x20));
+                EnterCriticalSection((uint32_t *)(PTR(g_piob, 4 * i) + 0x20));
                 found = PTR(g_piob, 4 * i);
                 goto init;
             }
@@ -1393,9 +1409,9 @@ init:
         F_FILE(found) = -1;
         F_CNT(found) = 0;
         F_FLAG(found) = 0;
-        F_BASE(found) = 0;
-        F_PTR(found) = 0;
-        F_TMPFNAME(found) = 0;
+        F_BASE_SET(found, 0);
+        F_PTR_SET(found, 0);
+        F_TMPFNAME_SET(found, 0);
     }
 out:
     crtc_unlock(2);
@@ -1500,9 +1516,9 @@ static uint8_t *openfile(const char *name, const char *mode, uint32_t shflag, ui
     g_cflush++;
     F_FLAG(s) = streamflag;
     F_CNT(s) = 0;
-    F_PTR(s) = 0;
-    F_BASE(s) = 0;
-    F_TMPFNAME(s) = 0;
+    F_PTR_SET(s, 0);
+    F_BASE_SET(s, 0);
+    F_TMPFNAME_SET(s, 0);
     F_FILE(s) = fh;
     return s;
 }
@@ -1529,7 +1545,7 @@ static int32_t fclose_lk(uint8_t *s)
             r = -1;
         } else if (F_TMPFNAME(s) != 0) {
             rt_free(F_TMPFNAME(s));
-            F_TMPFNAME(s) = 0;
+            F_TMPFNAME_SET(s, 0);
         }
     }
     F_FLAG(s) = 0;
@@ -1660,9 +1676,9 @@ static int32_t fcloseall(void)
             if ((F_FLAG(s) & (IOREAD | IOWRT | IORW)) && crtc_fclose(s) != -1)
                 count++;
             if (i >= 0x14) {
-                DeleteCriticalSection((void **)(PTR(g_piob, 4 * i) + 0x20));
+                DeleteCriticalSection((uint32_t *)(PTR(g_piob, 4 * i) + 0x20));
                 rt_free(PTR(g_piob, 4 * i));
-                PTR(g_piob, 4 * i) = 0;
+                SETPTR(g_piob, 4 * i, 0);
             }
         }
     }
@@ -1680,10 +1696,10 @@ void GAMEAPI crtc_initstdio(void)
         g_nstream = 0x200;
     else if (g_nstream < 0x14)
         g_nstream = 0x14;
-    g_piob = rt_calloc((uint32_t)g_nstream, 4);
+    GSETPTR(0x6d126c, rt_calloc((uint32_t)g_nstream, 4));
     if (g_piob == 0) {
         g_nstream = 0x14;
-        g_piob = rt_calloc(0x14, 4);
+        GSETPTR(0x6d126c, rt_calloc(0x14, 4));
         if (g_piob == 0)
             crtc_amsg_exit(0x1a);
     }
@@ -2027,7 +2043,7 @@ static int32_t case_lk(int32_t c, uint32_t map, int32_t ctype)
 {
     uint8_t in[4], out[4] = {0, 0, 0, 0};
     int32_t size;
-    const uint16_t *pctype = *(const uint16_t **)0x4b4b00;
+    const uint16_t *pctype = (const uint16_t *)GPTR(0x4b4b00);
     if (c < 0x100) {
         int32_t is = GI32(0x4b4d0c) < 2 ? (pctype[c] & ctype) : rt_isctype(c, ctype);
         if (is == 0)
@@ -2174,7 +2190,7 @@ void GAMEAPI crtc_initterm(uint32_t *first, uint32_t *last)
 {
     for (; first < last; first++)
         if (*first != 0)
-            ((vfn)(uintptr_t)*first)();
+            ((void(GAMEAPI *)(void))(uintptr_t)*first)();
 }
 
 /* 0x498cab: doexit: the atexit table and the terminators unless `quick`,
@@ -2191,7 +2207,7 @@ static void doexit(int32_t code, int32_t quick, int32_t retcaller)
             uint32_t *p;
             for (p = (uint32_t *)(uintptr_t)g_onexitend - 1; A(p) >= g_onexitbegin; p--)
                 if (*p != 0)
-                    ((vfn)(uintptr_t)*p)();
+                    ((void(GAMEAPI *)(void))(uintptr_t)*p)();
         }
         crtc_initterm((uint32_t *)0x4a701c, (uint32_t *)0x4a7024); /* .CRT$XP: _endstdio */
     }
@@ -2274,7 +2290,7 @@ static void ff_msgbanner(void)
     if (g_error_mode == 1 || (g_error_mode == 0 && g_app_type == 1)) {
         nmsg_write(0xfc);
         if (G32(g_pnhheap) != 0)
-            ((vfn)(uintptr_t)G32(g_pnhheap))();
+            ((void(GAMEAPI *)(void))(uintptr_t)G32(g_pnhheap))();
         nmsg_write(0xff);
     }
 }
@@ -2286,7 +2302,7 @@ void GAMEAPI crtc_amsg_exit(int32_t n)
     if (g_error_mode == 1)
         ff_msgbanner();
     nmsg_write((uint32_t)n);
-    ((exit_fn)(uintptr_t)g_aexit_rtn)(0xff);
+    ((void(GAMEAPI *)(int32_t))(uintptr_t)g_aexit_rtn)(0xff); /* _exit 0x498c9a */
 }
 
 /* 0x49f925: _fptrap, the float-conversion table's entries before _fpmath
@@ -2382,7 +2398,7 @@ static void ioinit(void)
     if (block == 0)
         crtc_amsg_exit(0x1b);
     g_nhandle = 0x20;
-    GPTR(g_pioinfo) = block;
+    GSETPTR(g_pioinfo, block);
     ioinfo_block_init(block);
     GetStartupInfoA(si);
     if (U16(si, 0x32) != 0 && U32(si, 0x34) != 0) { /* cbReserved2, lpReserved2 */
@@ -2631,7 +2647,7 @@ static void setenvp(void)
     for (p = (const char *)g_aenvptr; *p != 0; p += str_len(p) + 1)
         if (*p != '=')
             count++;
-    env = rt_malloc((uint32_t)(count * 4 + 4));
+    env = (uint32_t *)rt_malloc((uint32_t)(count * 4 + 4));
     g_environ = A(env);
     if (env == 0)
         crtc_amsg_exit(9);
@@ -2647,7 +2663,7 @@ static void setenvp(void)
         p += len + 1;
     }
     rt_free(g_aenvptr);
-    g_aenvptr = 0;
+    GSETPTR(0x4db2d8, 0);
     *env = 0;
     g_env_initialized = 1;
 }
@@ -2818,7 +2834,7 @@ void GAMEAPI crtc_clock_init(void)
 static void cinit(void)
 {
     if (g_fpinit != 0)
-        ((vfn)(uintptr_t)g_fpinit)();
+        ((void(GAMEAPI *)(void))(uintptr_t)g_fpinit)();
     crtc_initterm((uint32_t *)0x4a7008, (uint32_t *)0x4a7018);
     crtc_initterm((uint32_t *)0x4a7000, (uint32_t *)0x4a7004);
 }
@@ -2844,8 +2860,8 @@ void GAMEAPI crtc_entry(void)
     if (mtinit() == 0)
         fast_error_exit(0x10);
     ioinit();
-    g_acmdln = (uint8_t *)GetCommandLineA();
-    g_aenvptr = get_environment_strings();
+    GSETPTR(0x6d2284, GetCommandLineA());
+    GSETPTR(0x4db2d8, get_environment_strings());
     setargv();
     setenvp();
     cinit();
@@ -2853,7 +2869,7 @@ void GAMEAPI crtc_entry(void)
     GetStartupInfoA(si);
     cmdline = wincmdln();
     show = (U8(si, 0x2c) & 1) ? U16(si, 0x30) : 10;
-    r = game_winmain((uint32_t)(uintptr_t)GetModuleHandleA(0), 0, cmdline, show);
+    r = game_winmain((uint32_t)(uintptr_t)GetModuleHandleA(0), 0, (char *)cmdline, (int32_t)show);
     rt_exit(r);
 }
 
@@ -2888,6 +2904,7 @@ void GAMEAPI crtc_entry(void)
  * IsProcessorFeaturePresent(0) answers for) the fprem loop called the
  * runtime's P5-safe remainder 0x49ca7c; that gives fprem's result on any
  * other CPU, so it is fprem here. errno is crtc_errno. */
+#if defined(__i386__)
 #ifdef REROLL_NATIVE
 #define CC_CALL_RAISE_EXCEPTION "call RaiseException"
 #else
@@ -4499,3 +4516,123 @@ __asm__(".intel_syntax noprefix\n"
         ".long .Lcc_49a716\n"
         ".text\n"
         ".att_syntax prefix\n");
+#else /* x86-64 */
+/* Every caller of these is C on x86-64 (the asm callers in crt_cb.c /
+ * crt_ca.c have C paths there), so they are C with real prototypes. fmod
+ * and atan2 keep the original's x87 core at its control word 0x133f
+ * (extended precision, exceptions masked): fprem's loop, fpatan. Not
+ * reproduced: the error reports through _87except (errno, _matherr) for
+ * NaN, infinite or zero-divisor arguments; the results there are the
+ * masked-exception values (NaN arguments quieted, fmod(inf, y) / fmod(x, 0)
+ * the indefinite NaN, fmod(x, inf) = x). No SEH: nothing raises a
+ * floating-point exception with every exception masked, and there is no
+ * Windows exception dispatch (no fs: thread block) on x86-64. */
+
+static int cc_nan_or_inf(double v)
+{
+    uint64_t q;
+
+    __builtin_memcpy(&q, &v, 8);
+    return (q & 0x7ff0000000000000ull) == 0x7ff0000000000000ull;
+}
+
+static double cc_indefinite(void)
+{
+    uint64_t q = 0xfff8000000000000ull;
+    double d;
+
+    __builtin_memcpy(&d, &q, 8);
+    return d;
+}
+
+/* 0x4987e0 */
+double crtc_fmod(double x, double y)
+{
+    uint16_t old, cw = 0x133f;
+    double r;
+
+    if (x != x || y != y)
+        return x + y;
+    if (cc_nan_or_inf(x) || y == 0.0)
+        return cc_indefinite();
+    if (cc_nan_or_inf(y))
+        return x;
+    __asm__ volatile("fnstcw %1\n\t"
+                     "fldcw %2\n\t"
+                     "fldl %4\n\t"
+                     "fldl %3\n"
+                     "1:\n\t"
+                     "fprem\n\t"
+                     "fnstsw %%ax\n\t"
+                     "testb $4, %%ah\n\t"
+                     "jnz 1b\n\t"
+                     "fstp %%st(1)\n\t"
+                     "fstpl %0\n\t"
+                     "fldcw %1"
+                     : "=m"(r), "=m"(old)
+                     : "m"(cw), "m"(x), "m"(y)
+                     : "eax", "cc", "st", "st(1)");
+    return r;
+}
+
+/* 0x498820: atan2(y, x): fpatan. */
+double crtc_atan2(double y, double x)
+{
+    uint16_t old, cw = 0x133f;
+    double r;
+
+    if (x != x || y != y)
+        return x + y;
+    __asm__ volatile("fnstcw %1\n\tfldcw %2\n\tfldl %3\n\tfldl %4\n\tfpatan\n\tfstpl %0\n\tfldcw %1"
+                     : "=m"(r), "=m"(old)
+                     : "m"(cw), "m"(y), "m"(x)
+                     : "st", "st(1)");
+    return r;
+}
+
+/* 0x49ab37: _powhlp(x, y, &result) for an infinite or NaN argument (the
+ * C99 values, libm's pow); 0 (no error). */
+int32_t crtc_powhlp(double x, double y, double *result)
+{
+    extern double pow(double, double);
+
+    *result = pow(x, y);
+    return 0;
+}
+
+/* 0x4a0f1a / 0x4a0eba: the masked-exception results with the control word
+ * restored (as crt_ca.c's x86-64 _hypot does). */
+static void cc_fpu_cw_set(int32_t cw)
+{
+    uint16_t hw = (uint16_t)cw;
+
+    __asm__ volatile("fldcw %0" : : "m"(hw));
+}
+
+double crtc_except2(int32_t flags, int32_t op, double a, double b, double result, int32_t cw)
+{
+    (void)flags, (void)op, (void)a, (void)b;
+    cc_fpu_cw_set(cw);
+    return result;
+}
+
+double crtc_handle_qnan2(int32_t op, double a, double b, int32_t cw)
+{
+    (void)op;
+    cc_fpu_cw_set(cw);
+    return a + b;
+}
+
+/* 0x49a8e7 / 0x49a8d0: _startOneArgErrorHandling and its two-argument
+ * entry take registers and the caller's x87 frame; only the i386 maths
+ * asm calls them, so on x86-64 they exist for the hook table alone. */
+void GAMEAPI crtc_one_arg_error(void)
+{
+    __builtin_trap();
+}
+
+void GAMEAPI crtc_two_arg_error(void)
+{
+    __builtin_trap();
+}
+#endif

@@ -15,26 +15,25 @@
 #include "../runtime.h"
 #include "body.h"
 #include "fixed.h"
+#include "gamefn.h"
 #include "physics.h"
 #include "../coverage.h"
 
 typedef int32_t(GAMEAPI *normalise_fn)(const int32_t *v, int32_t *out);
-typedef void(GAMEAPI *vector_fn)(int32_t *v);
-typedef void(GAMEAPI *car_blast_fn)(uint8_t *car, const int32_t *direction, int32_t strength);
 #define vec_normalise_float ((normalise_fn)0x4290b0) /* x87, still the original */
-#define blast_direction_adjust ((vector_fn)0x407e90) /* still the original */
-#define car_blast_reaction ((car_blast_fn)0x46d760) /* still the original */
+#define blast_direction_adjust GCALL(0x407e90, direction_fit) /* still the original */
+#define car_blast_reaction GCALL(0x46d760, blast_mark) /* still the original */
 
 #define g_blast_centre ((int32_t *)0x6ccba0)
 #define g_blast_strength (*(int32_t *)0x6ccbb0)
 
-#define g_contact_slots (*(uint8_t **)0x6ce740) /* per body part, 0x48 bytes */
+#define g_contact_slots GP(0x6ce740) /* per body part, 0x48 bytes */
 #define g_gravity (*(int32_t *)0x4acc50)
 #define g_explosion_pending (*(int32_t *)0x6ccbac)
 #define g_explosion_damping (*(int32_t *)0x6cca54)
 #define g_explosion_centre ((int32_t *)0x6ccb90)
 #define g_slow_motion (*(int32_t *)0x5d9b20)
-#define g_slow_motion_body (*(uint8_t **)0x5d9b24)
+#define g_slow_motion_body GP(0x5d9b24)
 #define g_slow_motion_scale (*(int32_t *)0x5d9b2c)
 
 #define FORCE 0x074
@@ -86,8 +85,8 @@ void GAMEAPI body_explosion_damping(uint8_t *body)
 
     if (d2 >= 0x1000)
         return;
-    state = *(const char **)(body + 0x6ac);
-    if ((U32(body, FLAGS) & 0x1ff) == 3 && state != (const char *)0xffffffff && *state)
+    state = (const char *)GP(body + 0x6ac);
+    if ((U32(body, FLAGS) & 0x1ff) == 3 && state != (const char *)(uintptr_t)0xffffffffu && *state)
         return;
     k = d2 * 8 + 0x8000;
     I32(body, VELOCITY) = mul16(k, I32(body, VELOCITY));
@@ -423,10 +422,10 @@ void GAMEAPI body_explosion_force(uint8_t *body)
         fz = -0x1800;
     kind = U32(body, FLAGS) & 0x1ff;
     if (kind == 3) {
-        const char *whole = *(const char *const *)(body + 0x6ac);
+        const char *whole = (const char *)GP(body + 0x6ac);
         int32_t level;
 
-        if (whole != (const char *)-1 && *whole) {
+        if (whole != (const char *)(uintptr_t)0xffffffffu && *whole) {
             int32_t direction[3] = {fx, fy, fz};
 
             COVER(COVER_BLAST_REACTION);

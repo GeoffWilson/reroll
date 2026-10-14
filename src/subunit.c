@@ -85,6 +85,7 @@ static void GAMEAPI hud(uint8_t *slot)
     subunit_active = active;
 }
 
+#if defined(__i386__)
 /* The transforms (cdecl, one argument: the vertex record; the result stays
  * on the FPU stack and in eax / ecx / edx as the original leaves them). */
 void subunit_transform(void);
@@ -125,6 +126,40 @@ void subunit_transform_only(void);
             "    ret\n")
 TRANSFORM_WRAPPER("subunit_transform", "subunit_transform_body");
 TRANSFORM_WRAPPER("subunit_transform_only", "subunit_transform_only_body");
+#else
+/* x86-64: the transforms are C (src/game/orig_wb.c), returning what the
+ * original leaves in st(0); callers reach them through 0x426a20 / 0x426be0
+ * with that prototype (GCALL(0x426a20, subunit_transform_c)). */
+float subunit_transform_c(uint8_t *rec);
+float subunit_transform_only_c(uint8_t *rec);
+#define TRANSLATION ((float *)0x6ccd0c)
+
+static float with_offset(float (*body)(uint8_t *), uint8_t *rec)
+{
+    float saved[3], r;
+    int i;
+    if (!subunit_active)
+        return body(rec);
+    for (i = 0; i < 3; i++) {
+        saved[i] = TRANSLATION[i];
+        TRANSLATION[i] += subunit_offset[i];
+    }
+    r = body(rec);
+    for (i = 0; i < 3; i++)
+        TRANSLATION[i] = saved[i];
+    return r;
+}
+
+static float subunit_transform(uint8_t *rec)
+{
+    return with_offset(subunit_transform_c, rec);
+}
+
+static float subunit_transform_only(uint8_t *rec)
+{
+    return with_offset(subunit_transform_only_c, rec);
+}
+#endif
 
 static const struct hook translation_hook = {"subunit_translation", 0x423ce0, camera_translation,
                                              {0x8b, 0x44, 0x24, 0x04, 0x8b, 0x08, 0xf7, 0xd9}};

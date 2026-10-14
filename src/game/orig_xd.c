@@ -20,6 +20,7 @@
 #include "../runtime.h"
 #include "physics.h"
 #include "com.h"
+#include "gamefn.h"
 
 #define U8(p, off) (*(uint8_t *)((uint8_t *)(uintptr_t)(p) + (off)))
 #define U16(p, off) (*(uint16_t *)((uint8_t *)(uintptr_t)(p) + (off)))
@@ -32,38 +33,25 @@
 #define A(x) ((uint32_t)(uintptr_t)(x))
 #define PTR(a) ((uint8_t *)(uintptr_t)(a))
 
-typedef int32_t(GAMEAPI *xd_fn0)(void);
-typedef int32_t(GAMEAPI *xd_fn1)(uint32_t a);
-typedef int32_t(GAMEAPI *xd_fn2)(uint32_t a, uint32_t b);
-typedef int32_t(GAMEAPI *xd_fn3)(uint32_t a, uint32_t b, uint32_t c);
-typedef int32_t(GAMEAPI *xd_fn5)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e);
-typedef int32_t(GAMEAPI *xd_fn7)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f,
-                                 uint32_t g);
-
-#define CALL0(a) (((xd_fn0)(a))())
-#define CALL1(a, x) (((xd_fn1)(a))(A(x)))
-#define CALL2(a, x, y) (((xd_fn2)(a))(A(x), A(y)))
-#define CALL3(a, x, y, z) (((xd_fn3)(a))(A(x), A(y), A(z)))
-#define CALL5(a, x, y, z, w, v) (((xd_fn5)(a))(A(x), A(y), A(z), A(w), A(v)))
-#define CALL7(a, x, y, z, w, v, u, t) (((xd_fn7)(a))(A(x), A(y), A(z), A(w), A(v), A(u), A(t)))
+/* Called through addresses read from game memory: the menu hook 0x4cb528
+ * (the menus' input handlers, int32_t (action)) and the name entry's change
+ * and event callbacks (the fecb_* entries, which read at most the one
+ * argument passed). */
+typedef int32_t(GAMEAPI *xd_menu_handler_fn)(int32_t action);
+typedef int32_t(GAMEAPI *xd_change_fn)(uint8_t *text);
+typedef int32_t(GAMEAPI *xd_event_fn)(int32_t event);
 
 #define CONFIG PTR(G32(0x4b2198))
 
-#define D3D_RENDER_STATES 0x41db00
-#define BOX_FRAME_PLACE 0x431780 /* fe_box_frame_place(list, packets, colour, x, y, w, h) */
-#define FONT_IMAGE_INFO 0x443b20 /* (&pixels, &palette, &stride) */
-#define FE_REPEAT_SELECT 0x4475f0
-#define FE_MENU_GOTO 0x4479d0
-#define FE_MENU_BACK 0x447ab0
-#define VOICE_PLAY_PLAIN 0x472a90
-#define MEM_FILL 0x476f50
-#define SURFACE_LOCK 0x4875a0   /* (0, surface, desc) */
-#define SURFACE_UNLOCK 0x487610 /* (surface) */
-#define NET_SEND_TO 0x48cdd0
-#define CDAUDIO_PLAY 0x496770
-#define CRT_STRSTR 0x4980d0
-#define CRT_TOUPPER 0x498540
-#define CRT_TOLOWER 0x49867b
+#define box_frame_place(packets, colour, x, y, w, h) \
+    GCALL(0x431780, fe_box_frame_place)(BOX_LIST, PTR(packets), (const uint8_t *)(colour), x, y, w, h)
+#define fe_repeat_select GCALL(0x4475f0, fe_repeat_select)
+#define fe_menu_goto GCALL(0x4479d0, fe_menu_goto)
+#define fe_menu_back GCALL(0x447ab0, fe_menu_back)
+#define surface_lock(surface, desc) GCALL(0x4875a0, dd_surface_lock)(0, surface, A(desc)) /* (0, surface, desc) */
+#define surface_unlock GCALL(0x487610, dd_surface_unlock)
+#define crt_toupper(c) GCALL(0x498540, msvc_toupper)((int32_t)(c))
+#define crt_tolower(c) GCALL(0x49867b, msvc_tolower)((int32_t)(c))
 
 #define BOX_LIST 0x6cdd90
 #define NET_FLAGS 0x5d622c
@@ -90,7 +78,7 @@ static inline uint32_t xd_i2f(int32_t v)
 /* 0x4219d0: thunk, jmp 0x41db00 (the render states, d3d_render_states). */
 int32_t GAMEAPI d3d_render_states_thunk(void)
 {
-    return CALL0(D3D_RENDER_STATES);
+    return GCALL(0x41db00, d3d_render_states)();
 }
 
 /* 0x43d260: GetKeyState(VK_CAPITAL), sign-extended. */
@@ -126,7 +114,7 @@ void GAMEAPI cdaudio_replay_request(void)
     int32_t track = GI32(0x4b4a90);
 
     if (track != -1)
-        CALL1(CDAUDIO_PLAY, track);
+        GCALL(0x496770, cdaudio_play)(track);
 }
 
 /* 0x45fbe0: in a network game (flags bits 0 and 1), sends message 7 with
@@ -146,7 +134,7 @@ int32_t GAMEAPI net_send_type7(const uint8_t *data)
     msg[0] = 7;
     U32(msg, 8) = U32(data, 0);
     U16(msg, 0xc) = U16(data, 4);
-    return CALL5(NET_SEND_TO, 2, 0, msg, 0x10, 0);
+    return GCALL(0x48cdd0, net_message_send_to)(2, 0, A(msg), 0x10, 0);
 }
 
 /* ===================================================== session search */
@@ -161,7 +149,7 @@ static int32_t xd_enum_sessions(void)
     uint8_t desc[0x50];
     uint32_t obj, hr;
 
-    CALL3(MEM_FILL, desc, 0, 0x50);
+    GCALL(0x476f50, mem_fill)(desc, 0, 0x50);
     U32(desc, 0) = 0x50;
     U32(desc, 0x18) = G32(0x4a3500);
     U32(desc, 0x1c) = G32(0x4a3504);
@@ -201,7 +189,7 @@ void GAMEAPI name_entry_box_place(void)
 {
     uint32_t colour = 0xffffff;
 
-    CALL7(BOX_FRAME_PLACE, BOX_LIST, 0x4c99c0, &colour, G32(0x4cb540) + 0x1e, 0x82, 0x244, 0xfa);
+    box_frame_place(0x4c99c0, &colour, G32(0x4cb540) + 0x1e, 0x82, 0x244, 0xfa);
 }
 
 /* 0x452ce0: the session search menu's box (packets 0x4c24d0) at
@@ -210,7 +198,7 @@ void GAMEAPI net_sessions_box_place(void)
 {
     uint32_t colour = 0xffffff;
 
-    CALL7(BOX_FRAME_PLACE, BOX_LIST, 0x4c24d0, &colour, G32(0x4cb540) + 0x1e, 0x1a4, 0x244, 0x28);
+    box_frame_place(0x4c24d0, &colour, G32(0x4cb540) + 0x1e, 0x1a4, 0x244, 0x28);
 }
 
 /* 0x452980: the network menu's six player slots: for each slot i whose
@@ -308,10 +296,10 @@ void GAMEAPI net_host_boxes_place(void)
     }
     if (GI32(0x4cb7f4) < th)
         G32(0x4cb7f4) = (uint32_t)th;
-    CALL7(BOX_FRAME_PLACE, BOX_LIST, 0x4ca860, &colour, w + left + 0xf, 0x82, 0x23f - w, 0x14a);
+    box_frame_place(0x4ca860, &colour, w + left + 0xf, 0x82, 0x23f - w, 0x14a);
     h = GI32(0x4cb7f4);
     w = GI32(0x4cb7f0);
-    CALL7(BOX_FRAME_PLACE, BOX_LIST, 0x4c24d0, &colour, G32(0x4cb540) + 0x1e, h + GI32(0x4cb478) + 0xf, w,
+    box_frame_place(0x4c24d0, &colour, G32(0x4cb540) + 0x1e, h + GI32(0x4cb478) + 0xf, w,
           0x13b - h);
     net_slots_place();
 }
@@ -375,7 +363,7 @@ static const int32_t xd_type_keys[12] = {0x21, 0x3f, 0x2f, 0x5c, 0x40, 0x23, 0x7
 
 static void xd_refuse(void)
 {
-    CALL3(VOICE_PLAY_PLAIN, 0x18, 0x800, 0x36b0);
+    GCALL(0x472a90, voice_play_plain)(0x18, 0x800, 0x36b0);
 }
 
 /* 0x449160: the name entry's menu input handler (action, text buffer, mode,
@@ -405,7 +393,7 @@ int32_t GAMEAPI name_entry_input(uint32_t action, uint8_t *text, int32_t mode, i
     if (mode == 2)
         return 0;
     if (hook)
-        CALL1(hook, action);
+        ((xd_menu_handler_fn)(uintptr_t)hook)((int32_t)action);
     switch (action) {
     case 0:
     case 1:
@@ -413,13 +401,13 @@ int32_t GAMEAPI name_entry_input(uint32_t action, uint8_t *text, int32_t mode, i
     case 5:
         return mode == 1 ? 0 : 1;
     case 7:
-        if (G32(0x4be33c) && CALL1(FE_REPEAT_SELECT, 0)) {
+        if (G32(0x4be33c) && fe_repeat_select(0)) {
             if (screen_arg == 2)
-                CALL0(FE_MENU_BACK);
+                fe_menu_back();
             else
-                CALL2(FE_MENU_GOTO, screen, screen_arg);
+                fe_menu_goto((int32_t)screen, screen_arg);
             if (on_event)
-                CALL1(on_event, 7);
+                ((xd_event_fn)(uintptr_t)on_event)(7);
         }
         return 1;
     case 10:
@@ -430,22 +418,22 @@ int32_t GAMEAPI name_entry_input(uint32_t action, uint8_t *text, int32_t mode, i
     if (G32(0x4af448)) {
         key = G32(KEY_CODE);
         if (key == 0xd) {
-            if (CALL1(FE_REPEAT_SELECT, 0) == 0)
+            if (fe_repeat_select(0) == 0)
                 return 1;
             if (screen_arg == 2)
-                CALL0(FE_MENU_BACK);
+                fe_menu_back();
             else
-                CALL2(FE_MENU_GOTO, screen, screen_arg);
+                fe_menu_goto((int32_t)screen, screen_arg);
             if (on_event)
-                CALL1(on_event, 6);
+                ((xd_event_fn)(uintptr_t)on_event)(6);
             return 1;
         }
         if (key == 0x1b) {
-            if (CALL1(FE_REPEAT_SELECT, 1) == 0)
+            if (fe_repeat_select(1) == 0)
                 return 1;
-            CALL0(FE_MENU_BACK);
+            fe_menu_back();
             if (on_event)
-                CALL1(on_event, 8);
+                ((xd_event_fn)(uintptr_t)on_event)(8);
             return 1;
         }
     }
@@ -477,14 +465,14 @@ int32_t GAMEAPI name_entry_input(uint32_t action, uint8_t *text, int32_t mode, i
             G32(NAME_CURSOR) = (uint32_t)(cur + 1);
         goto changed;
     }
-    c = CALL1(CRT_TOLOWER, key);
+    c = crt_tolower(key);
     caps = capslock_state();
     if (G32(KEY_SHIFT))
         caps = caps == 0;
     if (caps)
-        c = CALL1(CRT_TOUPPER, G32(KEY_CODE));
+        c = crt_toupper(G32(KEY_CODE));
     if (G32(KEY_CTRL) && U8(CONFIG, 0x36) == 2) {
-        int32_t u = CALL1(CRT_TOUPPER, c);
+        int32_t u = crt_toupper(c);
         if (u == 0x2b)
             c = 0x7e;
         else if (u == 0x51)
@@ -504,7 +492,7 @@ have:
     buf[1] = 0;
     if (c == 0)
         return 1;
-    if (CALL2(CRT_STRSTR, 0x4afb80, buf) != 0 || (c >= 0x30 && c <= 0x39) || (c >= 0x61 && c <= 0x7a) ||
+    if (GCALL(0x4980d0, msvc_strstr)((const char *)0x4afb80, (const char *)buf) != 0 || (c >= 0x30 && c <= 0x39) || (c >= 0x61 && c <= 0x7a) ||
         (c >= 0x41 && c <= 0x5a)) {
         int32_t at = GI32(NAME_CURSOR), i;
 
@@ -571,7 +559,7 @@ have:
         return 1;
 changed:
     G32(0x4cb58c) = 1;
-    CALL1(on_change, text);
+    ((xd_change_fn)(uintptr_t)on_change)(text);
     return 1;
 }
 
@@ -588,10 +576,10 @@ void GAMEAPI movie_text_draw(const uint8_t *text, int32_t x, int32_t y)
     uint8_t desc[0x6c];
 
     y -= 0x28;
-    CALL3(FONT_IMAGE_INFO, &pixels, &palette, &stride);
+    GCALL(0x443b20, font_image_info)(&pixels, &palette, (int32_t *)&stride);
     if (G32(0x4d5f70) != 0x10)
         return;
-    if (CALL3(SURFACE_LOCK, 0, G32(0x4d5f48), desc) == 0)
+    if (surface_lock(G32(0x4d5f48), desc) == 0)
         return;
     for (; *text; text++) {
         uint8_t ch = *text, idx;
@@ -626,7 +614,7 @@ void GAMEAPI movie_text_draw(const uint8_t *text, int32_t x, int32_t y)
         } while (--rows);
         x += (int32_t)(U16(g, 4) + G32(0x6c0a74));
     }
-    CALL1(SURFACE_UNLOCK, G32(0x4d5f48));
+    surface_unlock(G32(0x4d5f48));
 }
 
 /* 0x488cc0: clears the 16-bit surface 0x4d5f48 from row `top` down (screen
@@ -641,7 +629,7 @@ int32_t GAMEAPI movie_text_clear(int32_t top)
 
     if (G32(0x4d5f70) != 0x10)
         return 0;
-    if (CALL3(SURFACE_LOCK, 0, G32(0x4d5f48), desc) == 0)
+    if (surface_lock(G32(0x4d5f48), desc) == 0)
         return 1;
     rows = G32(0x4acc3c) - (uint32_t)top;
     w = G32(0x4acc38);
@@ -654,7 +642,7 @@ int32_t GAMEAPI movie_text_clear(int32_t top)
         }
         dst += pitch - 2 * w;
     } while (--rows);
-    CALL1(SURFACE_UNLOCK, G32(0x4d5f48));
+    surface_unlock(G32(0x4d5f48));
     return 1;
 }
 

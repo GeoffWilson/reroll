@@ -32,6 +32,7 @@
  * the other, so it is called from asm. Windows calls go through winapi.h.
  * Everything outside the group is called by address. */
 #include "../runtime.h"
+#include "gamefn.h"
 #include "physics.h"
 #include "winapi.h"
 
@@ -55,26 +56,19 @@
 #define g_config G32(0x4b2198)
 #define g_race G32(0x4b1960)
 
-typedef int32_t(GAMEAPI *pp_fn0)(void);
-typedef int32_t(GAMEAPI *pp_fn1)(uint32_t a);
-typedef int32_t(GAMEAPI *pp_fn2)(uint32_t a, uint32_t b);
-typedef int32_t(GAMEAPI *pp_fn3)(uint32_t a, uint32_t b, uint32_t c);
-#define CALL0(a) (((pp_fn0)(a))())
-#define CALL1(a, x) (((pp_fn1)(a))(A(x)))
-#define CALL2(a, x, y) (((pp_fn2)(a))(A(x), A(y)))
-#define CALL3(a, x, y, z) (((pp_fn3)(a))(A(x), A(y), A(z)))
-
 /* The game's timer callback (stdcall), as stored at 0x4d48c8. */
 typedef void(STDCALL *pp_timer_fn)(uint32_t id, uint32_t msg, uint32_t user, uint32_t r1, uint32_t r2);
 
 /* Outside the group. */
-#define mem_copy_at(d, s, n) CALL3(0x476f30, d, s, n)
-#define mem_fill_at(d, c, n) CALL3(0x476f50, d, c, n)
-#define file_open_any_at(name) ((uint32_t)CALL1(0x43b6c0, name))
-#define file_read_any_at(f, b, n) CALL3(0x43b7f0, f, b, n)
-#define file_close_any_at(f) CALL1(0x43b760, f)
-#define debug_line_print_at(s) CALL1(0x428310, s)
-#define vertex_project_codes_at(r) CALL1(0x4288c0, r)
+#define mem_copy_at(d, s, n) GCALL(0x476f30, mem_copy)(d, s, (uint32_t)(n))
+#define mem_fill_at(d, c, n) GCALL(0x476f50, mem_fill)(PTR(d), c, n)
+#define file_open_any_at(name) GCALL(0x43b6c0, file_open_any)(A(name))
+#define file_read_any_at(f, b, n) GCALL(0x43b7f0, file_read_any)(f, PTR(b), n)
+#define file_close_any_at(f) GCALL(0x43b760, file_close_any)(f)
+#define debug_line_print_at(s) GCALL(0x428310, debug_line_print)(s)
+/* 0x4288c0: src/game/orig_pc.c's vertex_project_codes (an asm entry on
+ * i386 taking the record cdecl; C on x86-64). */
+#define vertex_project_codes_at(r) ((void(GAMEAPI *)(uint8_t *))(uintptr_t)0x4288c0)(PTR(r))
 
 /* This group's functions (also in build/groups/pp_protos.txt for physics.h). */
 int32_t GAMEAPI dir_change_unquoted(const char *name); /* 0x475030 */
@@ -189,33 +183,52 @@ static inline void x87_nudge(uint32_t *m, uint16_t v, int sub)
         __asm__ volatile("filds %1\n\tfmuls 0x4a3338\n\tfadds %0\n\tfstps %0" : "+m"(*m) : "m"(v) : "st");
 }
 
+#if !defined(__i386__)
+/* x86-64: the transform (*0x6ccd78) returns what the original leaves in
+ * st(0); the projection (*0x6ccd80) takes it as its argument. */
+static inline void pp_transform_project_c(void *out)
+{
+    float h = ((float(GAMEAPI *)(uint8_t *))(uintptr_t)G32(0x6ccd78))((uint8_t *)out);
+
+    ((void(GAMEAPI *)(float))(uintptr_t)G32(0x6ccd80))(h);
+}
+#endif
+
 /* The transform *0x6ccd78 (vertex record out, the GTE vector 0x6ccc64 in),
  * its argument popped, then the projection *0x6ccd80, which takes the
  * transform's st(0). */
 static inline void pp_transform_project(void *out)
 {
+#if defined(__i386__)
     __asm__ volatile("pushl %0\n\tcall *0x6ccd78\n\taddl $4, %%esp\n\tcall *0x6ccd80"
                      :
                      : "S"(out)
                      : "eax", "ecx", "edx", "cc", "memory", X87);
+#else
+    pp_transform_project_c(out);
+#endif
 }
 
 /* The same with the transform's argument still pushed during the projection. */
 static inline void pp_transform_project_pushed(void *out)
 {
+#if defined(__i386__)
     __asm__ volatile("pushl %0\n\tcall *0x6ccd78\n\tcall *0x6ccd80\n\taddl $4, %%esp"
                      :
                      : "S"(out)
                      : "eax", "ecx", "edx", "cc", "memory", X87);
+#else
+    pp_transform_project_c(out);
+#endif
 }
 
 /* 0x4278f0(a, b, c): the facing value of three projected vertex records,
  * returned in st(0), stored as a single (fstp dword). */
-typedef float(GAMEAPI *pp_facing_fn)(uint32_t a, uint32_t b, uint32_t c);
+typedef float(GAMEAPI *pp_facing_fn)(void *a, void *b, void *c);
 
 static uint32_t pp_facing(uint32_t a, uint32_t b, uint32_t c)
 {
-    float f = ((pp_facing_fn)0x4278f0)(a, b, c);
+    float f = ((pp_facing_fn)(uintptr_t)0x4278f0)(PTR(a), PTR(b), PTR(c));
     uint32_t r;
 
     memcpy(&r, &f, 4);
@@ -270,14 +283,14 @@ int32_t GAMEAPI dir_change_unquoted(const char *name)
 
     if (!name)
         return 0;
-    CALL2(0x474ed0, buf, name);
-    return CALL1(0x498b3f, buf);
+    GCALL(0x474ed0, path_dir_make)((uint8_t *)buf, (const uint8_t *)name);
+    return GCALL(0x498b3f, msvc_chdir)(buf);
 }
 
 /* ===== 0x475070: whether _access(name, 0) (0x498bc5) succeeds. ===== */
 int32_t GAMEAPI path_access_ok(const char *name)
 {
-    return CALL2(0x498bc5, name, 0) != -1;
+    return GCALL(0x498bc5, msvc_access)(name, 0) != -1;
 }
 
 /* ===== 0x475290: the flame of car `car` (the cars' table 0x6bfb80, 0x274
@@ -382,10 +395,10 @@ void GAMEAPI car_flame_draw(int32_t car, uint32_t ot_back, uint32_t ot_front)
     dir[0] = U32(p, 0x68);
     dir[1] = U32(p, 0x6c);
     dir[2] = U32(p, 0x70);
-    CALL1(0x407e90, dir);
-    if (!CALL3(0x407220, dir, up, mat))
+    GCALL(0x407e90, direction_fit)((int32_t *)dir);
+    if (!GCALL(0x407220, matrix_look)((int32_t *)dir, (const int32_t *)up, (int16_t *)mat))
         return;
-    CALL2(0x428be0, mat, mat);
+    GCALL(0x428be0, matrix_transpose_s16)((const uint8_t *)mat, (int16_t *)mat);
     for (n = 0; n < 5; n++)
         G32(0x6ccbe0 + 4 * n) = G32(0x6ce5d0 + 4 * n);
     pp_float_matrix_load();
@@ -394,7 +407,7 @@ void GAMEAPI car_flame_draw(int32_t car, uint32_t ot_back, uint32_t ot_front)
         G16(0x6ccc88) = mat[n];
         G16(0x6ccc8c) = mat[3 + n];
         G16(0x6ccc90) = mat[6 + n];
-        CALL0(0x427fc0);
+        GCALL(0x427fc0, gte_rotate_short)();
         m2[n] = G16(0x6ccc88);
         m2[3 + n] = G16(0x6ccc8c);
         m2[6 + n] = G16(0x6ccc90);
@@ -409,7 +422,7 @@ void GAMEAPI car_flame_draw(int32_t car, uint32_t ot_back, uint32_t ot_front)
     G16(0x6ccc64) = (uint16_t)((uint32_t)pos[0] >> 16);
     G16(0x6ccc68) = (uint16_t)((uint32_t)pos[2] >> 16);
     G16(0x6ccc66) = (uint16_t)((uint32_t)pos[1] >> 16);
-    CALL0(0x426620);
+    ((void(GAMEAPI *)(void))(uintptr_t)0x426620)(); /* orig_pc.c's gte_rt_float */
     for (n = 0; n < 3; n++)
         G32(0x6ccbf4 + 4 * n) = G32(0x6cccc8 + 4 * n);
     pp_float_translation_load();
@@ -686,6 +699,72 @@ uint32_t GAMEAPI os_handle_seek_end(uint32_t h)
     return (uint32_t)SetFilePointer(GMEM(h), 0, 0, 2);
 }
 
+#if !defined(__i386__)
+/* x86-64: printf arguments (by the format, as the C runtime reads them) into
+ * 32-bit stack words: integers, characters and pointers one word, doubles
+ * and I64 integers two. */
+static void pp_args_pack(const char *fmt, va_list ap, uint32_t *words, uint32_t max)
+{
+    uint32_t n = 0;
+
+    while (*fmt) {
+        int i64 = 0;
+
+        if (*fmt++ != '%')
+            continue;
+        if (*fmt == '%') {
+            fmt++;
+            continue;
+        }
+        for (;; fmt++) {
+            char c = *fmt;
+
+            if (c == '*') {
+                if (n < max)
+                    words[n++] = (uint32_t)va_arg(ap, int);
+            } else if (c == 'I' && fmt[1] == '6' && fmt[2] == '4') {
+                i64 = 1;
+                fmt += 2;
+            } else if (!(c == '-' || c == '+' || c == ' ' || c == '#' || c == '.' || (c >= '0' && c <= '9') ||
+                         c == 'h' || c == 'l' || c == 'L' || c == 'w' || c == 'N' || c == 'F')) {
+                break;
+            }
+        }
+        if (!*fmt)
+            break;
+        switch (*fmt++) {
+        case 'e': case 'E': case 'f': case 'g': case 'G': {
+            double d = va_arg(ap, double);
+            uint64_t q;
+
+            memcpy(&q, &d, 8);
+            if (n + 1 < max) {
+                words[n++] = (uint32_t)q;
+                words[n++] = (uint32_t)(q >> 32);
+            }
+            break;
+        }
+        case 's': case 'S': case 'p': case 'n': case 'Z':
+            if (n < max)
+                words[n++] = (uint32_t)(uintptr_t)va_arg(ap, void *);
+            break;
+        default:
+            if (i64) {
+                uint64_t q = va_arg(ap, uint64_t);
+
+                if (n + 1 < max) {
+                    words[n++] = (uint32_t)q;
+                    words[n++] = (uint32_t)(q >> 32);
+                }
+            } else if (n < max) {
+                words[n++] = (uint32_t)va_arg(ap, int);
+            }
+            break;
+        }
+    }
+}
+#endif
+
 /* ===== 0x476ec0: printf to the debug log: vsprintf (0x498c0b) into 0x104
  * bytes, then the line with the tag 0x4b23f4 (0x4772e0); 1. ===== */
 int32_t GAMEAPI dbg_vlog_printf(const char *fmt, ...)
@@ -694,7 +773,17 @@ int32_t GAMEAPI dbg_vlog_printf(const char *fmt, ...)
     va_list ap;
 
     va_start(ap, fmt);
-    CALL3(0x498c0b, buf, fmt, *(uint32_t *)&ap);
+#if defined(__i386__)
+    GCALL(0x498c0b, msvc_vsprintf)(buf, fmt, *(const uint8_t **)&ap);
+#else
+    {
+        /* x86-64: the arguments as the game's stack words for vsprintf. */
+        uint32_t words[64];
+
+        pp_args_pack(fmt, ap, words, 64);
+        GCALL(0x498c0b, msvc_vsprintf)(buf, fmt, (const uint8_t *)words);
+    }
+#endif
     va_end(ap);
     return dbg_log_line(buf, (const char *)0x4b23f4);
 }
@@ -712,7 +801,7 @@ int32_t GAMEAPI path_find_exists(const char *path)
 /* ===== 0x476f80: exit(0) (0x498c89). ===== */
 void GAMEAPI exit_zero(void)
 {
-    CALL1(0x498c89, 0);
+    GCALL(0x498c89, msvc_exit)(0);
 }
 
 /* ===== 0x476f90: the periodic timer on the shared id 0x4d4b5c, through
@@ -784,7 +873,7 @@ int32_t GAMEAPI mm_timer_stop(uint32_t *period, uint32_t *id)
 void STDCALL mm_timer_tick(uint32_t id, uint32_t msg, uint32_t user, uint32_t r1, uint32_t r2)
 {
     G32(0x5f72a8)++;
-    (*(pp_timer_fn *)(uintptr_t)0x4d48c8)(id, msg, user, r1, r2);
+    ((pp_timer_fn)(uintptr_t)G32(0x4d48c8))(id, msg, user, r1, r2);
 }
 
 /* ===== 0x477120: the empty timer callback. ===== */
@@ -915,11 +1004,29 @@ static inline int32_t pp_row_bytes(uint32_t w, uint32_t f)
     int32_t r;
     uint32_t t;
 
+#if defined(__i386__)
     __asm__ volatile("fildl %2\n\tfstps %1\n\tflds %1\n\tfmuls %3\n\tfadds 0x4a345c\n\t"
                      "movl $0x497a80, %%eax\n\tcall *%%eax"
                      : "=a"(r), "=m"(t)
                      : "m"(w), "m"(f)
                      : "ecx", "edx", "cc", "memory", X87);
+#else
+    /* x86-64: the same x87 steps, then _ftol's truncation (rounding set to
+     * chop around a fistp qword; the low dword). */
+    {
+        uint16_t cw, chop;
+        int64_t q;
+
+        __asm__ volatile("fnstcw %0" : "=m"(cw));
+        chop = (uint16_t)(cw | 0xc00);
+        __asm__ volatile("fildl %2\n\tfstps %1\n\tflds %1\n\tfmuls %3\n\tfadds 0x4a345c\n\t"
+                         "fldcw %4\n\tfistpll %0\n\tfldcw %5"
+                         : "=m"(q), "=m"(t)
+                         : "m"(w), "m"(f), "m"(chop), "m"(cw)
+                         : "st", "memory");
+        r = (int32_t)q;
+    }
+#endif
     return r;
 }
 

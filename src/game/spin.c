@@ -5,16 +5,16 @@
 #include "body.h"
 #include "fixed.h"
 #include "physics.h"
+#include "gamefn.h"
 #include "../coverage.h"
 
-typedef void(GAMEAPI *sparks_fn)(uint8_t *car, int32_t kind);
-#define car_spin_sparks ((sparks_fn)0x468f80) /* a ring of sparks; still the original */
+#define car_spin_sparks GCALL(0x468f80, car_respawn_sparks) /* a ring of sparks; still the original */
 
-#define g_tile_data (*(uint8_t ***)0x6c1e30) /* [0]: tiles, [7]: packed normals */
-#define g_race (*(uint8_t **)0x4b1960)
+#define g_tile_data ((const uint32_t *)GP(0x6c1e30)) /* [0]: tiles, [7]: packed normals */
+#define g_race (GP(0x4b1960))
 #define g_car_slots ((uint8_t *)0x6bfb80)
 #define CAR_SLOT_SIZE 0x274
-#define g_section_planes (*(uint8_t **)0x6bfb30)
+#define g_section_planes (GP(0x6bfb30))
 
 #define SPIN_STATE 0x2284
 #define SPIN_TIME 0x2288
@@ -83,7 +83,7 @@ int32_t GAMEAPI track_special_section(const uint8_t *car)
  * cell; 0 if it has none. */
 int32_t GAMEAPI track_direction(int32_t *dir, int32_t *up, const uint8_t *car)
 {
-    uint32_t *normals = (uint32_t *)g_tile_data[7], key = U32(car, 0x11c), packed;
+    uint32_t *normals = (uint32_t *)(uintptr_t)g_tile_data[7], key = U32(car, 0x11c), packed;
     const uint8_t *tile;
     const int16_t *a, *b;
     const uint8_t *cell;
@@ -91,13 +91,13 @@ int32_t GAMEAPI track_direction(int32_t *dir, int32_t *up, const uint8_t *car)
 
     if ((int32_t)key < 0)
         return 0;
-    tile = ((uint8_t **)g_tile_data[0])[key & 0xff];
+    tile = GP((uintptr_t)g_tile_data[0] + (key & 0xff) * 4);
     width = I32(tile, 8);
     row = (int16_t)(key >> 16);
     col = (int8_t)(key >> 8);
     index = row * (width + 1) + col;
-    b = (const int16_t *)(*(uint8_t **)(tile + 0x20) + index * 8);
-    cell = *(uint8_t **)(tile + 0x50) + (index - row) * 8;
+    b = (const int16_t *)(GP(tile + 0x20) + index * 8);
+    cell = GP(tile + 0x50) + (index - row) * 8;
     special = track_special_section(car);
     if (special)
         COVER(COVER_TRACK_SPECIAL);

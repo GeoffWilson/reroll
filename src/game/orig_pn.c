@@ -26,6 +26,7 @@
 #include "../runtime.h"
 #include "physics.h"
 #include "winapi.h"
+#include "gamefn.h"
 
 #define U8(p, off) (*(uint8_t *)((uint8_t *)(uintptr_t)(p) + (off)))
 #define U16(p, off) (*(uint16_t *)((uint8_t *)(uintptr_t)(p) + (off)))
@@ -42,35 +43,24 @@
 
 #define X87 "st", "st(1)", "st(2)", "st(3)", "st(4)", "st(5)", "st(6)", "st(7)"
 
-typedef int32_t(GAMEAPI *pn_fn0)(void);
-typedef int32_t(GAMEAPI *pn_fn1)(uint32_t a);
-typedef int32_t(GAMEAPI *pn_fn2)(uint32_t a, uint32_t b);
-typedef int32_t(GAMEAPI *pn_fn3)(uint32_t a, uint32_t b, uint32_t c);
-typedef int32_t(GAMEAPI *pn_fn6)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f);
-typedef int32_t(GAMEAPI *pn_fn7)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f,
-                                 uint32_t g);
-#define CALL0(a) (((pn_fn0)(a))())
-#define CALL1(a, x) (((pn_fn1)(a))(A(x)))
-#define CALL2(a, x, y) (((pn_fn2)(a))(A(x), A(y)))
-#define CALL3(a, x, y, z) (((pn_fn3)(a))(A(x), A(y), A(z)))
-#define CALL6(a, x, y, z, w, v, u) (((pn_fn6)(a))(A(x), A(y), A(z), A(w), A(v), A(u)))
-#define CALL7(a, x, y, z, w, v, u, t) (((pn_fn7)(a))(A(x), A(y), A(z), A(w), A(v), A(u), A(t)))
-
 /* Outside the group. */
-#define draw_prim_at(p) CALL1(0x428460, p)
-#define texts_menu_at(a, b) CALL2(0x4792a0, a, b)
-#define text_create_at(s, a, x, y, f, id, m) CALL7(0x479060, s, a, x, y, f, id, m)
-#define prim_flag2_at(p, on) CALL2(0x4270e0, p, on)
-#define camera_target_at(v) CALL1(0x423ce0, v)
-#define sprite_3d_at(v, s, spr, a, b, c) CALL6(0x47e5f0, v, s, spr, a, b, c)
-#define file_read_any_at(h, b, n) CALL3(0x43b7f0, h, b, n)
-#define file_close_any_at(h) CALL1(0x43b760, h)
-#define file_write_any_at(h, b, n) CALL3(0x476e50, h, b, n)
-#define kr_malloc_at(n) ((uint32_t)CALL1(0x4445e0, n))
-#define debug_printf_at(s) CALL1(0x476ec0, s)
-#define file_exists_at(s) CALL1(0x476f00, s)
-#define isctype_at(c, m) CALL2(0x498051, c, m)
-#define vertex_project_codes_at(r) CALL1(0x4288c0, r)
+void GAMEAPI camera_translation(const int32_t *pos); /* 0x423ce0 (static in src/subunit.c) */
+#define draw_prim_at(p) GCALL(0x428460, capture_draw_prim)(p)
+#define texts_menu_at(a, b) GCALL(0x4792a0, text_messages_draw)(a, b)
+#define text_create_at(s, a, x, y, f, id, m) GCALL(0x479060, text_create)(GMEM(s), a, x, y, f, id, m)
+#define prim_flag2_at(p, on) GCALL(0x4270e0, prim_flag2_set)(GMEM(p), on)
+#define camera_target_at(v) GCALL(0x423ce0, camera_translation)(GMEM(v))
+#define sprite_3d_at(v, s, spr, a, b, c) GCALL(0x47e5f0, sprite_quad_build)(GMEM(v), s, GMEM(spr), a, b, GMEM(c))
+#define file_read_any_at(h, b, n) GCALL(0x43b7f0, file_read_any)(h, GMEM(b), n)
+/* file_close_any returns nothing; the original returns what it leaves in eax */
+#define file_close_any_at(h) ((int32_t(GAMEAPI *)(uint32_t))(uintptr_t)0x43b760)(h)
+#define file_write_any_at(h, b, n) GCALL(0x476e50, os_handle_write)(h, GMEM(b), n)
+#define kr_malloc_at(n) ((uint32_t)GCALL(0x4445e0, kr_malloc)(n))
+#define debug_printf_at(s) GCALL(0x476ec0, dbg_vlog_printf)(GMEM(s))
+#define file_exists_at(s) GCALL(0x476f00, path_find_exists)(GMEM(s))
+#define isctype_at(c, m) GCALL(0x498051, msvc_isctype)(c, m)
+/* 0x4288c0: an asm entry on i386 (orig_pc.c), the record on the stack */
+#define vertex_project_codes_at(r) ((void(GAMEAPI *)(uint8_t *))(uintptr_t)0x4288c0)(GMEM(r))
 
 #define g_scale GI32(0x6cd410) /* the HUD's scale, 0x100 = 1 */
 
@@ -204,10 +194,25 @@ static inline int32_t pn_fist(uint32_t a)
 static inline int32_t pn_ftol(uint32_t a)
 {
     int32_t r;
+#if defined(__i386__)
     __asm__ volatile("flds %1\n\tmovl $0x497a80, %%eax\n\tcall *%%eax"
                      : "=a"(r)
                      : "m"(a)
                      : "ecx", "edx", "cc", "memory", X87);
+#else
+    /* x86-64: _ftol's steps (rounding set to chop around a fistp qword; the
+     * low dword). */
+    uint16_t cw, chop;
+    int64_t q;
+
+    __asm__ volatile("fnstcw %0" : "=m"(cw));
+    chop = (uint16_t)(cw | 0xc00);
+    __asm__ volatile("flds %2\n\tfldcw %3\n\tfistpll %0\n\tfldcw %1"
+                     : "=m"(q)
+                     : "m"(cw), "m"(a), "m"(chop)
+                     : "st", "memory");
+    r = (int32_t)q;
+#endif
     return r;
 }
 
@@ -215,10 +220,19 @@ static inline int32_t pn_ftol(uint32_t a)
  * projection *0x6ccd80, which takes the transform's st(0). */
 static inline void pn_transform_project(uint32_t vertex, uint32_t colour_at, uint32_t colour)
 {
+#if defined(__i386__)
     __asm__ volatile("pushl %0\n\tcall *0x6ccd78\n\taddl $4, %%esp\n\tmovl %2, (%1)\n\tcall *0x6ccd80"
                      :
                      : "S"(vertex), "D"(colour_at), "b"(colour)
                      : "eax", "ecx", "edx", "cc", "memory", X87);
+#else
+    /* x86-64: the transform (*0x6ccd78) returns what the original leaves in
+     * st(0); the projection (*0x6ccd80) takes it as its argument. */
+    float h = ((float(GAMEAPI *)(uint8_t *))(uintptr_t)G32(0x6ccd78))((uint8_t *)(uintptr_t)vertex);
+
+    G32(colour_at) = colour;
+    ((void(GAMEAPI *)(float))(uintptr_t)G32(0x6ccd80))(h);
+#endif
 }
 
 /* ===================================================================== */

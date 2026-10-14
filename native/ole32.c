@@ -16,13 +16,14 @@ void WINAPI CoUninitialize(void)
 
 void *nt_dplay_create(void); /* dplayx.c */
 
-LONG WINAPI CoCreateInstance(const void *clsid, void *outer, DWORD context, const void *iid, void **out)
+/* out: a 4-byte slot in game memory; the object is low memory */
+LONG WINAPI CoCreateInstance(const void *clsid, void *outer, DWORD context, const void *iid, uint32_t *out)
 {
     (void)outer;
     (void)context;
     (void)iid;
     if (clsid && *(const uint32_t *)clsid == 0xd1eb6d20u) { /* CLSID_DirectPlay */
-        *out = nt_dplay_create();
+        *out = (uint32_t)(uintptr_t)nt_dplay_create();
         return 0;
     }
     nt_log("CoCreateInstance(%08x): not available", clsid ? *(const uint32_t *)clsid : 0);

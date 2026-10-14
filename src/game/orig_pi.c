@@ -22,6 +22,7 @@
  * outside the group, and the group's own 0x4538e0 from 0x453a00, is called
  * by address. */
 #include "../runtime.h"
+#include "gamefn.h"
 #include "physics.h"
 
 #define U16(p, off) (*(uint16_t *)((uint8_t *)(uintptr_t)(p) + (off)))
@@ -37,33 +38,20 @@
 #define g_screen_w GI32(0x4acc38)
 #define g_screen_h GI32(0x4acc3c)
 
-typedef int32_t(GAMEAPI *pi_fn0)(void);
-typedef int32_t(GAMEAPI *pi_fn1)(uint32_t a);
-typedef int32_t(GAMEAPI *pi_fn2)(uint32_t a, uint32_t b);
-typedef int32_t(GAMEAPI *pi_fn3)(uint32_t a, uint32_t b, uint32_t c);
-typedef int32_t(GAMEAPI *pi_fn5)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e);
-typedef int32_t(GAMEAPI *pi_fn7)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f,
-                                 uint32_t g);
-
-#define CALL0(a) (((pi_fn0)(a))())
-#define CALL1(a, x) (((pi_fn1)(a))(A(x)))
-#define CALL2(a, x, y) (((pi_fn2)(a))(A(x), A(y)))
-#define CALL3(a, x, y, z) (((pi_fn3)(a))(A(x), A(y), A(z)))
-#define CALL5(a, x, y, z, w, v) (((pi_fn5)(a))(A(x), A(y), A(z), A(w), A(v)))
-#define CALL7(a, x, y, z, w, v, u, t) (((pi_fn7)(a))(A(x), A(y), A(z), A(w), A(v), A(u), A(t)))
-
-#define fade_scale_at(v) CALL1(0x4328a0, v)
-#define fe_attract_left_at(v) CALL1(0x448030, v)
-#define word_exchange_at(a, b, c) CALL3(0x429080, a, b, c)
-#define ot_add_prim_at(a, b) CALL2(0x427ab0, a, b)
-#define fe_quad_flat_set_at(p, c, x, y, w, h, z) CALL7(0x4314d0, p, c, x, y, w, h, z)
-#define fe_frame_sprites_init_at(p) CALL1(0x4316d0, p)
-#define menu_model_find_at(id) ((uint8_t *)(uintptr_t)CALL1(0x4539d0, id))
-#define matrix_from_angles_at(a, m) CALL2(0x426f80, a, m)
-#define gte_rotate_short_at() CALL0(0x427fc0)
-#define gte_rotate_at() CALL0(0x428090)
-#define gte_rt_float_at() CALL0(0x426620)
-#define menu_model_draw_at(id, m, p, l, f) CALL5(0x4538e0, id, m, p, l, f)
+#define fade_scale_at(v) GCALL(0x4328a0, fade_scale)(v)
+#define fe_attract_left_at(v) GCALL(0x448030, fe_attract_left)(v)
+#define word_exchange_at(a, b, c) GCALL(0x429080, word_exchange)(a, b, c)
+#define ot_add_prim_at(a, b) GCALL(0x427ab0, ot_add_prim)(a, b)
+#define fe_quad_flat_set_at(p, c, x, y, w, h, z) GCALL(0x4314d0, fe_quad_flat_set)(p, c, x, y, w, h, z)
+#define fe_frame_sprites_init_at(p) GCALL(0x4316d0, fe_frame_sprites_init)(p)
+#define menu_model_find_at(id) GCALL(0x4539d0, menu_model_find)(id)
+#define matrix_from_angles_at(a, m) GCALL(0x426f80, matrix_from_angles)((const int16_t *)(a), m)
+#define gte_rotate_short_at() GCALL(0x427fc0, gte_rotate_short)()
+#define gte_rotate_at() GCALL(0x428090, gte_rotate)()
+/* 0x426620: src/game/orig_pc.c's gte_rt_float (an asm entry on i386, no
+ * arguments either way). */
+#define gte_rt_float_at() ((void(GAMEAPI *)(void))(uintptr_t)0x426620)()
+#define menu_model_draw_at(id, m, p, l, f) GCALL(0x4538e0, menu_model_draw)(id, (const uint32_t *)(m), p, l, f)
 
 /* This group's functions (also in build/groups/pi_protos.txt for physics.h). */
 void GAMEAPI menu_box_quads_draw(uint32_t ot, int32_t page); /* 0x453220 */
@@ -109,10 +97,18 @@ static inline int pi_below(uint32_t a, uint32_t b)
  * then the projection *0x6ccd80, which takes the transform's st(0). */
 static inline void pi_transform_project(void *out)
 {
+#if defined(__i386__)
     __asm__ volatile("pushl %0\n\tcall *0x6ccd78\n\tcall *0x6ccd80\n\taddl $4, %%esp"
                      :
                      : "S"(out)
                      : "eax", "ecx", "edx", "cc", "memory", X87);
+#else
+    /* x86-64: the transform (*0x6ccd78) returns what the original leaves in
+     * st(0); the projection (*0x6ccd80) takes it as its argument. */
+    float h = ((float(GAMEAPI *)(uint8_t *))(uintptr_t)G32(0x6ccd78))((uint8_t *)out);
+
+    ((void(GAMEAPI *)(float))(uintptr_t)G32(0x6ccd80))(h);
+#endif
 }
 
 /* 0x4278f0(a, b, c): the facing value of three projected vertex records,
@@ -121,7 +117,7 @@ typedef float(GAMEAPI *pi_facing_fn)(void *a, void *b, void *c);
 
 static void pi_facing(uint32_t *out, void *a, void *b, void *c)
 {
-    float f = ((pi_facing_fn)0x4278f0)(a, b, c);
+    float f = ((pi_facing_fn)(uintptr_t)0x4278f0)(a, b, c);
 
     memcpy(out, &f, 4);
 }
@@ -215,7 +211,7 @@ void GAMEAPI menu_box_quads_draw(uint32_t ot, int32_t page)
     U32(b, 0x130) = 0x40;
     U32(b, 0x150) = 0x457a0000;
     U32(b, 0x14c) = 0x40;
-    word_exchange_at(ot, b, b + 0xf0);
+    word_exchange_at(ot, A(b), (uint32_t *)(b + 0xf0));
 }
 
 /* 0x453570: the side panel quad: an untextured 1 x 1 quad (0x4314d0) in
@@ -226,7 +222,7 @@ void GAMEAPI fe_side_panel_init(void)
     uint32_t *src = (uint32_t *)PTR(0x4cd880), *dst = (uint32_t *)PTR(0x4cd8e8);
     int i;
 
-    fe_quad_flat_set_at(0x4cd880, 0x4ac99c, 0, 0, 1, 1, 0x44fa0000);
+    fe_quad_flat_set_at(PTR(0x4cd880), PTR(0x4ac99c), 0, 0, 1, 1, 0x44fa0000);
     for (i = 0; i < 0x1a; i++)
         dst[i] = src[i];
 }
@@ -261,15 +257,15 @@ void GAMEAPI fe_side_panel_draw(uint32_t ot, int32_t page, int32_t x, int32_t y)
     U32(q, 0x38) = 0x40;
     U32(q, 0x54) = 0x44fa0000;
     U32(q, 0x50) = 0x40;
-    ot_add_prim_at(ot, q);
+    ot_add_prim_at(ot, (uint32_t *)q);
 }
 
 /* 0x453710: the two text box frames' sprites (0x4316d0 at 0x4cfea0 and
  * 0x4d02d8). */
 void GAMEAPI fe_corner_frames_init(void)
 {
-    fe_frame_sprites_init_at(0x4cfea0);
-    fe_frame_sprites_init_at(0x4d02d8);
+    fe_frame_sprites_init_at(PTR(0x4cfea0));
+    fe_frame_sprites_init_at(PTR(0x4d02d8));
 }
 
 /* ===================================================================== */
@@ -306,19 +302,19 @@ void GAMEAPI menu_model_draw(int32_t id, const uint32_t *matrix, const int32_t *
     I32(body, 0x3c) = pos[2];
     G32(0x6c1e18) = G32(0x4beb84);
     G32(0x6c1e24) = G32(0x6c1e34);
-    depth = CALL1(0x45a2a0, body);
-    CALL1(0x45b200, light);
-    CALL2(0x45b400, body, light);
+    depth = GCALL(0x45a2a0, model_view_depth)(body);
+    GCALL(0x45b200, light_colours_set)((const uint32_t *)GMEM(light));
+    GCALL(0x45b400, model_lights_set)(body, (const uint32_t *)GMEM(light));
     if ((flags & 1) && G32(0x6cce7c) == 0) {
         e = depth >> 5;
         if (flags & 2)
             e += 10;
         if (e < 1)
             e = 1;
-        CALL3(0x4226d0, body, 0x6cd510 + 4 * e, depth);
+        GCALL(0x4226d0, model_draw_lod)(A(body), (uint32_t)(0x6cd510 + 4 * e), depth);
         return;
     }
-    CALL2(0x45a430, body, depth);
+    GCALL(0x45a430, model_faces_draw)(body, depth);
 }
 
 /* Load an int16 3x3 GTE matrix (five dwords to 0x6ccbe0) and its floats

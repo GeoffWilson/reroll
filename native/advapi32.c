@@ -244,7 +244,22 @@ void nt_registry_load(void)
 
 /* ---- the API ---- */
 
-/* Open keys are pointers to their entry; the roots are the predefined values. */
+/* Open keys are small handles, KEY_BASE + 4 * their entry's index (the game
+ * keeps them in 32 bits); the roots are the predefined values. */
+#define KEY_BASE 0x1000u
+
+static DWORD key_handle(const struct key *k)
+{
+    return KEY_BASE + 4u * (DWORD)(k - keys);
+}
+
+static struct key *open_key(DWORD h)
+{
+    if (h >= KEY_BASE && h < KEY_BASE + 4u * MAX_KEYS && !(h & 3) && (int)(h - KEY_BASE) / 4 < key_count)
+        return &keys[(h - KEY_BASE) / 4];
+    return 0;
+}
+
 static int key_path(DWORD parent, const char *sub, char *out, size_t size)
 {
     const char *base;
@@ -252,8 +267,8 @@ static int key_path(DWORD parent, const char *sub, char *out, size_t size)
         base = "HKLM";
     else if (parent == HKEY_CURRENT_USER)
         base = "HKCU";
-    else if (parent >= (DWORD)(uintptr_t)keys && parent < (DWORD)(uintptr_t)(keys + MAX_KEYS))
-        base = ((struct key *)(uintptr_t)parent)->path;
+    else if (open_key(parent))
+        base = open_key(parent)->path;
     else
         return 0;
     if (sub && *sub)
@@ -274,7 +289,7 @@ LONG WINAPI RegOpenKeyExA(DWORD parent, const char *sub, DWORD options, DWORD sa
     (void)sam;
     if (!key_path(parent, sub, path, sizeof path) || !(k = find_key(path, 0)))
         return ERROR_FILE_NOT_FOUND;
-    *result = (DWORD)(uintptr_t)k;
+    *result = key_handle(k);
     return ERROR_SUCCESS;
 }
 
@@ -297,7 +312,7 @@ LONG WINAPI RegCreateKeyExA(DWORD parent, const char *sub, DWORD reserved, char 
         return ERROR_NOT_ENOUGH_MEMORY;
     if (!existed)
         save();
-    *result = (DWORD)(uintptr_t)k;
+    *result = key_handle(k);
     if (disposition)
         *disposition = existed ? 2 /* REG_OPENED_EXISTING_KEY */ : 1 /* REG_CREATED_NEW_KEY */;
     return ERROR_SUCCESS;
@@ -307,13 +322,6 @@ LONG WINAPI RegCloseKey(DWORD key)
 {
     (void)key;
     return ERROR_SUCCESS;
-}
-
-static struct key *open_key(DWORD h)
-{
-    if (h >= (DWORD)(uintptr_t)keys && h < (DWORD)(uintptr_t)(keys + MAX_KEYS))
-        return (struct key *)(uintptr_t)h;
-    return 0;
 }
 
 LONG WINAPI RegQueryValueExA(DWORD key, const char *name, DWORD *reserved, DWORD *type, uint8_t *data, DWORD *size)

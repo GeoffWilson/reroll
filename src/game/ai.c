@@ -11,14 +11,15 @@
 #include "body.h"
 #include "fixed.h"
 #include "physics.h"
+#include "gamefn.h"
 
-#define g_race (*(uint8_t **)0x4b1960)
-#define g_lines (*(uint8_t **)(*(uint8_t **)0x6c1e30 + 0x60))
+#define g_race GP(0x4b1960)
+#define g_lines GP(GP(0x6c1e30) + 0x60)
 #define g_car_slots ((uint8_t *)0x6bfb80)
 #define CAR_SLOT_SIZE 0x274
 
 #define LINE(i) (g_lines + (uint16_t)(i) * 0xc)
-#define NODE(line, i) (*(uint8_t **)((line) + 8) + (uint16_t)(i) * 0x10)
+#define NODE(line, i) (GP((line) + 8) + (uint16_t)(i) * 0x10)
 #define S16(p, off) (*(int16_t *)((p) + (off)))
 #define BUTTONS 0x700
 
@@ -254,8 +255,8 @@ void GAMEAPI line_direction(int32_t *out, uint32_t line_index, uint32_t node)
  * at the car instead. */
 void GAMEAPI ai_line_direction(int32_t *out, const uint8_t *slot)
 {
-    const uint8_t *car = *(uint8_t **)slot;
-    uint16_t current = *(const uint16_t *)(car + 0x6b0), target = (*(uint8_t **)(slot + 0x64))[5];
+    const uint8_t *car = GP(slot);
+    uint16_t current = *(const uint16_t *)(car + 0x6b0), target = GP(slot + 0x64)[5];
 
     if (current != target && LINE(current)[2] != LINE(target)[2]) {
         uint16_t node = *(const uint16_t *)(car + 0x6b2);
@@ -275,7 +276,7 @@ int32_t GAMEAPI car_surface_kind(const uint8_t *car)
 
     for (w = 0; w < 4; w++)
         if (car[0x324 + w * 0xc4] & 1) {
-            const uint8_t *surface = *(uint8_t **)(car + 0x198 + w * 0x1c);
+            const uint8_t *surface = GP(car + 0x198 + w * 0x1c);
 
             return surface ? (int32_t)(U32(surface, 0xc) >> 8 & 0x1f) : 0;
         }
@@ -531,7 +532,7 @@ void GAMEAPI ai_pace(uint8_t *car)
     boost = (I32(car, 0x698) - 0x60000) >> (shift + 9);
     if (boost < 0)
         boost = 0;
-    limit = S16(*(uint8_t **)other, 0x658) - ease + boost;
+    limit = S16(GP(other), 0x658) - ease + boost;
     if (limit < floor)
         limit = floor;
     if (S16(car, 0x658) > limit)

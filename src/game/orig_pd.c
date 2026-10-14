@@ -23,6 +23,7 @@
  * that address here too. Everything outside the group is called by
  * address. */
 #include "../runtime.h"
+#include "gamefn.h"
 #include "physics.h"
 
 #define U8(p, off) (*(uint8_t *)((uint8_t *)(uintptr_t)(p) + (off)))
@@ -37,18 +38,6 @@
 #define GI32(a) (*(int32_t *)(uintptr_t)(a))
 #define A(x) ((uint32_t)(uintptr_t)(x))
 
-typedef int32_t(GAMEAPI *pd_fn0)(void);
-typedef int32_t(GAMEAPI *pd_fn1)(uint32_t a);
-typedef int32_t(GAMEAPI *pd_fn2)(uint32_t a, uint32_t b);
-typedef int32_t(GAMEAPI *pd_fn3)(uint32_t a, uint32_t b, uint32_t c);
-typedef int32_t(GAMEAPI *pd_fn7)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f,
-                                 uint32_t g);
-
-#define CALL0(a) (((pd_fn0)(a))())
-#define CALL1(a, x) (((pd_fn1)(a))(A(x)))
-#define CALL2(a, x, y) (((pd_fn2)(a))(A(x), A(y)))
-#define CALL3(a, x, y, z) (((pd_fn3)(a))(A(x), A(y), A(z)))
-#define CALL7(a, x, y, z, w, v, u, t) (((pd_fn7)(a))(A(x), A(y), A(z), A(w), A(v), A(u), A(t)))
 
 /* This group's functions (also in build/groups/pd_protos.txt for physics.h). */
 void GAMEAPI shake_flash_tint(uint32_t car); /* 0x42be20 */
@@ -95,22 +84,31 @@ int32_t GAMEAPI string_build(uint32_t font_id, const uint8_t *s, uint32_t colour
 #define g_glyph_count G16(0x4be2fc)
 #define REC(i) (g_strings + (uint32_t)(i) * 0x14c)
 
-#define crt_malloc(n) ((uint32_t)CALL1(0x4982c2, n))
-#define crt_strncpy(d, s, n) CALL3(0x498350, d, s, n)
-#define debug_log(fmt, s) CALL2(0x496340, fmt, s)
-#define sin_table(a) CALL1(0x480b10, a)
-#define cos_table(a) CALL1(0x480bc0, a)
-#define screen_idle(a) CALL1(0x479ae0, a)
-#define shake_tint_net(p) CALL1(0x485050, p)
-#define dword_store(p, v) CALL2(0x4290a0, p, v)
-#define ot_link_chain(ot, a, b) CALL3(0x429080, ot, a, b)
-#define matrix_from_angles(a, m) CALL2(0x426f80, a, m)
-#define matrix_identity(m) CALL1(0x4264f0, m)
-#define call_text_slot_free() CALL0(0x42fd10)
-#define call_text_tab_next(x) ((uint32_t)CALL1(0x42fd60, x))
-#define call_number_parse(s, v) CALL2(0x42fcd0, s, v)
-#define call_number_digits(buf, v) CALL2(0x42fc40, buf, v)
-#define call_glyph_place(f, c, col, y, x, h, fl) CALL7(0x42fd90, f, c, col, y, x, h, fl)
+/* 0x479ae0 (ps_wait_none) reads no argument; the original pushes one. */
+typedef int32_t(GAMEAPI *pd_idle_fn)(uint32_t a);
+
+#define crt_malloc(n) ((uint32_t)(uintptr_t)GCALL(0x4982c2, msvc_malloc)(n))
+#define crt_strncpy(d, s, n) GCALL(0x498350, msvc_strncpy)((char *)(d), (const char *)(s), (uint32_t)(n))
+#define debug_log(fmt, s) GCALL(0x496340, debug_log_printf)((const char *)GMEM(fmt), s)
+#define sin_table(a) GCALL(0x480b10, sin_table)(a)
+#define cos_table(a) GCALL(0x480bc0, cos_table)(a)
+#define screen_idle(a) ((pd_idle_fn)(uintptr_t)0x479ae0)(a)
+#define shake_tint_net(p) GCALL(0x485050, net_tint_level_get)((int32_t *)(p))
+#define dword_store(p, v) GCALL(0x4290a0, dword_store)((uint32_t *)GMEM(p), v)
+#define ot_link_chain(ot, a, b) ((int32_t)(uintptr_t)GCALL(0x429080, word_exchange)(ot, a, (uint32_t *)GMEM(b)))
+#define matrix_from_angles(a, m) GCALL(0x426f80, matrix_from_angles)((const int16_t *)(a), (int16_t *)GMEM(m))
+#define matrix_identity(m) GCALL(0x4264f0, matrix_identity)((uint8_t *)GMEM(m))
+#define call_text_slot_free() GCALL(0x42fd10, text_slot_free)()
+#define call_text_tab_next(x) GCALL(0x42fd60, text_tab_next)(x)
+#define call_number_parse(s, v) GCALL(0x42fcd0, decimal_parse)((const uint8_t *)(s), (int32_t *)(v))
+#define call_number_digits(buf, v) GCALL(0x42fc40, decimal9_format)((char *)(buf), v)
+#define call_glyph_place(f, c, col, y, x, h, fl) \
+    GCALL(0x42fd90, glyph_place)(f, c, (const uint8_t *)GMEM(col), y, (int16_t *)(x), (int16_t *)(h), fl)
+
+#if !defined(__i386__)
+float subunit_transform_c(uint8_t *rec); /* 0x426a20: returns what the original leaves in st(0) (orig_wb.c) */
+void wide_project_c(float h);            /* 0x426b00: projects *0x6ccd74 with st(0) = h (src/widescreen.c) */
+#endif
 
 /* Every x87 register, for asm blocks that call out or use the FPU stack. */
 #define X87 "st", "st(1)", "st(2)", "st(3)", "st(4)", "st(5)", "st(6)", "st(7)"
@@ -162,22 +160,35 @@ static inline uint32_t pd_cmp(uint32_t a, uint32_t b)
 /* fld dword a; call _ftol (0x497a80, truncating): the low dword. */
 static inline int32_t pd_ftol(uint32_t a)
 {
+#if defined(__i386__)
     int32_t r;
     __asm__ volatile("flds %1\n\tmovl $0x497a80, %%eax\n\tcall *%%eax"
                      : "=a"(r)
                      : "m"(a)
                      : "ecx", "edx", "cc", "memory", X87);
     return r;
+#else
+    float f;
+
+    memcpy(&f, &a, 4);
+    return (int32_t)(int64_t)f; /* cvttss2si: truncating, 0x8000000000000000 when out of range, as _ftol */
+#endif
 }
 
 /* The transform pointer *0x6ccd78 (record out) then the projection
  * *0x6ccd80, which takes the transform's st(0). */
 static inline void pd_transform_project(uint32_t *out)
 {
+#if defined(__i386__)
     __asm__ volatile("pushl %0\n\tcall *0x6ccd78\n\taddl $4, %%esp\n\tcall *0x6ccd80"
                      :
                      : "S"(out)
                      : "eax", "ecx", "edx", "cc", "memory", X87);
+#else
+    /* x86-64: the transform 0x426a20 (orig_wb.c's C body) and the
+     * projection 0x426b00 on its st(0) (src/widescreen.c's wide_project). */
+    wide_project_c(subunit_transform_c((uint8_t *)out));
+#endif
 }
 
 static uint32_t pd_strlen(const uint8_t *s)
@@ -834,15 +845,50 @@ static void pd_format_copy(uint8_t *buf, const char *fmt)
 
 /* ===== 0x42e810: a string object from a format and its arguments
  * (0x42f6a0); returns its index or -1. ===== */
+#if !defined(__i386__)
+/* x86-64: string_build reads its arguments as 32-bit words (the i386 stack);
+ * a va_list is a register-save structure here, so they are copied out. Every
+ * argument is an integer or a game pointer (below 4 GB): each is read as a
+ * 64-bit slot and kept as its low 32 bits. The count is the format's escapes
+ * plus its largest ~Pn index, an upper bound. */
+static uint32_t pd_va_pack(const uint8_t *fmt, __builtin_va_list ap, uint32_t *words, uint32_t max)
+{
+    uint32_t n = 0, top = 0, k;
+    const uint8_t *p;
+    for (p = fmt; *p; p++)
+        if (*p == '~') {
+            n++;
+            if (p[1] == 'P') {
+                uint32_t v = 0;
+                const uint8_t *d = p + 2;
+                while (*d >= '0' && *d <= '9')
+                    v = v * 10 + (uint32_t)(*d++ - '0');
+                if (v + 1 > top)
+                    top = v + 1;
+            }
+        }
+    n += top;
+    if (n > max)
+        n = max;
+    for (k = 0; k < n; k++)
+        words[k] = (uint32_t)__builtin_va_arg(ap, uint64_t);
+    return (uint32_t)(uintptr_t)words;
+}
+#define PD_VA(fmt, ap, words) pd_va_pack(fmt, ap, words, sizeof words / sizeof words[0])
+#else
+#define PD_VA(fmt, ap, words) ((void)(words), (uint32_t)(uintptr_t)(ap))
+#endif
+
 int32_t GAMEAPI string_printf(uint32_t font, uint32_t colours, uint32_t flags, uint32_t spacing, const char *fmt, ...)
 {
     uint8_t buf[0x100];
     __builtin_va_list ap;
+    uint32_t words[32];
     int32_t r;
 
     pd_format_copy(buf, fmt);
     __builtin_va_start(ap, fmt);
-    r = string_build(font, buf, colours, flags, spacing, (uint32_t)(uintptr_t)ap);
+    r = string_build(font, buf, colours, flags, spacing, PD_VA(buf, ap, words));
     __builtin_va_end(ap);
     return r;
 }
@@ -855,12 +901,13 @@ int32_t GAMEAPI string_width_printf(uint32_t font, uint32_t colours, uint32_t fl
 {
     uint8_t buf[0x100];
     __builtin_va_list ap;
+    uint32_t words[32];
     uint16_t saved = g_glyph_count;
     int32_t idx, w;
 
     pd_format_copy(buf, fmt);
     __builtin_va_start(ap, fmt);
-    idx = string_build(font, buf, colours, flags, spacing, (uint32_t)(uintptr_t)ap);
+    idx = string_build(font, buf, colours, flags, spacing, PD_VA(buf, ap, words));
     __builtin_va_end(ap);
     w = (int32_t)string_get_width(idx);
     if (idx != -1)

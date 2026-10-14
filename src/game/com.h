@@ -19,9 +19,9 @@
 #define COM_METHOD(o, index, type) ((type)(*(void *const *const *)COM_SELF(o))[index])
 
 /* IDirectDraw */
-static inline int32_t IDirectDraw_QueryInterface(uint32_t self, const void *iid, void **out)
+static inline int32_t IDirectDraw_QueryInterface(uint32_t self, const void *iid, uint32_t *out)
 {
-    return COM_METHOD(self, 0, int32_t (W32API *)(void *, const void *, void **))(COM_SELF(self), iid, out);
+    return COM_METHOD(self, 0, int32_t (W32API *)(void *, const void *, uint32_t *))(COM_SELF(self), iid, out);
 }
 static inline int32_t IDirectDraw_AddRef(uint32_t self)
 {
@@ -35,17 +35,17 @@ static inline int32_t IDirectDraw_Compact(uint32_t self)
 {
     return COM_METHOD(self, 3, int32_t (W32API *)(void *))(COM_SELF(self));
 }
-static inline int32_t IDirectDraw_CreateClipper(uint32_t self, DWORD flags, void **out, void *outer)
+static inline int32_t IDirectDraw_CreateClipper(uint32_t self, DWORD flags, uint32_t *out, void *outer)
 {
-    return COM_METHOD(self, 4, int32_t (W32API *)(void *, DWORD, void **, void *))(COM_SELF(self), flags, out, outer);
+    return COM_METHOD(self, 4, int32_t (W32API *)(void *, DWORD, uint32_t *, void *))(COM_SELF(self), flags, out, outer);
 }
-static inline int32_t IDirectDraw_CreatePalette(uint32_t self, DWORD flags, const void *entries, void **out, void *outer)
+static inline int32_t IDirectDraw_CreatePalette(uint32_t self, DWORD flags, const void *entries, uint32_t *out, void *outer)
 {
-    return COM_METHOD(self, 5, int32_t (W32API *)(void *, DWORD, const void *, void **, void *))(COM_SELF(self), flags, entries, out, outer);
+    return COM_METHOD(self, 5, int32_t (W32API *)(void *, DWORD, const void *, uint32_t *, void *))(COM_SELF(self), flags, entries, out, outer);
 }
-static inline int32_t IDirectDraw_CreateSurface(uint32_t self, const uint8_t *desc, void **out, void *outer)
+static inline int32_t IDirectDraw_CreateSurface(uint32_t self, const uint8_t *desc, uint32_t *out, void *outer)
 {
-    return COM_METHOD(self, 6, int32_t (W32API *)(void *, const uint8_t *, void **, void *))(COM_SELF(self), desc, out, outer);
+    return COM_METHOD(self, 6, int32_t (W32API *)(void *, const uint8_t *, uint32_t *, void *))(COM_SELF(self), desc, out, outer);
 }
 static inline int32_t IDirectDraw_EnumDisplayModes(uint32_t self, DWORD flags, const uint8_t *filter, void *ctx, void *callback)
 {
@@ -85,9 +85,9 @@ static inline int32_t IDirectDraw2_GetAvailableVidMem(uint32_t self, const DWORD
 }
 
 /* IDirect3D2 */
-static inline int32_t IDirect3D2_QueryInterface(uint32_t self, const void *iid, void **out)
+static inline int32_t IDirect3D2_QueryInterface(uint32_t self, const void *iid, uint32_t *out)
 {
-    return COM_METHOD(self, 0, int32_t (W32API *)(void *, const void *, void **))(COM_SELF(self), iid, out);
+    return COM_METHOD(self, 0, int32_t (W32API *)(void *, const void *, uint32_t *))(COM_SELF(self), iid, out);
 }
 static inline int32_t IDirect3D2_AddRef(uint32_t self)
 {
@@ -101,23 +101,23 @@ static inline int32_t IDirect3D2_EnumDevices(uint32_t self, void *callback, void
 {
     return COM_METHOD(self, 3, int32_t (W32API *)(void *, void *, void *))(COM_SELF(self), callback, ctx);
 }
-static inline int32_t IDirect3D2_CreateMaterial(uint32_t self, void **out, void *outer)
+static inline int32_t IDirect3D2_CreateMaterial(uint32_t self, uint32_t *out, void *outer)
 {
-    return COM_METHOD(self, 5, int32_t (W32API *)(void *, void **, void *))(COM_SELF(self), out, outer);
+    return COM_METHOD(self, 5, int32_t (W32API *)(void *, uint32_t *, void *))(COM_SELF(self), out, outer);
 }
-static inline int32_t IDirect3D2_CreateViewport(uint32_t self, void **out, void *outer)
+static inline int32_t IDirect3D2_CreateViewport(uint32_t self, uint32_t *out, void *outer)
 {
-    return COM_METHOD(self, 6, int32_t (W32API *)(void *, void **, void *))(COM_SELF(self), out, outer);
+    return COM_METHOD(self, 6, int32_t (W32API *)(void *, uint32_t *, void *))(COM_SELF(self), out, outer);
 }
-static inline int32_t IDirect3D2_CreateDevice(uint32_t self, const void *clsid, void *target, void **out)
+static inline int32_t IDirect3D2_CreateDevice(uint32_t self, const void *clsid, void *target, uint32_t *out)
 {
-    return COM_METHOD(self, 8, int32_t (W32API *)(void *, const void *, void *, void **))(COM_SELF(self), clsid, target, out);
+    return COM_METHOD(self, 8, int32_t (W32API *)(void *, const void *, void *, uint32_t *))(COM_SELF(self), clsid, target, out);
 }
 
 /* IDirectDrawSurface */
-static inline int32_t IDirectDrawSurface_QueryInterface(uint32_t self, const void *iid, void **out)
+static inline int32_t IDirectDrawSurface_QueryInterface(uint32_t self, const void *iid, uint32_t *out)
 {
-    return COM_METHOD(self, 0, int32_t (W32API *)(void *, const void *, void **))(COM_SELF(self), iid, out);
+    return COM_METHOD(self, 0, int32_t (W32API *)(void *, const void *, uint32_t *))(COM_SELF(self), iid, out);
 }
 static inline int32_t IDirectDrawSurface_AddRef(uint32_t self)
 {
@@ -147,9 +147,9 @@ static inline int32_t IDirectDrawSurface_Flip(uint32_t self, void *target, DWORD
 {
     return COM_METHOD(self, 11, int32_t (W32API *)(void *, void *, DWORD))(COM_SELF(self), target, flags);
 }
-static inline int32_t IDirectDrawSurface_GetAttachedSurface(uint32_t self, const DWORD *caps, void **out)
+static inline int32_t IDirectDrawSurface_GetAttachedSurface(uint32_t self, const DWORD *caps, uint32_t *out)
 {
-    return COM_METHOD(self, 12, int32_t (W32API *)(void *, const DWORD *, void **))(COM_SELF(self), caps, out);
+    return COM_METHOD(self, 12, int32_t (W32API *)(void *, const DWORD *, uint32_t *))(COM_SELF(self), caps, out);
 }
 static inline int32_t IDirectDrawSurface_GetBltStatus(uint32_t self, DWORD a)
 {
@@ -163,9 +163,9 @@ static inline int32_t IDirectDrawSurface_GetColorKey(uint32_t self, DWORD flags,
 {
     return COM_METHOD(self, 16, int32_t (W32API *)(void *, DWORD, uint32_t *))(COM_SELF(self), flags, key);
 }
-static inline int32_t IDirectDrawSurface_GetDC(uint32_t self, HANDLE *dc)
+static inline int32_t IDirectDrawSurface_GetDC(uint32_t self, uint32_t *dc)
 {
-    return COM_METHOD(self, 17, int32_t (W32API *)(void *, HANDLE *))(COM_SELF(self), dc);
+    return COM_METHOD(self, 17, int32_t (W32API *)(void *, uint32_t *))(COM_SELF(self), dc);
 }
 static inline int32_t IDirectDrawSurface_GetFlipStatus(uint32_t self, DWORD a)
 {
@@ -221,9 +221,9 @@ static inline int32_t IDirectDrawSurface_PageUnlock(uint32_t self, DWORD a)
 }
 
 /* IDirect3DTexture2 */
-static inline int32_t IDirect3DTexture2_QueryInterface(uint32_t self, const void *iid, void **out)
+static inline int32_t IDirect3DTexture2_QueryInterface(uint32_t self, const void *iid, uint32_t *out)
 {
-    return COM_METHOD(self, 0, int32_t (W32API *)(void *, const void *, void **))(COM_SELF(self), iid, out);
+    return COM_METHOD(self, 0, int32_t (W32API *)(void *, const void *, uint32_t *))(COM_SELF(self), iid, out);
 }
 static inline int32_t IDirect3DTexture2_AddRef(uint32_t self)
 {
@@ -401,9 +401,9 @@ static inline int32_t IDirectDrawPalette_SetEntries(uint32_t self, DWORD a, DWOR
 }
 
 /* IDirectInputA */
-static inline int32_t IDirectInputA_QueryInterface(uint32_t self, const void *iid, void **out)
+static inline int32_t IDirectInputA_QueryInterface(uint32_t self, const void *iid, uint32_t *out)
 {
-    return COM_METHOD(self, 0, int32_t (W32API *)(void *, const void *, void **))(COM_SELF(self), iid, out);
+    return COM_METHOD(self, 0, int32_t (W32API *)(void *, const void *, uint32_t *))(COM_SELF(self), iid, out);
 }
 static inline int32_t IDirectInputA_AddRef(uint32_t self)
 {
@@ -413,9 +413,9 @@ static inline int32_t IDirectInputA_Release(uint32_t self)
 {
     return COM_METHOD(self, 2, int32_t (W32API *)(void *))(COM_SELF(self));
 }
-static inline int32_t IDirectInputA_CreateDevice(uint32_t self, const uint8_t *guid, void **out, void *outer)
+static inline int32_t IDirectInputA_CreateDevice(uint32_t self, const uint8_t *guid, uint32_t *out, void *outer)
 {
-    return COM_METHOD(self, 3, int32_t (W32API *)(void *, const uint8_t *, void **, void *))(COM_SELF(self), guid, out, outer);
+    return COM_METHOD(self, 3, int32_t (W32API *)(void *, const uint8_t *, uint32_t *, void *))(COM_SELF(self), guid, out, outer);
 }
 static inline int32_t IDirectInputA_EnumDevices(uint32_t self, DWORD type, void *callback, void *ctx, DWORD flags)
 {
@@ -423,9 +423,9 @@ static inline int32_t IDirectInputA_EnumDevices(uint32_t self, DWORD type, void 
 }
 
 /* IDirectInputDevice2A */
-static inline int32_t IDirectInputDevice2A_QueryInterface(uint32_t self, const void *iid, void **out)
+static inline int32_t IDirectInputDevice2A_QueryInterface(uint32_t self, const void *iid, uint32_t *out)
 {
-    return COM_METHOD(self, 0, int32_t (W32API *)(void *, const void *, void **))(COM_SELF(self), iid, out);
+    return COM_METHOD(self, 0, int32_t (W32API *)(void *, const void *, uint32_t *))(COM_SELF(self), iid, out);
 }
 static inline int32_t IDirectInputDevice2A_AddRef(uint32_t self)
 {
@@ -479,9 +479,9 @@ static inline int32_t IDirectInputDevice2A_GetDeviceInfo(uint32_t self, uint8_t 
 {
     return COM_METHOD(self, 15, int32_t (W32API *)(void *, uint8_t *))(COM_SELF(self), info);
 }
-static inline int32_t IDirectInputDevice2A_CreateEffect(uint32_t self, const uint8_t *guid, const uint8_t *params, void **out, void *outer)
+static inline int32_t IDirectInputDevice2A_CreateEffect(uint32_t self, const uint8_t *guid, const uint8_t *params, uint32_t *out, void *outer)
 {
-    return COM_METHOD(self, 18, int32_t (W32API *)(void *, const uint8_t *, const uint8_t *, void **, void *))(COM_SELF(self), guid, params, out, outer);
+    return COM_METHOD(self, 18, int32_t (W32API *)(void *, const uint8_t *, const uint8_t *, uint32_t *, void *))(COM_SELF(self), guid, params, out, outer);
 }
 static inline int32_t IDirectInputDevice2A_GetForceFeedbackState(uint32_t self, DWORD *state)
 {
@@ -497,9 +497,9 @@ static inline int32_t IDirectInputDevice2A_Poll(uint32_t self)
 }
 
 /* IDirectInputEffect */
-static inline int32_t IDirectInputEffect_QueryInterface(uint32_t self, const void *iid, void **out)
+static inline int32_t IDirectInputEffect_QueryInterface(uint32_t self, const void *iid, uint32_t *out)
 {
-    return COM_METHOD(self, 0, int32_t (W32API *)(void *, const void *, void **))(COM_SELF(self), iid, out);
+    return COM_METHOD(self, 0, int32_t (W32API *)(void *, const void *, uint32_t *))(COM_SELF(self), iid, out);
 }
 static inline int32_t IDirectInputEffect_AddRef(uint32_t self)
 {
@@ -539,9 +539,9 @@ static inline int32_t IDirectInputEffect_Unload(uint32_t self)
 }
 
 /* IDirectPlay4A */
-static inline int32_t IDirectPlay4A_QueryInterface(uint32_t self, const void *iid, void **out)
+static inline int32_t IDirectPlay4A_QueryInterface(uint32_t self, const void *iid, uint32_t *out)
 {
-    return COM_METHOD(self, 0, int32_t (W32API *)(void *, const void *, void **))(COM_SELF(self), iid, out);
+    return COM_METHOD(self, 0, int32_t (W32API *)(void *, const void *, uint32_t *))(COM_SELF(self), iid, out);
 }
 static inline int32_t IDirectPlay4A_AddRef(uint32_t self)
 {
@@ -641,9 +641,9 @@ static inline int32_t IDirectDraw4_GetDeviceIdentifier(uint32_t self, uint8_t *i
 }
 
 /* IDirectDrawSurface */
-static inline int32_t IDirectDrawSurface_GetPalette(uint32_t self, void **out)
+static inline int32_t IDirectDrawSurface_GetPalette(uint32_t self, uint32_t *out)
 {
-    return COM_METHOD(self, 20, int32_t (W32API *)(void *, void **))(COM_SELF(self), out);
+    return COM_METHOD(self, 20, int32_t (W32API *)(void *, uint32_t *))(COM_SELF(self), out);
 }
 
 /* IDirectDrawPalette */
@@ -660,9 +660,9 @@ static inline int32_t IDirectSound_Release(uint32_t self)
     return COM_METHOD(self, 2, int32_t (W32API *)(void *))(COM_SELF(self));
 }
 
-static inline int32_t IDirectSound_CreateSoundBuffer(uint32_t self, const DWORD *desc, void **out, void *outer)
+static inline int32_t IDirectSound_CreateSoundBuffer(uint32_t self, const DWORD *desc, uint32_t *out, void *outer)
 {
-    return COM_METHOD(self, 3, int32_t (W32API *)(void *, const DWORD *, void **, void *))(COM_SELF(self), desc, out,
+    return COM_METHOD(self, 3, int32_t (W32API *)(void *, const DWORD *, uint32_t *, void *))(COM_SELF(self), desc, out,
                                                                                            outer);
 }
 
@@ -692,10 +692,10 @@ static inline int32_t IDirectSoundBuffer_GetCurrentPosition(uint32_t self, DWORD
     return COM_METHOD(self, 4, int32_t (W32API *)(void *, DWORD *, DWORD *))(COM_SELF(self), play, write);
 }
 
-static inline int32_t IDirectSoundBuffer_Lock(uint32_t self, DWORD offset, DWORD bytes, void **p1, DWORD *n1,
-                                              void **p2, DWORD *n2, DWORD flags)
+static inline int32_t IDirectSoundBuffer_Lock(uint32_t self, DWORD offset, DWORD bytes, uint32_t *p1, DWORD *n1,
+                                              uint32_t *p2, DWORD *n2, DWORD flags)
 {
-    return COM_METHOD(self, 11, int32_t (W32API *)(void *, DWORD, DWORD, void **, DWORD *, void **, DWORD *,
+    return COM_METHOD(self, 11, int32_t (W32API *)(void *, DWORD, DWORD, uint32_t *, DWORD *, uint32_t *, DWORD *,
                                                    DWORD))(COM_SELF(self), offset, bytes, p1, n1, p2, n2, flags);
 }
 
@@ -721,9 +721,9 @@ static inline int32_t IDirectSoundBuffer_Unlock(uint32_t self, void *p1, DWORD n
                                                                                           n2);
 }
 
-static inline int32_t IDirectSoundBuffer_QueryInterface(uint32_t self, const void *iid, void **out)
+static inline int32_t IDirectSoundBuffer_QueryInterface(uint32_t self, const void *iid, uint32_t *out)
 {
-    return COM_METHOD(self, 0, int32_t (W32API *)(void *, const void *, void **))(COM_SELF(self), iid, out);
+    return COM_METHOD(self, 0, int32_t (W32API *)(void *, const void *, uint32_t *))(COM_SELF(self), iid, out);
 }
 
 /* IKsPropertySet */
@@ -748,9 +748,9 @@ static inline int32_t IKsPropertySet_QuerySupport(uint32_t self, const void *set
 }
 
 /* IDirectPlayLobbyA */
-static inline int32_t IDirectPlayLobbyA_QueryInterface(uint32_t self, const void *iid, void **out)
+static inline int32_t IDirectPlayLobbyA_QueryInterface(uint32_t self, const void *iid, uint32_t *out)
 {
-    return COM_METHOD(self, 0, int32_t (W32API *)(void *, const void *, void **))(COM_SELF(self), iid, out);
+    return COM_METHOD(self, 0, int32_t (W32API *)(void *, const void *, uint32_t *))(COM_SELF(self), iid, out);
 }
 
 static inline int32_t IDirectPlayLobbyA_Release(uint32_t self)

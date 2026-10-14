@@ -8,36 +8,29 @@
 #include "body.h"
 #include "fixed.h"
 #include "physics.h"
+#include "gamefn.h"
 
-#define g_race (*(uint8_t **)0x4b1960)
+#define g_race GP(0x4b1960)
 #define g_race_ticks (*(uint32_t *)0x6c0a50)
 #define g_seed (*(uint32_t *)0x4b11dc)
 #define g_glow_seed (*(uint32_t *)0x4b2430)
 #define g_car_slots ((uint8_t *)0x6bfb80)
 #define CAR_SLOT_SIZE 0x274
-#define SLOT_CAR(i) (*(uint8_t **)(g_car_slots + (i) * CAR_SLOT_SIZE))
+#define SLOT_CAR(i) GP(g_car_slots + (i) * CAR_SLOT_SIZE)
 #define RACE_CARS(race) ((race)[0x54d])
 
 #define U16(p, off) (*(uint16_t *)((p) + (off)))
 #define I16(p, off) (*(int16_t *)((p) + (off)))
 
-typedef void(GAMEAPI *void_fn)(void);
-typedef void(GAMEAPI *ptr_fn)(uint8_t *p);
-typedef void(GAMEAPI *shake_fn)(int32_t *at, int32_t *velocity, int32_t a, int32_t b, int32_t c);
-typedef void(GAMEAPI *place_fn)(uint8_t *body, int32_t a, const void *b, int32_t c);
-typedef uint8_t(GAMEAPI *loop_sound_fn)(int32_t a, int32_t b, int32_t c, int32_t d, int32_t e, uint8_t *at,
-                                        uint8_t *velocity, int32_t f);
-typedef void(GAMEAPI *glow_light_fn)(uint8_t *at, uint8_t *colour, int32_t a, int32_t b, int32_t c, int32_t *car);
-#define explosion_shake ((shake_fn)0x42aa30)     /* group F */
-#define rock_land ((ptr_fn)0x458320)             /* group F */
-#define body_place ((place_fn)0x419150)          /* group F */
-#define loop_sound ((loop_sound_fn)0x471e60)     /* sound */
-#define glow_light ((glow_light_fn)0x441d00)     /* not ours */
-#define grid_link_fn ((ptr_fn)0x460fb0)
-#define body_update_velocity_fn ((ptr_fn)0x465890)
-#define grid_unlink_piece ((ptr_fn)0x4612a0)
-typedef uint8_t *(GAMEAPI *cell_fn)(int32_t x, int32_t y, int32_t z, int32_t *off_track);
-#define track_cell_fn ((cell_fn)0x419420)
+#define explosion_shake GCALL(0x42aa30, explosion_effects)     /* group F */
+#define rock_land GCALL(0x458320, pickup_fallen)             /* group F */
+#define body_place GCALL(0x419150, body_spheres_set)          /* group F */
+#define loop_sound GCALL(0x471e60, sound_moving_flagged)     /* sound */
+#define glow_light GCALL(0x441d00, light_add)     /* not ours */
+#define grid_link_fn GCALL(0x460fb0, object_grid_link)
+#define body_update_velocity_fn GCALL(0x465890, body_update_velocity)
+#define grid_unlink_piece GCALL(0x4612a0, object_grid_unlink2)
+#define track_cell_fn GCALL(0x419420, track_cell)
 
 static uint32_t next_seed(uint32_t *seed)
 {
@@ -54,8 +47,8 @@ static uint32_t next_seed(uint32_t *seed)
 #define ROCK(i) ((uint8_t *)0x6b9d50 + (i) * 0xc)
 #define g_rock_target (*(uint32_t *)0x4d074c)
 #define g_sound_limit (*(int32_t *)0x4b1c8c)
-#define g_surfaces (*(uint8_t ***)0x6bfac0)
-#define g_cell_info (*(uint8_t **)0x6bfb40)
+#define SURFACE(i) GP(GP(0x6bfac0) + (i) * 4) /* the surface table: pointers */
+#define g_cell_info GP(0x6bfb40)
 
 /* 0x458180: drop the rock above the slot whose position is `at`, offset
  * by up to half a unit at random, unless it is already falling or the spot
@@ -72,7 +65,7 @@ void GAMEAPI rock_drop(int32_t *at)
     if (U32(rock, 4) != 0)
         return;
     g_rock_index = index + 1 >= 1 ? 0 : index + 1;
-    body = *(uint8_t **)rock;
+    body = GP(rock);
     I32(body, POSITION + 4) = at[1];
     r = next_seed(&g_seed);
     I32(body, 0x40) = 0;
@@ -90,16 +83,17 @@ void GAMEAPI rock_drop(int32_t *at)
     cell = track_cell_fn(x, y, z, &off_track);
     if (off_track != 0)
         return;
-    if (g_surfaces[g_cell_info[2 + (U32(cell, 4) >> 16 & 0x3fff) * 6] & 0x7f][4] & 8)
+    if (SURFACE(g_cell_info[2 + (U32(cell, 4) >> 16 & 0x3fff) * 6] & 0x7f)[4] & 8)
         return;
-    body_update_velocity_fn(*(uint8_t **)rock + POSITION);
-    grid_link_fn(*(uint8_t **)rock);
-    body = *(uint8_t **)rock;
+    body_update_velocity_fn(GP(rock) + POSITION);
+    grid_link_fn(GP(rock));
+    body = GP(rock);
     U32(rock, 4) = 1;
     body_place(body, 1, (const void *)0x4b0b48, 0);
     if ((int32_t)rock[8] >= g_sound_limit) {
-        body = *(uint8_t **)rock;
-        rock[8] = loop_sound(1, 0x1e, 9, 0x800, 16000, body + POSITION, body + VELOCITY, 0);
+        body = GP(rock);
+        rock[8] = (uint8_t)loop_sound(1, 0x1e, 9, 0x800, 16000, (uint32_t)(uintptr_t)(body + POSITION),
+                             (uint32_t)(uintptr_t)(body + VELOCITY), 0);
     }
 }
 
@@ -117,7 +111,7 @@ void GAMEAPI rock_update(void)
     if (race[0x554] == 0)
         return;
     if (U32(ROCK(0), 4) != 0) {
-        uint8_t *body = *(uint8_t **)ROCK(0);
+        uint8_t *body = GP(ROCK(0));
 
         at[0] = I32(body, POSITION);
         at[1] = I32(body, POSITION + 4);
@@ -133,9 +127,9 @@ void GAMEAPI rock_update(void)
         }
         U32(ROCK(0), 4) += 1;
         if (U32(ROCK(0), 4) > 200)
-            rock_land(*(uint8_t **)ROCK(0));
-        if ((*(uint8_t **)ROCK(0))[0xc] & 1)
-            rock_land(*(uint8_t **)ROCK(0));
+            rock_land(GP(ROCK(0)));
+        if (GP(ROCK(0))[0xc] & 1)
+            rock_land(GP(ROCK(0)));
     }
     if (g_rock_last_drop + 900 < g_race_ticks) {
         uint32_t r = next_seed(&g_seed);
@@ -229,7 +223,7 @@ void GAMEAPI glow_levels(const uint8_t *car, uint8_t *glow)
  * strength where +0x2e4 is 1) out by the level. */
 void GAMEAPI glow_vertices(uint8_t *glow, int32_t level, int32_t flash)
 {
-    uint8_t *verts = *(uint8_t **)(*(uint8_t **)(glow + 4) + 0x24);
+    uint8_t *verts = GP(GP(glow + 4) + 0x24);
     int32_t amount, i;
 
     level += (int32_t)((uint32_t)(flash + 0x10) << 9);
@@ -293,7 +287,8 @@ void GAMEAPI cars_glow(void)
         for (i = 0; i < RACE_CARS(g_race); i++) {
             int32_t car = (int32_t)(uintptr_t)SLOT_CAR(i);
 
-            glow_light(SLOT_CAR(i) + POSITION, SLOT_CAR(i) + 0x13f8, 3, 8, 1, &car);
+            glow_light((const int32_t *)(SLOT_CAR(i) + POSITION), (const uint32_t *)(SLOT_CAR(i) + 0x13f8), 3, 8, 1,
+                       (const uint32_t *)&car);
         }
         g_glow_lights_added = 1;
     }
@@ -303,9 +298,9 @@ void GAMEAPI cars_glow(void)
 
 /* Pieces (0x80 bytes at 0x6b983c), a free stack (0x6b9840, top 0x6b984c)
  * and the live list (0x6b9844, count 0x6b9848). */
-#define g_pieces (*(uint8_t **)0x6b983c)
-#define g_piece_free (*(uint16_t **)0x6b9840)
-#define g_piece_live (*(uint16_t **)0x6b9844)
+#define g_pieces GP(0x6b983c)
+#define g_piece_free ((uint16_t *)GP(0x6b9840))
+#define g_piece_live ((uint16_t *)GP(0x6b9844))
 #define g_piece_count (*(uint32_t *)0x6b9848)
 #define g_piece_free_top (*(int32_t *)0x6b984c)
 
@@ -435,24 +430,16 @@ void GAMEAPI pieces_update(void)
 #define g_factorial ((int32_t *)0x4b6388)
 #define SLOT_AT(i) (g_car_slots + (int32_t)(i) * CAR_SLOT_SIZE)
 
-typedef int32_t(GAMEAPI *clz_fn)(uint32_t v);
-typedef int32_t(GAMEAPI *vec_ptr_fn)(const int32_t *v);
-typedef int32_t(GAMEAPI *vec2_fn)(const int32_t *a, const int32_t *b);
-typedef int32_t(GAMEAPI *div_fn)(int32_t a, int32_t b);
-typedef void(GAMEAPI *scale_fn)(int32_t s, const int32_t *v, int32_t *out);
-typedef int32_t(GAMEAPI *look_fn)(const void *from, const void *to, void *matrix);
-typedef int32_t(GAMEAPI *probe_fn)(void *body, void *at, int32_t a, void *b, int32_t c, int32_t *d);
-typedef void(GAMEAPI *int_fn)(int32_t v);
-#define count_leading_zeros_of_fn ((clz_fn)0x429170)
-#define vec_length_fn ((vec_ptr_fn)0x480cd0)
-#define vec_dot_fn ((vec2_fn)0x40d950)
-#define fix_div16_fn ((div_fn)0x42df70)
-#define vec_scale_fn ((scale_fn)0x480090)
-#define matrix_look_fn ((look_fn)0x407220)
-#define body_probe ((probe_fn)0x4687f0)    /* group F */
-#define camera_fov_set ((int_fn)0x423f00)  /* x87 */
-#define camera_sound ((int_fn)0x40afb0)    /* not ours */
-#define grid_unlink_fn ((ptr_fn)0x4611d0)
+#define count_leading_zeros_of_fn GCALL(0x429170, count_leading_zeros_of)
+#define vec_length_fn GCALL(0x480cd0, vec_length)
+#define vec_dot_fn GCALL(0x40d950, vec_dot)
+#define fix_div16_fn GCALL(0x42df70, fix_div16)
+#define vec_scale_fn GCALL(0x480090, vec_scale)
+#define matrix_look_fn GCALL(0x407220, matrix_look)
+#define body_probe GCALL(0x4687f0, respawn_try)    /* group F */
+#define camera_fov_set GCALL(0x423f00, view_zoom_set)  /* x87 */
+#define camera_sound GCALL(0x40afb0, race_end_fade_set)    /* not ours */
+#define grid_unlink_fn GCALL(0x4611d0, object_grid_unlink)
 
 /* 0x40d040: viewports for the split-screen mode (0x552). */
 int32_t GAMEAPI view_count(void)
@@ -500,7 +487,7 @@ int32_t GAMEAPI cell_has_surface(uint32_t surface, const int32_t *at)
 {
     int32_t off_track;
     uint8_t *cell = track_cell_fn(at[0], at[1], at[2], &off_track);
-    uint16_t *entry = (uint16_t *)(*(uint8_t **)0x6bfacc + (U32(cell, 4) & 0xffff) * 2);
+    uint16_t *entry = (uint16_t *)(GP(0x6bfacc) + (U32(cell, 4) & 0xffff) * 2);
 
     for (;;) {
         uint16_t word = entry[1];
@@ -599,7 +586,7 @@ int32_t GAMEAPI camera_probe(const uint8_t *body, const uint8_t *at)
 
     memcpy((void *)0x4b63c0, body, 0x60 * 4);
     memcpy((void *)0x4b63f4, at, 0x36 * 4);
-    return body_probe((void *)0x4b63c0, (void *)at, 0, (void *)0x4b6278, 2, &scratch);
+    return body_probe((uint8_t *)GMEM(0x4b63c0), (const int32_t *)at, 0, (int16_t *)GMEM(0x4b6278), 2, (uint32_t *)&scratch);
 }
 
 /* 0x40a940: aim the view's matrix from `from` to `to`, keeping the last
@@ -609,7 +596,7 @@ void GAMEAPI camera_look_or_keep(const void *from, const void *to, uint32_t *mat
     uint32_t *kept = (uint32_t *)(VIEW(view) + 0x120);
     int i;
 
-    if (matrix_look_fn(from, to, matrix) != 0) {
+    if (matrix_look_fn((int32_t *)from, (const int32_t *)to, (int16_t *)matrix) != 0) {
         for (i = 0; i < 8; i++)
             kept[i] = matrix[i];
     } else {
@@ -651,7 +638,7 @@ void GAMEAPI camera_choose_shot(const void *unused, uint32_t view)
         } else if (race[0x58c] == 2) {
             int32_t best = 6;
 
-            kind = *(uint32_t *)(0x4a7840 + (camera_random() >> 16 & 0xf) * 4);
+            kind = *(uint32_t *)(uintptr_t)(0x4a7840 + (camera_random() >> 16 & 0xf) * 4);
             if (race[0x552] != 0) {
                 car_index = view;
             } else if (I32(v, 0x144) != -1) {
@@ -671,7 +658,7 @@ void GAMEAPI camera_choose_shot(const void *unused, uint32_t view)
                 car_index = camera_random() >> 16 & 7;
             while (car_index >= race[0x54d]);
         }
-        car = *(uint8_t **)SLOT_AT(car_index);
+        car = GP(SLOT_AT(car_index));
         if (kind != 4 && kind != 5 && vec_length_fn((int32_t *)(car + VELOCITY)) < 0x20000) {
             retry = 1;
             g_camera_seed *= 7;
@@ -762,8 +749,8 @@ int32_t GAMEAPI camera_zoom_for(const int32_t *a, const int32_t *b, uint32_t div
  * velocity; returns the new position in `at`. */
 void GAMEAPI camera_speed_zoom(uint8_t *slot, int32_t *at)
 {
-    uint8_t *settings = *(uint8_t **)0x4b2198;
-    int16_t speed = I16(*(uint8_t **)slot, 0x658);
+    uint8_t *settings = GP(0x4b2198);
+    int16_t speed = I16(GP(slot), 0x658);
     int32_t fov, k, ease, dx, dy, dz;
     int16_t pull;
     uint8_t *camera, *body;
@@ -775,15 +762,15 @@ void GAMEAPI camera_speed_zoom(uint8_t *slot, int32_t *at)
         fov = (speed >= 0x1a9 ? 0x1a9 : speed) * 5;
     fov = 200 - (fov >> 4);
     camera_fov_set(fov);
-    camera = *(uint8_t **)(slot + 0x28);
-    body = *(uint8_t **)(camera + 4);
+    camera = GP(slot + 0x28);
+    body = GP(camera + 4);
     bx = I32(body, 0x34);
     by = I32(body, 0x38);
     bz = I32(body, 0x3c);
     dx = at[0] - bx;
     dy = at[1] - by;
     dz = at[2] - bz;
-    if ((*(uint8_t **)0x4b2198)[0x95] != 0)
+    if (GP(0x4b2198)[0x95] != 0)
         pull = (int16_t)(200 - ((200 - (int16_t)fov) * 200 >> 8));
     else
         pull = (int16_t)(200 - ((200 - (int16_t)fov) * 0xf0 >> 8));
@@ -795,7 +782,7 @@ void GAMEAPI camera_speed_zoom(uint8_t *slot, int32_t *at)
     if (ease > 0x1e0)
         ease = 0x1e0;
     if (ease > 0) {
-        camera = *(uint8_t **)(slot + 0x28);
+        camera = GP(slot + 0x28);
         dx += (I32(camera, 8) >> 4) * ease;
         dy += (I32(camera, 0xc) >> 4) * ease;
         dz += (I32(camera, 0x10) >> 4) * ease;
@@ -803,8 +790,8 @@ void GAMEAPI camera_speed_zoom(uint8_t *slot, int32_t *at)
     at[0] = bx + dx;
     at[1] = by + dy;
     at[2] = bz + dz;
-    grid_unlink_fn(**(uint8_t ***)(slot + 0x28));
-    grid_link_fn(**(uint8_t ***)(slot + 0x28));
+    grid_unlink_fn(GP(GP(slot + 0x28)));
+    grid_link_fn(GP(GP(slot + 0x28)));
 }
 
 /* 0x40b180: how far `point` is from the line a -> b, if its foot lies
@@ -910,14 +897,14 @@ int32_t GAMEAPI camera_find_trackside(uint16_t *car_index, uint8_t **spot, int32
         nearest_car((int32_t *)(s + 4), &nearest);
         if (wanted != -1 && wanted != nearest)
             continue;
-        car = *(uint8_t **)SLOT_AT(nearest);
+        car = GP(SLOT_AT(nearest));
         if (vec_length_fn((int32_t *)(car + VELOCITY)) < 0x80000)
             continue;
         distance = point_line_distance((int32_t *)(car + POSITION), (int32_t *)(s + 4), (int32_t *)(s + 0x10), &along);
         if (distance == -1 || distance > 0x3e80000 || along > 0x4000)
             continue;
         *car_index = (uint16_t)nearest;
-        *spot = s;
+        *(uint32_t *)spot = (uint32_t)(uintptr_t)s; /* a game-memory slot (view +0x4b65b0..): 32 bits */
         return 1;
     }
     return 0;
@@ -1014,11 +1001,11 @@ void GAMEAPI camera_check_events(int32_t view)
     int32_t views, i;
     uint32_t last;
 
-    if ((I32(v, 0x3c) == 1 || I32(v, 0x3c) == 3) && I32(((uint8_t **)0x6b9ce0)[I16(v, 0x38)], 0x188) == 0)
+    if ((I32(v, 0x3c) == 1 || I32(v, 0x3c) == 3) && I32(GP(0x6b9ce0 + 4 * I16(v, 0x38)), 0x188) == 0)
         I32(v, 0x3c) = 0;
-    if (I32(v, 0x3c) == 2 && I32(((uint8_t **)0x6b9cc0)[I16(v, 0x38)], 0x194) == 0)
+    if (I32(v, 0x3c) == 2 && I32(GP(0x6b9cc0 + 4 * I16(v, 0x38)), 0x194) == 0)
         I32(v, 0x3c) = 0;
-    if (I32(v, 0x3c) == 4 && I32(((uint8_t **)0x5d1fc0)[I16(v, 0x38)], 0x188) == 0)
+    if (I32(v, 0x3c) == 4 && I32(GP(0x5d1fc0 + 4 * I16(v, 0x38)), 0x188) == 0)
         I32(v, 0x3c) = 0;
     views = view_count();
     race = g_race;
@@ -1039,7 +1026,7 @@ void GAMEAPI camera_check_events(int32_t view)
         U32(v, 0) == 0x10 || U32(v, 0) == 0xf)
         return;
     for (i = 0; i < 24; i++) {
-        uint8_t *object = ((uint8_t **)0x6b9ce0)[i];
+        uint8_t *object = GP(0x6b9ce0 + 4 * i);
 
         if (object[0x188] & 1) {
             int32_t kind = I32(object, 0x184);
@@ -1059,7 +1046,7 @@ void GAMEAPI camera_check_events(int32_t view)
     if (I32(v, 0x3c) != 0)
         return;
     for (i = 0; i < 6; i++)
-        if (((uint8_t **)0x6b9cc0)[i][0x194] & 1) {
+        if (GP(0x6b9cc0 + 4 * i)[0x194] & 1) {
             I32(v, 0x3c) = 2;
             I16(v, 0x38) = (int16_t)i;
             U32(v, 0) = 0xc;
@@ -1067,7 +1054,7 @@ void GAMEAPI camera_check_events(int32_t view)
         }
     if (I32(v, 0x3c) != 0)
         return;
-    if (((uint8_t **)0x5d1fc0)[0][0x188] & 1) {
+    if (GP(0x5d1fc0)[0x188] & 1) {
         I32(v, 0x3c) = 4;
         I16(v, 0x38) = 0;
         U32(v, 0) = 0xd;

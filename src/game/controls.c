@@ -13,34 +13,23 @@
  * the stick's Y axis (e.g. look behind on stick down) are unaffected. */
 #include "../runtime.h"
 #include "game.h"
-
-typedef uint32_t(GAMEAPI *controls_read_fn)(int32_t player, int32_t flag);
-typedef uint8_t(GAMEAPI *keyboard_nav_bits_fn)(void);
-typedef uint8_t(GAMEAPI *controls_nav_bits_fn)(uint32_t mask, int32_t player);
-typedef int32_t(GAMEAPI *joy_axis_fn)(int32_t joystick);
-
-#define controls_read ((controls_read_fn)0x427b10)
-#define keyboard_nav_bits ((keyboard_nav_bits_fn)0x428d20)
-#define controls_nav_bits ((controls_nav_bits_fn)0x428d70)
-#define joy_axis_x ((joy_axis_fn)0x4898e0)
-#define joy_axis_y ((joy_axis_fn)0x4898f0)
-#define joy_axis_z ((joy_axis_fn)0x489900)
+#include "gamefn.h"
 
 /* Player records are 0x274 bytes; the joystick index is an s16 at 0x6bfdec. */
-#define player_joystick(p) (*(int16_t *)(0x6bfdec + (p) * 0x274))
+#define player_joystick(p) (*(int16_t *)GMEM(0x6bfdec + (p) * 0x274))
 
 uint64_t GAMEAPI controls_packet(int32_t player)
 {
-    uint32_t mask = controls_read(player, 0);
-    uint8_t nav = keyboard_nav_bits();
+    uint32_t mask = GCALL(0x427b10, controls_read)(player, 0);
+    uint8_t nav = (uint8_t)GCALL(0x428d20, keyboard_nav_bits)();
     int32_t x, y, z;
 
-    nav |= controls_nav_bits(mask, player);
-    x = joy_axis_x(player_joystick(player));
+    nav |= (uint8_t)GCALL(0x428d70, controls_nav_bits)(mask, player);
+    x = GCALL(0x4898e0, joy_axis_x)(player_joystick(player));
     /* The original reads Y here; keep the call so the order of joystick
      * reads matches, but throttle comes from the triggers only. */
-    (void)joy_axis_y(player_joystick(player));
-    z = joy_axis_z(player_joystick(player));
+    (void)GCALL(0x4898f0, joy_axis_y)(player_joystick(player));
+    z = GCALL(0x489900, joy_axis_z)(player_joystick(player));
     y = z;
 
     return (uint64_t)((uint32_t)nav | (uint32_t)(uint8_t)x << 8 | (uint32_t)(uint8_t)y << 16 |

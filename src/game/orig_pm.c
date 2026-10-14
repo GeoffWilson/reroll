@@ -31,6 +31,7 @@
  * top bits of message 9's word, gaps of message 5) as stack leftovers;
  * here they are 0. Everything outside the group is called by address. */
 #include "../runtime.h"
+#include "gamefn.h"
 #include "physics.h"
 #include "winapi.h"
 
@@ -58,49 +59,40 @@
 #define REC(i) (0x5d2cd0u + (uint32_t)(i) * 0x66cu)
 #define REC_END 0x5d5358u
 
-typedef int32_t(GAMEAPI *pm_fn0)(void);
-typedef int32_t(GAMEAPI *pm_fn1)(uint32_t a);
-typedef int32_t(GAMEAPI *pm_fn2)(uint32_t a, uint32_t b);
-typedef int32_t(GAMEAPI *pm_fn3)(uint32_t a, uint32_t b, uint32_t c);
-typedef int32_t(GAMEAPI *pm_fn4)(uint32_t a, uint32_t b, uint32_t c, uint32_t d);
-typedef int32_t(GAMEAPI *pm_fn5)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e);
-#define CALL0(a) (((pm_fn0)(a))())
-#define CALL1(a, x) (((pm_fn1)(a))(A(x)))
-#define CALL2(a, x, y) (((pm_fn2)(a))(A(x), A(y)))
-#define CALL3(a, x, y, z) (((pm_fn3)(a))(A(x), A(y), A(z)))
-#define CALL4(a, x, y, z, w) (((pm_fn4)(a))(A(x), A(y), A(z), A(w)))
-#define CALL5(a, x, y, z, w, v) (((pm_fn5)(a))(A(x), A(y), A(z), A(w), A(v)))
-
 /* Outside the group. */
-#define game_time_at() ((uint32_t)CALL0(0x43692a))
-#define sim_clock_start_at() CALL0(0x43693f)
-#define debug_printf_at(s) CALL1(0x476ec0, s)
-#define debug_printf1_at(s, v) CALL2(0x476ec0, s, v)
-#define mem_copy_at(d, s, n) CALL3(0x476f30, d, s, n)
-#define mem_set_at(d, v, n) CALL3(0x476f50, d, v, n)
-#define net_send_at(kind, to, msg, size, flags) CALL5(0x48cdd0, kind, to, msg, size, flags)
-#define player_of_at(from) CALL1(0x48bd40, from)
-#define drop_player_at(i) CALL1(0x48bf70, i)
-#define net_pump_a_at() CALL0(0x48c630)
-#define net_pump_b_at() CALL0(0x48c460)
-#define net_local_slot_at() ((uint32_t)CALL0(0x48cf20))
-#define send_byte_at(kind, value, flags) CALL3(0x45ddb0, kind, value, flags)
-#define players_send_at() CALL0(0x45dde0)
-#define race_start_send_at() CALL0(0x45e200)
-#define slot_flag_find_at() ((uint32_t)CALL0(0x45d1e0))
-#define net_is_host_at() CALL0(0x45eed0)
-#define net_game_at() CALL0(0x45ef80)
-#define text_line_get_at(buf, size, sec, idx) CALL4(0x42e6d0, buf, size, sec, idx)
-#define sprintf2_at(buf, fmt) CALL2(0x4979f0, buf, fmt)
-#define sprintf3_at(buf, fmt, a) CALL3(0x4979f0, buf, fmt, a)
-#define sprintf4_at(buf, fmt, a, b) CALL4(0x4979f0, buf, fmt, a, b)
-#define chat_post_at(s) CALL1(0x45d150, s)
-#define driver_name_at(buf, car) CALL2(0x4484a0, buf, car)
-#define chat_send_at(s) CALL1(0x48d270, s)
-#define rand_at() CALL0(0x4987b5)
-#define vertex_clip_at(v) CALL1(0x426b80, v)
-#define word_exchange_at(ot, first, last) CALL3(0x429080, ot, first, last)
-#define dword_store_at(p, v) CALL2(0x4290a0, p, v)
+#define game_time_at() GCALL(0x43692a, game_time_get)()
+#define sim_clock_start_at() GCALL(0x43693f, sim_clock_start)()
+#define debug_printf_at(s) GCALL(0x476ec0, dbg_vlog_printf)((const char *)PTR(s))
+#define debug_printf1_at(s, v) GCALL(0x476ec0, dbg_vlog_printf)((const char *)PTR(s), (uint32_t)(v))
+#define mem_copy_at(d, s, n) GCALL(0x476f30, mem_copy)(PTR(d), PTR(s), (uint32_t)(n))
+#define mem_set_at(d, v, n) GCALL(0x476f50, mem_fill)(PTR(d), (uint8_t)(v), (uint32_t)(n))
+#define net_send_at(kind, to, msg, size, flags) \
+    GCALL(0x48cdd0, net_message_send_to)((int32_t)(kind), (uint32_t)(to), A(msg), (uint32_t)(size), (uint32_t)(flags))
+#define player_of_at(from) GCALL(0x48bd40, net_player_slot_of)((uint32_t)(from))
+#define drop_player_at(i) GCALL(0x48bf70, fe_net_drop_player)((uint32_t)(i))
+#define net_pump_a_at() GCALL(0x48c630, dplay_receive_all)()
+#define net_pump_b_at() GCALL(0x48c460, net_inbox_dispatch)()
+#define net_local_slot_at() ((uint32_t)GCALL(0x48cf20, net_local_slot)())
+#define send_byte_at(kind, value, flags) GCALL(0x45ddb0, netplay_send_byte)(kind, value, flags)
+#define players_send_at() GCALL(0x45dde0, netplay_players_send)()
+#define race_start_send_at() GCALL(0x45e200, netplay_race_start_send)()
+#define slot_flag_find_at() ((uint32_t)GCALL(0x45d1e0, netplay_slot_flag_find)())
+#define net_is_host_at() ((int32_t)GCALL(0x45eed0, net_state_host)())
+#define net_game_at() ((int32_t)GCALL(0x45ef80, net_state_game)())
+#define text_line_get_at(buf, size, sec, idx) \
+    GCALL(0x42e6d0, text_line_get)((uint8_t *)(buf), (int32_t)(size), (const char *)PTR(sec), (int32_t)(idx))
+/* sprintf (0x4979f0): the arguments are strings. */
+#define sprintf2_at(buf, fmt) GCALL(0x4979f0, msvc_sprintf)((char *)(buf), (const char *)(fmt))
+#define sprintf3_at(buf, fmt, a) GCALL(0x4979f0, msvc_sprintf)((char *)(buf), (const char *)(fmt), (const char *)PTR(a))
+#define sprintf4_at(buf, fmt, a, b) \
+    GCALL(0x4979f0, msvc_sprintf)((char *)(buf), (const char *)(fmt), (const char *)PTR(a), (const char *)PTR(b))
+#define chat_post_at(s) GCALL(0x45d150, network_chat_post)((const char *)(s))
+#define driver_name_at(buf, car) GCALL(0x4484a0, driver_name)((char *)(buf), (int32_t)(car))
+#define chat_send_at(s) GCALL(0x48d270, net_chat_send)((char *)(s))
+#define rand_at() GCALL(0x4987b5, msvc_rand)()
+#define vertex_clip_at(v) GCALL(0x426b80, wide_outcodes_c)(PTR(v))
+#define word_exchange_at(ot, first, last) GCALL(0x429080, word_exchange)((uint32_t)(ot), (uint32_t)(first), (uint32_t *)PTR(last))
+#define dword_store_at(p, v) GCALL(0x4290a0, dword_store)((uint32_t *)PTR(p), (uint32_t)(v))
 
 #define CRT_FTOL 0x497a80
 
@@ -225,6 +217,7 @@ int32_t GAMEAPI net_time(void)
     uint64_t q = (uint32_t)(timeGetTime() - G32(0x5d5998));
     int32_t r;
 
+#if defined(__i386__)
     __asm__ volatile("fildq %[q]\n\t"
                      "fstps %[q]\n\t"
                      "flds %[q]\n\t"
@@ -233,6 +226,28 @@ int32_t GAMEAPI net_time(void)
                      : "=a"(r), [q] "+m"(q)
                      : [ftol] "S"(CRT_FTOL)
                      : "ecx", "edx", "memory", "cc", X87);
+#else
+    /* x86-64: the same x87 steps, then __ftol's truncation (rounding set to
+     * chop around a fistp qword; the low dword). */
+    {
+        uint16_t cw, chop;
+        int64_t t;
+
+        __asm__ volatile("fnstcw %0" : "=m"(cw));
+        chop = (uint16_t)(cw | 0xc00);
+        __asm__ volatile("fildq %[q]\n\t"
+                         "fstps %[q]\n\t"
+                         "flds %[q]\n\t"
+                         "fdivs 0x4a33cc\n\t"
+                         "fldcw %[chop]\n\t"
+                         "fistpll %[t]\n\t"
+                         "fldcw %[cw]"
+                         : [t] "=m"(t), [q] "+m"(q)
+                         : [chop] "m"(chop), [cw] "m"(cw)
+                         : "memory", "st");
+        r = (int32_t)t;
+    }
+#endif
     return r;
 }
 

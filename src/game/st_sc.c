@@ -16,6 +16,7 @@
  * timer, texture and palette upload, sprite building and the C runtime. */
 #include "../runtime.h"
 #include "physics.h"
+#include "gamefn.h"
 
 #define U8(p, off) (*(uint8_t *)((uint8_t *)(p) + (off)))
 #define S16(p, off) (*(int16_t *)((uint8_t *)(p) + (off)))
@@ -29,9 +30,9 @@
 
 #define STDCALL __attribute__((stdcall))
 
-#define g_config (*(uint8_t **)0x4b2198)
-#define g_race (*(uint8_t **)0x4b1960)
-#define g_keyboard (*(uint8_t **)0x4b2ca4) /* DirectInput key state, 256 bytes */
+#define g_config GP(0x4b2198)
+#define g_race GP(0x4b1960)
+#define g_keyboard GP(0x4b2ca4) /* DirectInput key state, 256 bytes */
 #define g_front_end G32(0x4ac984)          /* 1: front end, 0: race */
 #define g_network G32(0x4be47c)            /* network game */
 #define g_net_state G32(0x5d622c)          /* bit 7: host, bit 4: session lost */
@@ -48,76 +49,54 @@
 #define KEY_VK PTR(0x6c1ec0)    /* Windows virtual key */
 #define KEY_CODE PTR(0x6c20c0)  /* game key code (dword per scan code) */
 
-typedef void(GAMEAPI *void_fn)(void);
-typedef int32_t(GAMEAPI *int_fn)(void);
-typedef uint32_t(GAMEAPI *uint_fn)(void);
-typedef void(GAMEAPI *arg1_fn)(uint32_t a);
-typedef void(GAMEAPI *arg2_fn)(uint32_t a, uint32_t b);
-typedef int32_t(GAMEAPI *int1_fn)(uint32_t a);
-typedef int32_t(GAMEAPI *int2_fn)(int32_t a, int32_t b);
-typedef int32_t(GAMEAPI *int3_fn)(uint32_t a, uint32_t b, uint32_t c);
-typedef uint64_t(GAMEAPI *packet_fn)(int32_t player);
-typedef void(GAMEAPI *send4_fn)(int32_t player, uint32_t lo, uint32_t hi, uint32_t network);
-typedef void(STDCALL *tick_fn)(uint32_t id, uint32_t msg, uint32_t user, uint32_t a, uint32_t b);
-typedef int32_t(GAMEAPI *upload_fn)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f);
-typedef int32_t(GAMEAPI *palette_fn)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f,
-                                     uint32_t g);
-typedef uint8_t *(GAMEAPI *load_fn)(uint32_t entry, uint32_t dest);
-typedef uint8_t *(GAMEAPI *alloc_fn)(uint32_t size);
-typedef uint8_t *(GAMEAPI *mesh_fn)(uint32_t model, uint32_t a, uint32_t b, uint32_t c);
-typedef int32_t(GAMEAPI *text_fn)(char *dst, int32_t size, uint32_t section, int32_t index);
-
-#define C0(a) ((void_fn)(a))()
-#define I0(a) ((int_fn)(a))()
-
 /* Calls into this group go by address too, so the hook table routes them
  * (and the emulator test can stub them). */
-#define game_time() ((uint_fn)0x43692a)()
-#define race_setup() I0(0x46a060)
-#define net_is_game() I0(0x45ef80)
-#define fe_joy_axis_at ((int2_fn)0x489890)
-#define controls_packet_at ((packet_fn)0x428e10)
-#define tick_callback_at ((tick_fn)0x4365ed)
-#define key_tables_init_at() C0(0x43c6a0)
-#define keyboard_init_at() C0(0x43c3f0)
-#define key_layout_set_at(a) ((arg1_fn)0x43d270)(a)
-#define game_speed_set_at() C0(0x43775a)
-#define net_session_start_at() I0(0x435df6)
-#define tick_timer_start_at() I0(0x436565)
-#define tick_timer_stop_at() C0(0x4365a4)
-#define tick_count_reset_at() C0(0x436595)
-#define quit_request_at() C0(0x43699c)
-#define frontend_load_at() I0(0x4301f0)
-#define frontend_data_load_at(a, b) ((arg2_fn)0x430c10)(a, b)
-#define frontend_backdrop_load_at(a, b) ((int2_fn)0x430d80)(a, b)
-#define frontend_palette_set_at() I0(0x430e40)
-#define fade_step_at() C0(0x430190)
-#define tick_hook_call_at() C0(0x429210)
-#define frame_counter_step_at() C0(0x463c70)
-#define joy_button_down_at ((int2_fn)0x489770)
-#define joy_pov_dir_at ((int2_fn)0x4897c0)
-#define joy_axis_x_at ((int1_fn)0x4898e0)
-#define joy_axis_y_at ((int1_fn)0x4898f0)
-#define joy_axis_z_at ((int1_fn)0x489900)
-#define controls_mask_menu_keys_at ((int2_fn)0x427d00)
-#define model_top_point_at ((int1_fn)0x453730)
-#define pad_config_reset_at ((arg1_fn)0x48a0e0)
-#define menu_dirty_set_at() C0(0x452d20)
-#define game_heap_setup_at() C0(0x46a030)
-#define menu_system_init_at() I0(0x4446f0)
-#define race_option_clamp_at() C0(0x433cd0)
-#define particles_init_at() C0(0x462a20)
-#define frontend_models_setup_at() C0(0x453780)
-#define menu_sprites_setup_at() C0(0x4461d0)
-#define pad_configs_reset_at() C0(0x48a140)
+#define game_time() GCALL(0x43692a, game_time_get)()
+#define race_setup() GCALL(0x46a060, race_setup)()
+#define net_is_game() GCALL(0x45ef80, net_state_game)()
+#define fe_joy_axis_at GCALL(0x489890, fe_joy_axis)
+#define controls_packet_at GCALL(0x428e10, controls_packet)
+#define tick_callback_at GCALL(0x4365ed, tick_callback)
+#define key_tables_init_at() GCALL(0x43c6a0, key_tables_init)()
+#define keyboard_init_at() GCALL(0x43c3f0, keyboard_init)()
+#define key_layout_set_at(a) GCALL(0x43d270, key_layout_set)(a)
+#define game_speed_set_at() GCALL(0x43775a, game_speed_set)()
+#define net_session_start_at() GCALL(0x435df6, net_session_start)()
+#define tick_timer_start_at() GCALL(0x436565, tick_timer_start)()
+#define tick_timer_stop_at() GCALL(0x4365a4, timer_stop)()
+#define tick_count_reset_at() GCALL(0x436595, tick_count_reset)()
+#define quit_request_at() GCALL(0x43699c, quit_request)()
+#define frontend_load_at() GCALL(0x4301f0, frontend_load)()
+#define frontend_data_load_at(a, b) GCALL(0x430c10, frontend_data_load)(a, b)
+#define frontend_backdrop_load_at(a, b) GCALL(0x430d80, frontend_backdrop_load)(a, b)
+#define frontend_palette_set_at() GCALL(0x430e40, frontend_palette_set)()
+#define fade_step_at() GCALL(0x430190, fade_step)()
+#define tick_hook_call_at() GCALL(0x429210, tick_hook_call)()
+#define frame_counter_step_at() GCALL(0x463c70, frame_counter_step)()
+#define joy_button_down_at GCALL(0x489770, joy_button_down)
+#define joy_pov_dir_at GCALL(0x4897c0, joy_pov_dir)
+#define joy_axis_x_at GCALL(0x4898e0, joy_axis_x)
+#define joy_axis_y_at GCALL(0x4898f0, joy_axis_y)
+#define joy_axis_z_at GCALL(0x489900, joy_axis_z)
+#define controls_mask_menu_keys_at GCALL(0x427d00, controls_mask_menu_keys)
+#define model_top_point_at GCALL(0x453730, model_top_point)
+#define pad_config_reset_at GCALL(0x48a0e0, pad_config_reset)
+#define menu_dirty_set_at() GCALL(0x452d20, menu_dirty_set)()
+#define game_heap_setup_at() GCALL(0x46a030, game_heap_setup)()
+#define menu_system_init_at() GCALL(0x4446f0, menu_system_init)()
+#define race_option_clamp_at() GCALL(0x433cd0, race_option_clamp)()
+#define particles_init_at() GCALL(0x462a20, particles_init)()
+#define frontend_models_setup_at() GCALL(0x453780, frontend_models_setup)()
+#define menu_sprites_setup_at() GCALL(0x4461d0, menu_sprites_setup)()
+#define pad_configs_reset_at() GCALL(0x48a140, pad_configs_reset)()
 
-#define archive_load ((load_fn)0x496590)
-#define heap_alloc ((alloc_fn)0x4445e0)
-#define crt_free ((arg1_fn)0x49827a)
-#define crt_malloc ((alloc_fn)0x4982c2)
-#define crt_rand() I0(0x4987b5)
-#define texture_upload ((upload_fn)0x428c90)
-#define high_colour() I0(0x429340)
+#define archive_load GCALL(0x496590, archive_entry_load)
+#define heap_alloc(n) PTR(GCALL(0x4445e0, kr_malloc)(n))
+#define crt_free(p) GCALL(0x49827a, msvc_free)(GMEM(p))
+#define crt_malloc(n) ((uint8_t *)GCALL(0x4982c2, msvc_malloc)(n))
+#define crt_rand() GCALL(0x4987b5, msvc_rand)()
+#define texture_upload GCALL(0x428c90, texture_surface_upload)
+#define high_colour() GCALL(0x429340, textures_unusable_thunk)()
 
 /* ---- the load step ----------------------------------------------------- */
 
@@ -137,15 +116,15 @@ int32_t GAMEAPI game_load_step(void)
     game_speed_set_at();
     key_layout_set_at(g_config[0x36] == 2);
     if (g_front_end == 1) {
-        if (!I0(0x48a600))
+        if (!GCALL(0x48a600, dplay_init)())
             return 0;
-        C0(0x45c340);
+        GCALL(0x45c340, netplay_chat_reset)();
         if (!tick_timer_start_at())
             quit_request_at();
         start = game_time();
-        C0(0x488d90);
-        ((arg2_fn)0x489bc0)(0, 0);
-        ((arg1_fn)0x428b90)(0x47800000);
+        GCALL(0x488d90, input_init)();
+        GCALL(0x489bc0, ff_spring_b_set)(0, 0);
+        GCALL(0x428b90, far_plane_set)(0x47800000);
         if (!frontend_load_at())
             return 0;
     } else {
@@ -163,13 +142,18 @@ int32_t GAMEAPI game_load_step(void)
         limit = *(const float *)0x4a3394;
         if (v > limit)
             U32(g_config, 0x64) = 0x47800000;
-        ((arg1_fn)0x428b90)(U32(g_config, 0x64));
+        GCALL(0x428b90, far_plane_set)(U32(g_config, 0x64));
         if (!race_setup())
             return 0;
     }
     if (g_front_end == 1) {
-        ((arg2_fn)0x46fb80)(0x12, 0x4acd50);
-        C0(0x472f10);
+#if defined(__i386__)
+        /* the original also pushes 0x4acd50, which snd_waves_load doesn't read */
+        ((void(GAMEAPI *)(uint32_t, uint32_t))(uintptr_t)0x46fb80)(0x12, 0x4acd50);
+#else
+        GCALL(0x46fb80, snd_waves_load)(0x12);
+#endif
+        GCALL(0x472f10, sound_engine_start)();
         while (game_time() < start + 100)
             ;
         if (g_ticks_done == 0) {
@@ -187,14 +171,14 @@ int32_t GAMEAPI game_load_step(void)
             }
         }
     }
-    C0(0x472f90);
+    GCALL(0x472f90, race_music_start)();
     if (g_front_end == 0) {
         if (g_network) {
             if (!net_session_start_at())
                 quit_request_at();
-            C0(0x444080);
+            GCALL(0x444080, viewports_setup)();
         }
-        C0(0x43693f);
+        GCALL(0x43693f, sim_clock_start)();
     }
     tick_count_reset_at();
     return 1;
@@ -204,13 +188,13 @@ int32_t GAMEAPI game_load_step(void)
  * a step fails. */
 int32_t GAMEAPI net_session_start(void)
 {
-    if (!I0(0x45e4a0))
+    if (!GCALL(0x45e4a0, netplay_look_send)())
         return 0;
-    if (!I0(0x45ef90))
+    if (!GCALL(0x45ef90, net_wait_players_ready)())
         return 0;
-    if (!I0(0x45f040))
+    if (!GCALL(0x45f040, net_wait_race_start)())
         return 0;
-    C0(0x48d350);
+    GCALL(0x48d350, net_chat_clear)();
     return 1;
 }
 
@@ -219,7 +203,7 @@ int32_t GAMEAPI net_session_start(void)
 int32_t GAMEAPI tick_timer_start(void)
 {
     g_ticks_done = 0;
-    return ((int3_fn)0x476f90)(0x4be458, 0x10, 0x4365ed) != 0;
+    return GCALL(0x476f90, mm_timer_start_default)((uint32_t *)GMEM(0x4be458), 0x10, 0x4365ed) != 0;
 }
 
 /* 0x436595: clears the tick count. */
@@ -248,7 +232,7 @@ void STDCALL tick_callback(uint32_t id, uint32_t msg, uint32_t user, uint32_t a,
         if (seconds >= 3) {
             G32(0x4be4b0) = 0;
             if (g_config[0x410] == 0)
-                C0(0x4968b0);
+                GCALL(0x4968b0, cdaudio_poll)();
         }
     }
     fade_step_at();
@@ -260,7 +244,7 @@ void STDCALL tick_callback(uint32_t id, uint32_t msg, uint32_t user, uint32_t a,
 void GAMEAPI quit_request(void)
 {
     G32(0x4be48c) = 1;
-    ((arg1_fn)0x46f650)(0);
+    GCALL(0x46f650, snd_activate)(0);
 }
 
 /* 0x43775a: game speed scale 0x4acc50 by the speed option (config+0x97:
@@ -311,7 +295,7 @@ void GAMEAPI tick_hook_call(void)
     uint32_t fn = G32(0x4be114);
 
     if (fn)
-        ((void_fn)(uintptr_t)fn)();
+        ((void(GAMEAPI *)(void))(uintptr_t)fn)(); /* only clock_tick 0x435140 (timer_callback_set) */
 }
 
 /* 0x463c70: while 0x4d1198 is set, counts 0x6b8d68 round 0..0x1ff. */
@@ -346,15 +330,15 @@ void GAMEAPI frame_net_step(void)
         }
     }
     if (g_network) {
-        C0(0x48d4a0);
+        GCALL(0x48d4a0, net_players_timeout)();
         if (g_net_state >> 7 & 1) {
-            C0(0x48c630);
-            C0(0x48c460);
+            GCALL(0x48c630, dplay_receive_all)();
+            GCALL(0x48c460, net_inbox_dispatch)();
         } else {
-            C0(0x45ebc0);
+            GCALL(0x45ebc0, net_controls_wait)();
         }
-        if (!I0(0x48c830)) {
-            C0(0x48c900);
+        if (!GCALL(0x48c830, net_acks_wait_first)()) {
+            GCALL(0x48c900, net_acks_clear)();
             quit_request_at();
         }
         if (g_net_state >> 4 & 1)
@@ -374,21 +358,21 @@ void GAMEAPI controls_gather(void)
 
     if (g_net_state >> 7 & 1) {
         if (g_network)
-            C0(0x45e340);
+            GCALL(0x45e340, netplay_clock_send)();
         packet = controls_packet_at(0);
-        ((arg2_fn)0x45ea60)((uint32_t)packet, (uint32_t)(packet >> 32));
+        GCALL(0x45ea60, net_controls_store)((uint32_t)packet, (uint32_t)(packet >> 32));
         if (g_network)
-            C0(0x45c7d0);
+            GCALL(0x45c7d0, netplay_car_state_tick)();
         return;
     }
     for (i = 0; i < 4; i++) {
         network = g_network;
         packet = controls_packet_at(i);
-        ((send4_fn)0x45deb0)(i, (uint32_t)packet, (uint32_t)(packet >> 32), network);
+        GCALL(0x45deb0, netplay_controls_send)(i, (uint32_t)packet, (uint32_t)(packet >> 32), network);
     }
     packet = controls_packet_at(0);
-    ((arg2_fn)0x45ea60)((uint32_t)packet, (uint32_t)(packet >> 32));
-    C0(0x45ef40);
+    GCALL(0x45ea60, net_controls_store)((uint32_t)packet, (uint32_t)(packet >> 32));
+    GCALL(0x45ef40, net_sequence_advance)();
 }
 
 /* ---- keyboard ------------------------------------------------------------ */
@@ -627,8 +611,8 @@ void GAMEAPI key_layout_set(uint32_t alt)
 /* Each player's bindings: *0x4ac6fc[player] -> records of 16 bytes (action
  * mask, kind 0 button / 1 axis / 2 key / 3 hat, device, code), count at
  * *0x4ac70c[player]. */
-#define BINDINGS(p) (*(uint8_t **)(uintptr_t)(0x4ac6fc + (p) * 4))
-#define BINDING_COUNT(p) (**(int32_t **)(uintptr_t)(0x4ac70c + (p) * 4))
+#define BINDINGS(p) GP(0x4ac6fc + (p) * 4)
+#define BINDING_COUNT(p) (*(int32_t *)GP(0x4ac70c + (p) * 4))
 
 /* 0x427b10: the action mask from a player's bindings. Axis bindings (code
  * low nibble: 0/1 X -/+, 2/3 Y, 4/5 Z, 6/7 axis code >> 4) are skipped when
@@ -845,7 +829,7 @@ int32_t GAMEAPI joy_axis_z(int32_t pad)
 /* 0x444050: sum of the X, Y, Z position of the car in player slot `slot`. */
 int32_t GAMEAPI car_position_sum(int32_t slot)
 {
-    uint8_t *car = *(uint8_t **)(uintptr_t)(0x6bfb80 + slot * 0x274);
+    uint8_t *car = GP(0x6bfb80 + slot * 0x274);
 
     return I32(car, 0x3c) + I32(car, 0x38) + I32(car, 0x34);
 }
@@ -862,7 +846,7 @@ int32_t GAMEAPI frontend_load(void)
     int32_t r;
 
     game_heap_setup_at();
-    ((arg1_fn)0x423f00)(0x96);
+    GCALL(0x423f00, view_zoom_set)(0x96);
     if (G32(0x4d4650) == 0) {
         if (high_colour())
             r = frontend_backdrop_load_at(0x76, 0x77);
@@ -882,18 +866,18 @@ int32_t GAMEAPI frontend_load(void)
         else
             frontend_data_load_at(2, 3);
     }
-    C0(0x42e2a0);
-    ((arg1_fn)0x42e0c0)(0);
+    GCALL(0x42e2a0, text_buffers_alloc)();
+    GCALL(0x42e0c0, fonts_init)(0);
     menu_system_init_at();
-    C0(0x453020);
-    C0(0x453130);
-    C0(0x453570);
+    GCALL(0x453020, menu_tiles_init)();
+    GCALL(0x453130, menu_frame_sprites_init)();
+    GCALL(0x453570, fe_side_panel_init)();
     race_option_clamp_at();
     particles_init_at();
-    C0(0x453710);
-    C0(0x4116f0);
-    C0(0x457ea0);
-    C0(0x48d4f0);
+    GCALL(0x453710, fe_corner_frames_init)();
+    GCALL(0x4116f0, charanim_load_all)();
+    GCALL(0x457ea0, flame_init)();
+    GCALL(0x48d4f0, menu_water_init)();
     G32(0x6c8160) = 0;
     G32(0x4be320) = 0;
     G32(0x4be328) = 0;
@@ -910,7 +894,7 @@ void GAMEAPI frontend_data_load(uint32_t models, uint32_t palette)
     uint8_t *base, *work, *e;
     uint32_t i;
 
-    C0(0x430e00);
+    GCALL(0x430e00, frontend_textures_free)();
     G32(0x4be348) = (uint32_t)(uintptr_t)archive_load(palette, 0);
     base = archive_load(models, 0);
     G32(0x4be344) = (uint32_t)(uintptr_t)base;
@@ -934,10 +918,10 @@ void GAMEAPI frontend_data_load(uint32_t models, uint32_t palette)
     G32(0x6c1e38) = (uint32_t)(uintptr_t)work + 0x60ae0;
     base = PTR(G32(0x4be344));
     for (i = 0; i < U16(base, 0x2c); i++) {
-        uint8_t **table = (uint8_t **)(uintptr_t)U32(base, 0x18);
+        uint32_t *table = (uint32_t *)PTR(U32(base, 0x18)); /* 32-bit pointers in game memory */
 
-        table[i] = (uint8_t *)table[i] + (uint32_t)(uintptr_t)base;
-        e = table[i];
+        table[i] = table[i] + (uint32_t)(uintptr_t)base;
+        e = PTR(table[i]);
         U32(e, 0xc) += (uint32_t)(uintptr_t)e;
         U32(e, 0x40) += (uint32_t)(uintptr_t)e;
         U32(e, 0x18) += (uint32_t)(uintptr_t)e;
@@ -945,8 +929,8 @@ void GAMEAPI frontend_data_load(uint32_t models, uint32_t palette)
             U32(e, 0x44) += (uint32_t)(uintptr_t)e;
         base = PTR(G32(0x4be344));
     }
-    ((arg1_fn)0x460aa0)(0);
-    C0(0x47c2c0);
+    GCALL(0x460aa0, object_pool_reset)(0);
+    GCALL(0x47c2c0, reciprocal_table_init)();
     frontend_models_setup_at();
     frontend_palette_set_at();
 }
@@ -964,9 +948,9 @@ int32_t GAMEAPI frontend_backdrop_load(uint32_t unused, uint32_t entry)
     G32(0x4be348) = 0;
     G32(0x4be348) = (uint32_t)(uintptr_t)archive_load(entry, 0);
     r = frontend_palette_set_at();
-    if (!texture_upload((uint32_t)I0(0x428c80), 0x100, 0x80, 0, 0, 0))
+    if (!texture_upload((uint32_t)GCALL(0x428c80, texture_handle_new)(), 0x100, 0x80, 0, 0, 0))
         r = 0;
-    C0(0x4205e0);
+    GCALL(0x4205e0, texture_slots_release_thunk)();
     if (G32(0x4be348))
         crt_free(G32(0x4be348));
     G32(0x4be348) = 0;
@@ -983,7 +967,7 @@ int32_t GAMEAPI frontend_palette_set(void)
     if (!p)
         return 0;
     mode = high_colour() ? 2 : 0;
-    return ((palette_fn)0x428130)(U16(p, 0x34), U8(p, 0x32), U8(p, 0x33), U32(p, 0x38) + (uint32_t)(uintptr_t)p,
+    return GCALL(0x428130, track_textures_load)(U16(p, 0x34), U8(p, 0x32), U8(p, 0x33), PTR(U32(p, 0x38) + (uint32_t)(uintptr_t)p),
                                   U32(p, 0x3c) + (uint32_t)(uintptr_t)p, U32(p, 0x24) + (uint32_t)(uintptr_t)p,
                                   mode);
 }
@@ -1030,8 +1014,8 @@ int32_t GAMEAPI menu_system_init(void)
         return -1;
     }
     menu_sprites_setup_at();
-    C0(0x446250);
-    C0(0x445480);
+    GCALL(0x446250, menu_bar_sprites_init)();
+    GCALL(0x445480, fe_menu_reset)();
     pad_configs_reset_at();
     if (G32(0x4d4650) == 0) {
         if (g_config[0x9d0] == 8)
@@ -1040,17 +1024,17 @@ int32_t GAMEAPI menu_system_init(void)
     }
     G32(0x4af64c) = 0xffffffff;
     G32(0x4be32c) = 1;
-    C0(0x4447d0);
+    GCALL(0x4447d0, fe_history_clear)();
     return 0;
 }
 
 /* 0x4461d0: builds four menu sprite sets (0x4316d0). */
 void GAMEAPI menu_sprites_setup(void)
 {
-    ((arg1_fn)0x4316d0)(0x4cac98);
-    ((arg1_fn)0x4316d0)(0x4c99c0);
-    ((arg1_fn)0x4316d0)(0x4ca860);
-    ((arg1_fn)0x4316d0)(0x4c24d0);
+    GCALL(0x4316d0, fe_frame_sprites_init)(PTR(0x4cac98));
+    GCALL(0x4316d0, fe_frame_sprites_init)(PTR(0x4c99c0));
+    GCALL(0x4316d0, fe_frame_sprites_init)(PTR(0x4ca860));
+    GCALL(0x4316d0, fe_frame_sprites_init)(PTR(0x4c24d0));
 }
 
 /* 0x453730: the model's vertex (8 bytes each, at +0x40, count u16 at +4)
@@ -1089,15 +1073,15 @@ void GAMEAPI frontend_models_setup(void)
 
         model = U32(PTR(U32(set, 0x18)), S16(PTR(U32(set, 0x58)), I32(def, 4) * 2) * 4);
         if (U32(def, 8))
-            ((arg1_fn)0x40f1e0)(model);
+            GCALL(0x40f1e0, model_normals_make)(PTR(model));
         U32(rec, -4) = U32(def, 0);
-        mesh = (uint32_t)(uintptr_t)((mesh_fn)0x460ba0)(model, 0xc00, 0x180, 0);
+        mesh = (uint32_t)(uintptr_t)GCALL(0x460ba0, object_create)(PTR(model), 0xc00, 0x180, 0);
         U32(rec, 0) = mesh;
         U16(rec, 0x24) = 0;
         U16(rec, 0x26) = 0;
         U16(rec, 0x28) = 0;
-        ((arg1_fn)0x4264f0)(mesh + 0xc4);
-        ((arg1_fn)0x4264f0)((uint32_t)(uintptr_t)(rec + 4));
+        GCALL(0x4264f0, matrix_identity)(PTR(mesh + 0xc4));
+        GCALL(0x4264f0, matrix_identity)(rec + 4);
         id = I32(def, 0);
         U16(rec, 0x30) = 0;
         U16(rec, 0x2e) = 0;
@@ -1115,7 +1099,7 @@ void GAMEAPI frontend_models_setup(void)
                     U16(rec, 0x24) += 0x21;
                     U16(rec, 0x28) += 0x25;
                     U16(rec, 0x2c) = 0;
-                    G32(0x4cfe98) = (uint32_t)model_top_point_at(model);
+                    G32(0x4cfe98) = (uint32_t)model_top_point_at(PTR(model));
                     break;
                 }
                 if (id == GI32(0x4b099c + j)) {
@@ -1173,8 +1157,8 @@ void GAMEAPI particles_init(void)
 /* 0x46a030: game heap (0x444500) and 0x423880. */
 void GAMEAPI game_heap_setup(void)
 {
-    C0(0x444500);
-    C0(0x423880);
+    GCALL(0x444500, kr_heap_init)();
+    GCALL(0x423880, views_init)();
 }
 
 /* 0x48a0e0: resets a pad's configuration (0x90 bytes at 0x4d9658): all
@@ -1185,7 +1169,7 @@ void GAMEAPI pad_config_reset(int32_t pad)
     uint8_t *c;
     int32_t i;
 
-    if (((int1_fn)0x48a020)((uint32_t)pad) == -1)
+    if (GCALL(0x48a020, fe_joy_valid)((uint32_t)pad) == -1)
         return;
     c = PTR(0x4d9658 + (uint32_t)pad * 0x90);
     for (i = 0; i < 0x20; i++)
@@ -1204,12 +1188,12 @@ void GAMEAPI pad_configs_reset(void)
 {
     int32_t i = 0;
 
-    if (I0(0x48a010) <= 0)
+    if (GCALL(0x48a010, joy_device_count_thunk)() <= 0)
         return;
     do {
         pad_config_reset_at((uint32_t)i);
         i++;
-    } while (i < I0(0x48a010));
+    } while (i < GCALL(0x48a010, joy_device_count_thunk)());
 }
 
 /* 0x452d20: marks the menu as changed (0x4cb58c). */
@@ -1248,7 +1232,7 @@ void GAMEAPI driver_name(char *dst, int32_t index)
         section = 0x4afa58;
     else
         section = 0x4afa70;
-    ((text_fn)0x42e6d0)(text, 0x200, section, index);
+    GCALL(0x42e6d0, text_line_get)((uint8_t *)text, 0x200, (const char *)PTR(section), index);
     i = 0;
     do
         dst[i] = text[i];

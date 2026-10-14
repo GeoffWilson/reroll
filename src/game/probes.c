@@ -14,13 +14,14 @@
 #include "body.h"
 #include "fixed.h"
 #include "physics.h"
+#include "gamefn.h"
 
 #define WHEEL(car, w) ((car) + 0x180 + (w) * 0x1c)
 #define PROBE(car, w) ((car) + 0x1f0 + (w) * 0x4c)
 #define g_probe_slots ((uint8_t *)0x4d4700)
 #define g_probe_hits ((uint8_t *)0x4d4820)
 #define g_probes_enabled (*(int32_t *)0x4b23d0)
-#define g_tiles (**(uint8_t ****)0x6c1e30)
+#define g_tile(i) GP(GP(GP(0x6c1e30)) + (i) * 4)
 #define g_surface_base (*(int32_t *)0x6c1e14)
 #define g_gte_vector ((int16_t *)0x6ccc64)
 #define g_gte_vector_words ((uint32_t *)0x6ccc64)
@@ -165,10 +166,10 @@ int32_t GAMEAPI probe_result(uint8_t *car, uint8_t *probe, uint8_t *wheel, int32
         return scaled;
     }
     {
-        const uint8_t *tile = g_tiles[key & 0xff];
+        const uint8_t *tile = g_tile(key & 0xff);
         int32_t cell = I32(tile, 8) * (int16_t)((uint32_t)key >> 16) + (int8_t)((uint32_t)key >> 8);
 
-        I32(wheel, 0x18) = (int32_t)((uint32_t)I32(*(uint8_t **)(tile + 0x50), cell * 8 + 4) << 4) + g_surface_base;
+        I32(wheel, 0x18) = (int32_t)((uint32_t)I32(GP(tile + 0x50), cell * 8 + 4) << 4) + g_surface_base;
         I32(wheel, 0x14) = key;
     }
     return scaled;

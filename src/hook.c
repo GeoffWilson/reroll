@@ -25,9 +25,14 @@ int hook_init(void)
 
 static void write_jmp(const struct hook *hook)
 {
-    uint8_t *target = (uint8_t *)hook->address;
+    uint8_t *target = (uint8_t *)(uintptr_t)hook->address;
     /* jmp rel32: E9 + displacement from the end of the 5-byte instruction */
-    int32_t rel = (int32_t)((uintptr_t)hook->replacement - (hook->address + 5));
+    int64_t distance = (int64_t)(uintptr_t)hook->replacement - (int64_t)(hook->address + 5);
+    int32_t rel = (int32_t)distance;
+
+    /* our code is linked low (a 64-bit build too), within a jmp's reach */
+    if (distance != rel)
+        log_printf("hook %s: %p is out of a jmp's reach", hook->name, hook->address);
 
     target[0] = 0xE9;
     memcpy(target + 1, &rel, 4);
@@ -42,19 +47,19 @@ static void no_exe_prepare(const struct hook *hook)
     if (!nt_no_exe)
         return;
     for (i = 0; i < sizeof(hook->expect); i++)
-        if (((uint8_t *)hook->address)[i] == 0xcc)
-            ((uint8_t *)hook->address)[i] = hook->expect[i];
+        if (((uint8_t *)(uintptr_t)hook->address)[i] == 0xcc)
+            ((uint8_t *)(uintptr_t)hook->address)[i] = hook->expect[i];
 }
 
 int hook_install(const struct hook *hook)
 {
     no_exe_prepare(hook);
-    if (memcmp((const void *)hook->address, hook->expect, sizeof(hook->expect)) != 0) {
+    if (memcmp((const void *)(uintptr_t)hook->address, hook->expect, sizeof(hook->expect)) != 0) {
         log_printf("hook %s: unexpected bytes at %p, not patched", hook->name, hook->address);
         return 0;
     }
     write_jmp(hook);
-    log_printf("hook %s: %p -> %p", hook->name, hook->address, (uint32_t)hook->replacement);
+    log_printf("hook %s: %p -> %p", hook->name, hook->address, (uint32_t)(uintptr_t)hook->replacement);
     return 1;
 }
 
@@ -63,14 +68,14 @@ void hook_set_active(const struct hook *hook, int active)
     if (active) {
         write_jmp(hook);
     } else {
-        memcpy((void *)hook->address, hook->expect, 5);
-        FlushInstructionCache(GetCurrentProcess(), (void *)hook->address, 5);
+        memcpy((void *)(uintptr_t)hook->address, hook->expect, 5);
+        FlushInstructionCache(GetCurrentProcess(), (void *)(uintptr_t)hook->address, 5);
     }
 }
 
 void *hook_install_trampoline(const struct hook *hook, uint32_t copy_len)
 {
-    uint8_t *target = (uint8_t *)hook->address;
+    uint8_t *target = (uint8_t *)(uintptr_t)hook->address;
     uint8_t *tramp;
     int32_t rel;
 
@@ -79,7 +84,7 @@ void *hook_install_trampoline(const struct hook *hook, uint32_t copy_len)
         if (!tramp || !hook_install(hook))
             return 0;
         memset(tramp, 0xcc, 16);
-        log_printf("hook %s: no original (trap at %p)", hook->name, (uint32_t)tramp);
+        log_printf("hook %s: no original (trap at %p)", hook->name, (uint32_t)(uintptr_t)tramp);
         return tramp;
     }
     if (memcmp(target, hook->expect, sizeof(hook->expect)) != 0) {
@@ -98,6 +103,6 @@ void *hook_install_trampoline(const struct hook *hook, uint32_t copy_len)
     FlushInstructionCache(GetCurrentProcess(), tramp, copy_len + 5);
     if (!hook_install(hook))
         return 0;
-    log_printf("hook %s: original callable at %p", hook->name, (uint32_t)tramp);
+    log_printf("hook %s: original callable at %p", hook->name, (uint32_t)(uintptr_t)tramp);
     return tramp;
 }

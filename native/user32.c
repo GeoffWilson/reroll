@@ -20,7 +20,9 @@ typedef unsigned int UINT;
 typedef uint32_t WPARAM;
 typedef int32_t LPARAM;
 typedef int32_t LRESULT;
-typedef LRESULT(WINAPI *WNDPROC)(HWND, UINT, WPARAM, LPARAM);
+/* as the game's window procedure is declared (src/game/orig_pf.c window_proc):
+ * the HWND as a 32-bit value */
+typedef LRESULT(WINAPI *WNDPROC)(uint32_t, UINT, WPARAM, LPARAM);
 
 #define WM_CREATE 0x0001
 #define WM_DESTROY 0x0002
@@ -49,8 +51,9 @@ struct window {
     struct window *parent;
 };
 
+/* MSG, in game memory: 32-bit layout */
 struct msg {
-    HWND window;
+    uint32_t window;
     UINT message;
     WPARAM wparam;
     LPARAM lparam;
@@ -97,7 +100,7 @@ static void post(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
     if (queue_count == QUEUE)
         return;
     m = &queue[(queue_head + queue_count++) % QUEUE];
-    m->window = window;
+    m->window = (uint32_t)(uintptr_t)window;
     m->message = message;
     m->wparam = wparam;
     m->lparam = lparam;
@@ -109,7 +112,7 @@ static LRESULT send(struct window *w, UINT message, WPARAM wparam, LPARAM lparam
 {
     if (!w || !w->proc)
         return 0;
-    return w->proc(handle_of(w), message, wparam, lparam);
+    return w->proc((uint32_t)(uintptr_t)handle_of(w), message, wparam, lparam);
 }
 
 /* ---- SDL events to messages ---- */
@@ -239,17 +242,24 @@ static uint16_t add_class(const char *name, WNDPROC proc)
     return 0;
 }
 
-/* WNDCLASSEXA: size, style, proc +8, ..., class name +0x28 */
+static uint32_t field32(const uint8_t *c, int offset)
+{
+    uint32_t v;
+    memcpy(&v, c + offset, 4);
+    return v;
+}
+
+/* WNDCLASSEXA (32-bit layout): size, style, proc +8, ..., class name +0x28 */
 /* an ATOM, zero-extended: the game keeps the whole of eax */
 DWORD WINAPI RegisterClassExA(const uint8_t *c)
 {
-    return add_class(*(const char *const *)(c + 0x28), *(WNDPROC const *)(c + 8));
+    return add_class((const char *)(uintptr_t)field32(c, 0x28), (WNDPROC)(uintptr_t)field32(c, 8));
 }
 
 /* WNDCLASSA: style, proc +4, ..., class name +0x24 */
 uint16_t WINAPI RegisterClassA(const uint8_t *c)
 {
-    return add_class(*(const char *const *)(c + 0x24), *(WNDPROC const *)(c + 4));
+    return add_class((const char *)(uintptr_t)field32(c, 0x24), (WNDPROC)(uintptr_t)field32(c, 4));
 }
 
 /* ---- display settings (Options > Display) ---- */
@@ -684,7 +694,7 @@ int WINAPI ShowCursor(BOOL show)
 
 static int matches(const struct msg *m, HWND h, UINT first, UINT last)
 {
-    if (h && m->window != h)
+    if (h && m->window != (uint32_t)(uintptr_t)h)
         return 0;
     return (!first && !last) || (m->message >= first && m->message <= last);
 }
@@ -733,7 +743,7 @@ BOOL WINAPI TranslateMessage(const struct msg *m)
 
 LRESULT WINAPI DispatchMessageA(const struct msg *m)
 {
-    return send(window_of(m->window), m->message, m->wparam, m->lparam);
+    return send(window_of((HWND)(uintptr_t)m->window), m->message, m->wparam, m->lparam);
 }
 
 void WINAPI PostQuitMessage(int code)
@@ -765,7 +775,7 @@ int WINAPI MessageBoxA(HWND h, const char *text, const char *caption, UINT type)
     return 1; /* IDOK */
 }
 
-intptr_t WINAPI DialogBoxParamA(void *instance, const char *name, HWND parent, void *proc, LPARAM param)
+int32_t WINAPI DialogBoxParamA(void *instance, const char *name, HWND parent, void *proc, LPARAM param)
 {
     (void)instance;
     (void)parent;
@@ -775,7 +785,7 @@ intptr_t WINAPI DialogBoxParamA(void *instance, const char *name, HWND parent, v
     return 1; /* IDOK */
 }
 
-BOOL WINAPI EndDialog(HWND h, intptr_t result)
+BOOL WINAPI EndDialog(HWND h, int32_t result)
 {
     (void)h;
     (void)result;

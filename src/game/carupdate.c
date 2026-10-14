@@ -5,8 +5,9 @@
 #include "body.h"
 #include "fixed.h"
 #include "physics.h"
+#include "gamefn.h"
 
-#define g_race (*(uint8_t **)0x4b1960)
+#define g_race GP(0x4b1960)
 #define g_race_ticks (*(uint32_t *)0x6c0a50)
 #define g_sin_cos ((const int16_t *)0x4a8200) /* 4096 pairs: sin, cos */
 #define g_gte_matrix ((int16_t *)0x6ccbe0)
@@ -93,7 +94,7 @@ void GAMEAPI wheel_bounce(uint8_t *wheel, const uint8_t *car)
  * (+0x78), in the car's frame, and placed at its mount. */
 void GAMEAPI wheel_place(uint8_t *wheel, const uint8_t *car, int32_t steering)
 {
-    uint8_t *body = *(uint8_t **)(wheel + 0x6c);
+    uint8_t *body = GP(wheel + 0x6c);
     int32_t spin = I32(wheel, 0x78);
     int16_t angles[3], m[16];
     int col;
@@ -188,7 +189,7 @@ uint32_t GAMEAPI race_clock(void)
  * race clocks (+0x3c, +0x44) for cars still racing. */
 void GAMEAPI car_speed_and_clock(uint8_t *slot)
 {
-    uint8_t *car = *(uint8_t **)slot;
+    uint8_t *car = GP(slot);
     int32_t phase = I32(g_race, 0x57c);
     int32_t vx = I32(car, VELOCITY) >> 8, vy = I32(car, VELOCITY + 4) >> 8, vz = I32(car, VELOCITY + 8) >> 8;
     int32_t speed = (int32_t)(fix_sqrt_table(vz * vz + vy * vy + vx * vx) << 8);
@@ -216,11 +217,11 @@ void GAMEAPI car_speed_and_clock(uint8_t *slot)
  * car's boost (+0x698), less with flag 0x40 of +0x700; once a step. */
 void GAMEAPI car_boost(uint8_t *slot)
 {
-    uint8_t *car = *(uint8_t **)slot;
+    uint8_t *car = GP(slot);
     int32_t w;
 
     for (w = 0; w < 4; w++) {
-        const uint8_t *surface = *(uint8_t **)(car + 0x198 + w * 0x1c);
+        const uint8_t *surface = GP(car + 0x198 + w * 0x1c);
 
         if (surface && (U32(surface, 0xc) & 0xff) == 1) {
             I32(car, 0x698) += (U32(car, 0x700) & 0x40) ? 0x3000 : 0x5000;

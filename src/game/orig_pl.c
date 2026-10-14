@@ -25,6 +25,7 @@
 #include "../runtime.h"
 #include "physics.h"
 #include "winapi.h"
+#include "gamefn.h"
 
 #define U8(p, off) (*(uint8_t *)((uint8_t *)(uintptr_t)(p) + (off)))
 #define U16(p, off) (*(uint16_t *)((uint8_t *)(uintptr_t)(p) + (off)))
@@ -66,69 +67,58 @@
 #define R_TIME 0x664
 #define R_FLAG 0x668
 
-typedef int32_t(GAMEAPI *pl_fn0)(void);
-typedef int32_t(GAMEAPI *pl_fn1)(uint32_t a);
-typedef int32_t(GAMEAPI *pl_fn2)(uint32_t a, uint32_t b);
-typedef int32_t(GAMEAPI *pl_fn3)(uint32_t a, uint32_t b, uint32_t c);
-typedef int32_t(GAMEAPI *pl_fn4)(uint32_t a, uint32_t b, uint32_t c, uint32_t d);
-typedef int32_t(GAMEAPI *pl_fn5)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e);
-typedef int32_t(GAMEAPI *pl_fn7)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f,
-                                 uint32_t g);
-#define CALL0(a) (((pl_fn0)(a))())
-#define CALL1(a, x) (((pl_fn1)(a))(A(x)))
-#define CALL2(a, x, y) (((pl_fn2)(a))(A(x), A(y)))
-#define CALL3(a, x, y, z) (((pl_fn3)(a))(A(x), A(y), A(z)))
-#define CALL4(a, x, y, z, w) (((pl_fn4)(a))(A(x), A(y), A(z), A(w)))
-#define CALL5(a, x, y, z, w, v) (((pl_fn5)(a))(A(x), A(y), A(z), A(w), A(v)))
-#define CALL7(a, x, y, z, w, v, u, t) (((pl_fn7)(a))(A(x), A(y), A(z), A(w), A(v), A(u), A(t)))
-
 /* Outside the group. */
-#define key_slots_reset_at() CALL0(0x439fd0)
-#define game_time_at() ((uint32_t)CALL0(0x43692a))
-#define net_time_at() ((uint32_t)CALL0(0x45eee0))
-#define debug_printf_at(s) CALL1(0x476ec0, s)
-#define weapon_fire_at(slot, which, z, age, data) CALL5(0x467900, slot, which, z, age, data)
-#define net_player_active_at(i) CALL1(0x48cfd0, i)
-#define mem_alloc_at(size, flags) ((uint32_t)CALL2(0x476ae0, size, flags))
-#define mem_free_at(p) CALL1(0x476b40, p)
-#define mem_copy_at(d, s, n) CALL3(0x476f30, d, s, n)
-#define chat_lines_at(count, lines) CALL2(0x45f5b0, count, lines)
-#define text_free_at(id) CALL1(0x479280, id)
-#define text_create_at(s, a, x, y, f, c, z) CALL7(0x479060, s, a, x, y, f, c, z)
-#define message_check_at(msg, size) CALL2(0x48bfb0, msg, size)
-#define player_of_at(from) CALL1(0x48bd40, from)
-#define player_cheat_note_at(from) CALL1(0x45fb90, from)
-#define text_line_get_at(buf, size, sec, idx) CALL4(0x42e6d0, buf, size, sec, idx)
-#define sprintf_at(buf, fmt, a) CALL3(0x4979f0, buf, fmt, a)
-#define chat_post_at(s) CALL1(0x45d150, s)
-#define car_state_seen_at(p, a, b, t) CALL4(0x45ee60, p, a, b, t)
-#define player_left_at(i) CALL1(0x48bed0, i)
-#define net_pause_at(x) CALL1(0x45f7b0, x)
-#define send_setting_at(a, b, c, d, e) CALL5(0x45f710, a, b, c, d, e)
-#define menu_dirty_at() CALL0(0x452d20)
-#define drop_player_at(i) CALL1(0x48bf70, i)
-#define race_abort_at() CALL0(0x45d170)
-#define race_options_at(a, b, c, d, e) CALL5(0x452fa0, a, b, c, d, e)
-#define net_is_host_at() CALL0(0x45eed0)
-#define net_bit5_at() CALL0(0x45ef30)
-#define net_game_at() CALL0(0x45ef80)
-#define results_at(x) CALL1(0x45f990, x)
-#define snatched_at(i) CALL1(0x45fa60, i)
-#define quit_ack_at(from) CALL1(0x45fca0, from)
-#define net_close_at() CALL0(0x4906f0)
-#define net_send_at(kind, to, msg, size, flags) CALL5(0x48cdd0, kind, to, msg, size, flags)
-#define net_lock_at(x) ((uint32_t)CALL1(0x48c3f0, x))
-#define net_unlock_at(h) CALL1(0x48c440, h)
-#define car_position_sum_at(slot) CALL1(0x444050, slot)
-#define controls_ready_at() CALL0(0x45eb60)
-#define net_local_slot_at() ((uint32_t)CALL0(0x48cf20))
-#define car_state_changed_at(i) CALL1(0x45ee10, i)
-#define net_frame_due_at() CALL0(0x48d390)
-#define net_frame_skip_at() CALL0(0x48d3e0)
-#define player_free_at(i) CALL1(0x45eeb0, i)
-#define grid_unlink_at(b) CALL1(0x4611d0, b)
-#define grid_link_at(b) CALL1(0x460fb0, b)
-#define body_prepare_at(p) CALL1(0x465740, p)
+#define key_slots_reset_at() GCALL(0x439fd0, key_slots_reset)()
+#define game_time_at() GCALL(0x43692a, game_time_get)()
+#define net_time_at() ((uint32_t)GCALL(0x45eee0, net_time)())
+#define debug_printf_at(s) GCALL(0x476ec0, dbg_vlog_printf)((const char *)PTR(s))
+#define weapon_fire_at(slot, which, z, age, data) \
+    GCALL(0x467900, weapon_fire)(PTR(slot), which, z, PTR(A(age)), PTR(data))
+#define net_player_active_at(i) GCALL(0x48cfd0, fe_net_player_active)(i)
+#define mem_alloc_at(size, flags) GCALL(0x476ae0, global_block_alloc)(size, flags)
+#define mem_free_at(p) GCALL(0x476b40, global_block_free)(p)
+#define mem_copy_at(d, s, n) GCALL(0x476f30, mem_copy)(PTR(A(d)), PTR(A(s)), n)
+#define chat_lines_at(count, lines) GCALL(0x45f5b0, net_chat_lines)(count, lines)
+#define text_free_at(id) GCALL(0x479280, text_free)((int32_t)(id))
+#define text_create_at(s, a, x, y, f, c, z) \
+    GCALL(0x479060, text_create)(PTR(A(s)), a, (int32_t)(x), y, f, (int32_t)(c), z)
+#define message_check_at(msg, size) GCALL(0x48bfb0, net_message_checksum_ok)(PTR(A(msg)), size)
+#define player_of_at(from) GCALL(0x48bd40, net_player_slot_of)(from)
+#define player_cheat_note_at(from) GCALL(0x45fb90, net_player_cheated)(from)
+#define text_line_get_at(buf, size, sec, idx) \
+    GCALL(0x42e6d0, text_line_get)(PTR(A(buf)), size, (const char *)PTR(sec), idx)
+#define sprintf_at(buf, fmt, a) \
+    GCALL(0x4979f0, msvc_sprintf)((char *)PTR(A(buf)), (const char *)PTR(A(fmt)), (const char *)PTR(a))
+#define chat_post_at(s) GCALL(0x45d150, network_chat_post)((const char *)PTR(A(s)))
+#define car_state_seen_at(p, a, b, t) GCALL(0x45ee60, net_controls_history_set)(p, a, b, t)
+#define player_left_at(i) GCALL(0x48bed0, net_player_remove)(i)
+#define net_pause_at(x) GCALL(0x45f7b0, net_name_send)(x)
+#define send_setting_at(a, b, c, d, e) GCALL(0x45f710, network_send_setting)(a, b, c, d, e)
+#define menu_dirty_at() GCALL(0x452d20, menu_dirty_set)()
+#define drop_player_at(i) GCALL(0x48bf70, fe_net_drop_player)((uint32_t)(i))
+#define race_abort_at() GCALL(0x45d170, fe_net_race_abort)()
+#define race_options_at(a, b, c, d, e) GCALL(0x452fa0, race_options_set)(a, b, c, d, e)
+#define net_is_host_at() GCALL(0x45eed0, net_state_host)()
+#define net_bit5_at() GCALL(0x45ef30, net_state_bit5)()
+#define net_game_at() GCALL(0x45ef80, net_state_game)()
+#define results_at(x) GCALL(0x45f990, net_results_send)(x)
+#define snatched_at(i) GCALL(0x45fa60, net_pause_request)((uint32_t)(i))
+#define quit_ack_at(from) GCALL(0x45fca0, net_race_results_send)((int32_t)(from))
+#define net_close_at() GCALL(0x4906f0, snatch_state_check)()
+#define net_send_at(kind, to, msg, size, flags) \
+    GCALL(0x48cdd0, net_message_send_to)(kind, to, A(msg), (uint32_t)(size), flags)
+#define net_lock_at(x) GCALL(0x48c3f0, net_lock)(x)
+#define net_unlock_at(h) GCALL(0x48c440, net_unlock)(h)
+#define car_position_sum_at(slot) GCALL(0x444050, car_position_sum)((int32_t)(slot))
+#define controls_ready_at() GCALL(0x45eb60, net_controls_ready)()
+#define net_local_slot_at() ((uint32_t)GCALL(0x48cf20, net_local_slot)())
+#define car_state_changed_at(i) GCALL(0x45ee10, net_controls_changed)(i)
+#define net_frame_due_at() GCALL(0x48d390, net_send_queue_low)()
+#define net_frame_skip_at() GCALL(0x48d3e0, net_message_queue_count)()
+#define player_free_at(i) GCALL(0x45eeb0, net_player_free)(i)
+#define grid_unlink_at(b) GCALL(0x4611d0, object_grid_unlink)(PTR(b))
+#define grid_link_at(b) GCALL(0x460fb0, object_grid_link)(PTR(b))
+#define body_prepare_at(p) GCALL(0x465740, body_prepare)(PTR(p))
 
 #define CRT_FTOL 0x497a80
 
@@ -190,6 +180,7 @@ static void pl_strcpy(uint32_t dst, uint32_t src)
 static int32_t pl_ticks_ftol(uint32_t n)
 {
     uint64_t q = (uint64_t)(uint32_t)(n + 1);
+#if defined(__i386__)
     int32_t r;
 
     __asm__ volatile("fildq %[q]\n\t"
@@ -201,6 +192,14 @@ static int32_t pl_ticks_ftol(uint32_t n)
                      : [ftol] "S"(CRT_FTOL)
                      : "ecx", "edx", "memory", "cc", X87);
     return r;
+#else
+    /* single precision as the game's x87; _ftol truncates to 64 bits, eax
+     * is the low half */
+    float f = (float)(int64_t)q;
+
+    f = f * *(const float *)(uintptr_t)0x4a33cc;
+    return (int32_t)(uint32_t)(int64_t)f;
+#endif
 }
 
 /* The "player cheated" chat line: the line (section 0x4b0e34, entry 4)
@@ -728,7 +727,7 @@ void GAMEAPI netplay_message_handle(uint32_t msg, uint32_t size, uint32_t from)
     case 11: { /* the clock (from 0x45e340) */
         uint32_t t = game_time_at();
         t -= (uint32_t)pl_ticks_ftol(U32(msg, 8));
-        net_time_at();
+        (void)net_time_at();
         G32(0x5d5998) = t;
         return;
     }

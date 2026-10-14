@@ -20,12 +20,13 @@
 #include "../runtime.h"
 #include "fixed.h"
 #include "physics.h"
+#include "gamefn.h"
 
-#define g_race (*(uint8_t **)0x4b1960)
-#define g_config (*(uint8_t **)0x4b2198)
-#define g_world (*(uint8_t **)0x6c1e30)
-#define g_track_info (*(uint8_t **)0x6c1eb0)
-#define g_texture_records (*(uint8_t **)0x6c1e14)
+#define g_race GP(0x4b1960)
+#define g_config GP(0x4b2198)
+#define g_world GP(0x6c1e30)
+#define g_track_info GP(0x6c1eb0)
+#define g_texture_records GP(0x6c1e14)
 #define g_sin ((const int16_t *)0x4b24f8)
 #define g_cos ((const int16_t *)0x4b2578)
 #define g_pickup_seed (*(uint32_t *)0x4b11d8)
@@ -36,7 +37,8 @@
 #define S16(p, off) (*(int16_t *)((p) + (off)))
 #define U32(p, off) (*(uint32_t *)((p) + (off)))
 #define I32(p, off) (*(int32_t *)((p) + (off)))
-#define PTR(p, off) (*(uint8_t **)((p) + (off)))
+#define PTR(p, off) GP((p) + (off))
+#define PTR_SET(p, off, v) (U32(p, off) = (uint32_t)(uintptr_t)(v))
 
 /* The track's model list: *(world + 0x18) indexed by the int16 at
  * *(world + 0x58) + `which`. */
@@ -44,28 +46,25 @@
 /* The 16-byte texture record `n` after the track's first one. */
 #define TEXTURE(n) (g_texture_records + ((uint32_t)U16(g_track_info, 0x2e) + (n)) * 0x10)
 
-typedef void *(GAMEAPI *alloc_fn)(uint32_t size);
-typedef uint8_t *(GAMEAPI *body_new_fn)(uint32_t model, uint32_t kind, uint32_t size, uint32_t d);
-typedef void(GAMEAPI *body_shape_fn)(uint8_t *body, const void *shape);
-typedef void(GAMEAPI *body_fn)(uint8_t *body);
-typedef void(GAMEAPI *prim_fn)(uint8_t *prim, uint32_t a);
-typedef void(GAMEAPI *clock_fn)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e);
-typedef void(GAMEAPI *centre_fn)(uint32_t x, uint32_t y);
-typedef int32_t(GAMEAPI *rect_fn)(int16_t *rect, uint32_t a, uint32_t b, uint32_t c);
-typedef uint8_t *(GAMEAPI *sprite_new_fn)(uint32_t a, uint32_t b, uint32_t c, uint32_t texture, uint32_t size,
-                                          uint32_t f);
-
-#define mem_alloc ((alloc_fn)0x4445e0)
-#define body_new ((body_new_fn)0x460ba0)
-#define body_shape_set ((body_shape_fn)0x465640)
-#define body_grid_unlink ((body_fn)0x4611d0)
-#define sprite_grid_unlink ((body_fn)0x4612a0)
-#define prim_finish ((prim_fn)0x4270e0)
-#define clock_setup ((clock_fn)0x4291f0)
-#define screen_centre_set ((centre_fn)0x426200)
-#define screen_clear ((rect_fn)0x479ae0)
-#define sprite_new ((sprite_new_fn)0x47dcc0)
-#define snatch_spark_reset_at ((body_fn)0x48f430)
+#define mem_alloc(n) GMEM(GCALL(0x4445e0, kr_malloc)(n))
+#define body_new(model, kind, size, d) GCALL(0x460ba0, object_create)((uint8_t *)GMEM(model), kind, size, d)
+#define body_shape_set(body, shape) GCALL(0x465640, body_init_from_template)(body, (const uint32_t *)(shape))
+#define body_grid_unlink(body) GCALL(0x4611d0, object_grid_unlink)(body)
+#define sprite_grid_unlink(body) GCALL(0x4612a0, object_grid_unlink2)(body)
+#define prim_finish(prim, a) GCALL(0x4270e0, prim_flag2_set)(prim, a)
+#define screen_centre_set(x, y) GCALL(0x426200, gte_screen_offset_set)((int32_t)(x), (int32_t)(y))
+#define sprite_new(a, b, c, texture, size, f) GCALL(0x47dcc0, sprite_object_create)(a, b, c, texture, size, f)
+#define snatch_spark_reset_at(spark) GCALL(0x48f430, snatch_spark_reset)((int32_t *)(spark))
+#if defined(__i386__)
+/* Empty functions the original passes arguments to (cdecl: unread). */
+#define clock_setup(a, b, c, d, e) \
+    (((void(GAMEAPI *)(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t))(uintptr_t)0x4291f0)(a, b, c, d, e))
+#define screen_clear(rect, a, b, c) \
+    (((int32_t(GAMEAPI *)(int16_t *, uint32_t, uint32_t, uint32_t))(uintptr_t)0x479ae0)(rect, a, b, c))
+#else
+#define clock_setup(a, b, c, d, e) ((void)(d), GCALL(0x4291f0, dx_error_ignore)())
+#define screen_clear(rect, a, b, c) ((void)(rect), GCALL(0x479ae0, ps_wait_none)())
+#endif
 
 /* A primitive's tag: keep the link, set the word count. */
 static void prim_tag(uint8_t *prim)
@@ -211,7 +210,7 @@ void GAMEAPI snatch_prims_init(uint8_t *snatch)
  * dots (+0x1f4, texture 0x2e), then its primitives. */
 void GAMEAPI snatch_sprites_create(uint8_t *snatch)
 {
-    uint8_t **slot = (uint8_t **)(snatch + 0x1e0);
+    uint8_t *slot = snatch + 0x1e0; /* pointers */
     uint8_t *spark = snatch + 0x29c;
     uint32_t texture = (uint32_t)U16(g_track_info, 0x2e) + 0x3f, i;
 
@@ -223,10 +222,11 @@ void GAMEAPI snatch_sprites_create(uint8_t *snatch)
         U8(s, 0x109) = 0;
         U8(s, 0x10a) = 0;
         sprite_grid_unlink(s);
-        *slot++ = s;
+        PTR_SET(slot, 0, s);
+        slot += 4;
     }
     texture = (uint32_t)U16(g_track_info, 0x2e) + 100;
-    slot = (uint8_t **)(snatch + 0x274);
+    slot = snatch + 0x274;
     for (i = 0; i < 10; i++, spark += 0x10) {
         uint8_t *s = sprite_new(0, 0, 0, texture, 0x20, 0x80);
 
@@ -235,11 +235,12 @@ void GAMEAPI snatch_sprites_create(uint8_t *snatch)
         U8(s, 0x109) = 0;
         U8(s, 0x10a) = 0;
         sprite_grid_unlink(s);
-        *slot++ = s;
+        PTR_SET(slot, 0, s);
+        slot += 4;
         snatch_spark_reset_at(spark);
     }
     texture = (uint32_t)U16(g_track_info, 0x2e) + 0x2e;
-    slot = (uint8_t **)(snatch + 0x1f4);
+    slot = snatch + 0x1f4;
     for (i = 0; i < 0x20; i++) {
         uint8_t *s = sprite_new(0, 0, 0, texture, 0x10, 0x80);
 
@@ -248,7 +249,8 @@ void GAMEAPI snatch_sprites_create(uint8_t *snatch)
         U8(s, 0x109) = 0;
         U8(s, 0x10a) = 0;
         sprite_grid_unlink(s);
-        *slot++ = s;
+        PTR_SET(slot, 0, s);
+        slot += 4;
     }
     snatch_prims_init(snatch);
 }
@@ -271,7 +273,7 @@ void GAMEAPI snatch_create(void)
     U8(body, 0x2a37) = 0;
     I32(body, 0x188) = 0;
     I32(body, 0x190) = 0;
-    *(uint8_t **)0x5d1fc0 = body;
+    PTR_SET((uint8_t *)0x5d1fc0, 0, body);
     snatch_sprites_create(body);
     U8(body, 0x2a36) = 0xff;
 }
@@ -283,15 +285,16 @@ void GAMEAPI snatch_create(void)
 void GAMEAPI weapon_bodies_create(void)
 {
     uint32_t homer_model = WORLD_MODEL(0xa), part_model = WORLD_MODEL(0xa), leader_model = WORLD_MODEL(8);
-    uint8_t **out = (uint8_t **)0x6b9ce0, **parts = (uint8_t **)0x6b9cf0, **driller;
+    uint8_t *out = (uint8_t *)0x6b9ce0, *parts = (uint8_t *)0x6b9cf0, *driller; /* pointers */
     int32_t i;
 
-    for (i = 0; (uint32_t)out < 0x6b9cf0; i++) {
+    for (i = 0; (uint32_t)(uintptr_t)out < 0x6b9cf0; i++) {
         uint8_t *body = body_new(homer_model, 0x1c0c, 0x23ec, 0);
 
         I32(body, 0x184) = 1;
         U8(body, 0x23dd) = 0x7f;
-        *out++ = body;
+        PTR_SET(out, 0, body);
+        out += 4;
         U32(body, 0x148) = 0x4596f0;
         body_shape_set(body, (const void *)0x4b0b68);
         body_grid_unlink(body);
@@ -299,21 +302,21 @@ void GAMEAPI weapon_bodies_create(void)
         I32(body, 0x23e0) = i;
         projectile_clear(body);
     }
-    for (driller = (uint8_t **)0x6b9cc0; (uint32_t)driller < 0x6b9cd8; driller++) {
+    for (driller = (uint8_t *)0x6b9cc0; (uint32_t)(uintptr_t)driller < 0x6b9cd8; driller += 4) {
         uint8_t *head = body_new(0, 0x811, 0x1b8, 0);
-        uint8_t **link;
+        uint8_t *link;
 
-        *driller = head;
+        PTR_SET(driller, 0, head);
         body_shape_set(head, (const void *)0x4b0b68);
         body_grid_unlink(head);
         U32(head, 0x148) = 0x424990;
         U32(head, 0x108) |= 1;
         I32(head, 0x1ac) = 0x7f;
-        link = (uint8_t **)(head + 0x184);
+        link = head + 0x184;
         for (i = 0; i < 3; i++) {
             uint8_t *part = body_new(part_model, 0x8c0c, 0x23ec, 0);
 
-            *parts = part;
+            PTR_SET(parts, 0, part);
             U32(part, 0x148) = 0;
             U8(part, 0x23dd) = 0x7f;
             body_shape_set(part, (const void *)0x4b0b68);
@@ -331,20 +334,22 @@ void GAMEAPI weapon_bodies_create(void)
             I32(part, 0x23e0) = i;
             I32(part, 0x184) = 2;
             projectile_trail_init(part);
-            *link++ = part;
-            parts++;
-            PTR(part, 0x18c) = head;
+            PTR_SET(link, 0, part);
+            link += 4;
+            parts += 4;
+            PTR_SET(part, 0x18c, head);
             U32(part, 0x148) = 0;
         }
         I32(head, 0x190) = -1;
         I32(head, 0x194) = 0;
     }
-    out = (uint8_t **)0x6b9d38;
-    for (i = 0; (uint32_t)out < 0x6b9d40; i++) {
+    out = (uint8_t *)0x6b9d38;
+    for (i = 0; (uint32_t)(uintptr_t)out < 0x6b9d40; i++) {
         uint8_t *body = body_new(leader_model, 0x1c0c, 0x240c, 0);
 
         I32(body, 0x184) = 0;
-        *out++ = body;
+        PTR_SET(out, 0, body);
+        out += 4;
         U32(body, 0x148) = 0x43f040;
         projectile_trail_init(body);
         body_shape_set(body, (const void *)0x4b0b68);
@@ -410,13 +415,14 @@ void GAMEAPI pickup_prims_init(uint8_t *pickup)
 void GAMEAPI droppers_create(void)
 {
     uint32_t count = U8(g_track_info, 0xf7), model = WORLD_MODEL(0x46);
-    uint8_t **out = (uint8_t **)0x6cd420;
+    uint8_t *out = (uint8_t *)0x6cd420; /* pointers */
     int32_t i;
 
     for (; count; count--) {
         uint8_t *body = body_new(model, 0x8e1a, 0x18c, 0);
 
-        *out++ = body;
+        PTR_SET(out, 0, body);
+        out += 4;
         body_shape_set(body, (const void *)0x4a8120);
         body_grid_unlink(body);
         I32(body, 0x180) = 0;
@@ -432,7 +438,7 @@ void GAMEAPI droppers_create(void)
 void GAMEAPI pickups_create(void)
 {
     uint32_t count = U8(g_world, 0x36), model, n;
-    uint8_t *race = g_race, **out;
+    uint8_t *race = g_race, *out; /* pointers */
 
     if (!U8(race, 0xa86) && U8(race, 0x551) != 3 && U8(race, 0x551) != 8) {
         *(uint32_t *)0x6b8ce4 = 0;
@@ -440,11 +446,12 @@ void GAMEAPI pickups_create(void)
     }
     model = WORLD_MODEL(0xc);
     out = mem_alloc(count * 4);
-    *(uint8_t ***)0x6b8ce0 = out;
+    PTR_SET((uint8_t *)0x6b8ce0, 0, out);
     for (n = count; (int32_t)n > 0; n--) {
         uint8_t *body = body_new(model, 0x8c0a, 0x554, 0);
 
-        *out++ = body;
+        PTR_SET(out, 0, body);
+        out += 4;
         body_shape_set(body, (const void *)0x4b16c0);
         body_grid_unlink(body);
         U16(body, 0x182) = 0x82;
@@ -483,8 +490,8 @@ void GAMEAPI viewport_player_order(int32_t *out)
             *out++ = i;
         return;
     }
-#define PLAYER_ACTIVE(i) (*(int32_t *)(0x5d2cd0 + (i) * 0x66c))
-#define PLAYER_CAR(i) (*(int32_t *)(0x5d2ce8 + (i) * 0x66c))
+#define PLAYER_ACTIVE(i) (*(int32_t *)GMEM(0x5d2cd0 + (i) * 0x66c))
+#define PLAYER_CAR(i) (*(int32_t *)GMEM(0x5d2ce8 + (i) * 0x66c))
     *out = PLAYER_CAR(*(int32_t *)0x5d535c);
     for (i = 0; i < 6; i++) {
         if (i != *(int32_t *)0x5d535c && PLAYER_ACTIVE(i)) {
@@ -512,7 +519,7 @@ void GAMEAPI viewport_player_order(int32_t *out)
 /* One view rectangle (car slot +8: x, y, width, height). */
 static void view_set(int32_t slot, int32_t x, int32_t y, uint32_t w, int32_t h)
 {
-    int32_t *v = (int32_t *)(0x6bfb88 + slot * 0x274);
+    int32_t *v = (int32_t *)GMEM(0x6bfb88 + slot * 0x274);
 
     v[0] = x;
     v[1] = y;
@@ -595,7 +602,7 @@ void GAMEAPI viewports_layout(int32_t a, int32_t b, int32_t c, int32_t d)
     views[2] = c;
     views[3] = d;
     for (i = 0; i < count; i++) {
-        int32_t *v = (int32_t *)(0x6bfb88 + views[i] * 0x274);
+        int32_t *v = (int32_t *)GMEM(0x6bfb88 + views[i] * 0x274);
 
         v[4] = v[0];
         v[5] = v[1];
@@ -607,7 +614,7 @@ void GAMEAPI viewports_layout(int32_t a, int32_t b, int32_t c, int32_t d)
         v[7] += by * 2;
     }
     if (mode == 3) {
-        int32_t *v = (int32_t *)(0x6bfb88 + a * 0x274);
+        int32_t *v = (int32_t *)GMEM(0x6bfb88 + a * 0x274);
 
         v[4] = 0;
         v[6] = *(uint16_t *)0x6cd462;
@@ -661,19 +668,19 @@ void GAMEAPI quarter_prims_init(void)
     const uint8_t *edge;
     uint32_t i, j, k;
 
-    *(uint8_t **)0x4b5fa8 = mem_alloc(0x1e00);
-    *(uint8_t **)0x4b5fdc = mem_alloc(0xc00);
+    PTR_SET((uint8_t *)0x4b5fa8, 0, mem_alloc(0x1e00));
+    PTR_SET((uint8_t *)0x4b5fdc, 0, mem_alloc(0xc00));
     t = TEXTURE(0);
     clock_setup(0x6d0a60, 1, 0, U16(t, 6), 0);
     clock_setup(0x6d0a6c, 1, 0, U16(t, 6), 0);
     clock_setup(0x6d0a20, 1, 1, U16(t, 6), 0);
     clock_setup(0x6d0a2c, 1, 1, U16(t, 6), 0);
-    quads = *(uint8_t **)0x4b5fa8;
-    tris = *(uint8_t **)0x4b5fdc;
-    *(uint8_t **)0x4b5fbc = tris;
-    *(uint8_t **)0x4b5fb0 = quads;
-    *(uint8_t **)0x4b5fb4 = quads + 0x1e00;
-    *(uint8_t **)0x4b5fb8 = tris + 0xc00;
+    quads = GP(0x4b5fa8);
+    tris = GP(0x4b5fdc);
+    PTR_SET((uint8_t *)0x4b5fbc, 0, tris);
+    PTR_SET((uint8_t *)0x4b5fb0, 0, quads);
+    PTR_SET((uint8_t *)0x4b5fb4, 0, quads + 0x1e00);
+    PTR_SET((uint8_t *)0x4b5fb8, 0, tris + 0xc00);
     for (i = 0, q = quads; i < 0x40; i++, q += 0x78) {
         uint32_t tag = U32(q, 0);
 
@@ -685,7 +692,7 @@ void GAMEAPI quarter_prims_init(void)
     }
     /* each texture record: (u, v) of its 4 corners at +0, +4, +8, +10,
      * clut +2, page +6 */
-    q = *(uint8_t **)0x4b5fb0 + 0x12c;
+    q = GP(0x4b5fb0) + 0x12c;
     for (i = 0; i < 0x10; i++, t += 0x10, q += 0x1e0) {
         U32(q, -0x10c) = U32(t, 0);
         uv_midpoint(q - 0xf0, t, t + 4);
@@ -710,7 +717,7 @@ void GAMEAPI quarter_prims_init(void)
         U16(q, 0x7a) = U16(t, 6);
         U16(q, 0x5e) = U16(t, 2);
     }
-    for (i = 0, q = *(uint8_t **)0x4b5fdc; i < 0x20; i++, q += 0x60) {
+    for (i = 0, q = GP(0x4b5fdc); i < 0x20; i++, q += 0x60) {
         uint32_t tag = U32(q, 0);
 
         U8(q, 7) = 0x94;
@@ -723,13 +730,13 @@ void GAMEAPI quarter_prims_init(void)
     *(uint8_t *)0x4b5fd1 = 0xff;
     *(uint8_t *)0x4b5fd2 = 0xff;
     for (i = 0; i < 0x100; i += 8) {
-        U16(*(uint8_t **)0x6d0a40, i) = (uint16_t)(U16(*(uint8_t **)0x6d0a40, i) << 1);
-        U16(*(uint8_t **)0x6d0a40, i + 4) = (uint16_t)(U16(*(uint8_t **)0x6d0a40, i + 4) << 1);
-        U16(*(uint8_t **)0x6d0a40, i + 2) = (uint16_t)(U16(*(uint8_t **)0x6d0a40, i + 2) << 1);
-        U16(*(uint8_t **)0x6d0a40, i + 6) = (uint16_t)(U16(*(uint8_t **)0x6d0a40, i + 6) << 1);
+        U16(GP(0x6d0a40), i) = (uint16_t)(U16(GP(0x6d0a40), i) << 1);
+        U16(GP(0x6d0a40), i + 4) = (uint16_t)(U16(GP(0x6d0a40), i + 4) << 1);
+        U16(GP(0x6d0a40), i + 2) = (uint16_t)(U16(GP(0x6d0a40), i + 2) << 1);
+        U16(GP(0x6d0a40), i + 6) = (uint16_t)(U16(GP(0x6d0a40), i + 6) << 1);
     }
     edge = TEXTURE(0xa2);
-    q = *(uint8_t **)0x4b5fdc + 0x20;
+    q = GP(0x4b5fdc) + 0x20;
     for (k = 0, i = 0, j = 8; k < 0x20; k++, q += 0x60) {
         U8(q, 0) = 0x80;
         U16(q, 0x1e) = U16(edge, 6);
@@ -749,7 +756,7 @@ void GAMEAPI explosions_reset(void)
 {
     uint8_t *p;
 
-    for (p = (uint8_t *)0x6d06e6; (uint32_t)p < 0x6d0a06; p += 0x10) {
+    for (p = (uint8_t *)0x6d06e6; (uint32_t)(uintptr_t)p < 0x6d0a06; p += 0x10) {
         p[1] = 0;
         p[0] = 0xff;
     }
@@ -762,7 +769,7 @@ void GAMEAPI attached_points_reset(void)
 {
     uint16_t *p;
 
-    for (p = (uint16_t *)0x6c1b86; (uint32_t)p < 0x6c1dbe; p += 4)
+    for (p = (uint16_t *)0x6c1b86; (uint32_t)(uintptr_t)p < 0x6c1dbe; p += 4)
         *p = 0;
 }
 
@@ -780,9 +787,9 @@ void GAMEAPI trail_prims_init(void)
     uint16_t *w;
     int32_t i;
 
-    *(uint8_t **)0x4be378 = p;
+    PTR_SET((uint8_t *)0x4be378, 0, p);
     *(uint32_t *)0x6c80fc = 0;
-    for (w = (uint16_t *)0x6c802e; (uint32_t)w < 0x6c80ee; w += 0xc)
+    for (w = (uint16_t *)0x6c802e; (uint32_t)(uintptr_t)w < 0x6c80ee; w += 0xc)
         *w = 0;
     for (i = 0; i < 0x100; i++, p += 0x68) {
         uint32_t tag = U32(p, 0);
@@ -799,17 +806,17 @@ void GAMEAPI reciprocal_table_init(void)
 {
     int32_t i, n;
 
-    if (*(int32_t **)0x4d4b9c)
+    if (GP(0x4d4b9c))
         return;
-    *(int32_t **)0x4d4b9c = mem_alloc(0x1000);
+    PTR_SET((uint8_t *)0x4d4b9c, 0, mem_alloc(0x1000));
     for (i = 0x20; i < 0x400; i++) {
         n = 0x100000 / i - i - 3;
         if (n < 0)
             n = 0;
-        (*(int32_t **)0x4d4b9c)[i] = n;
+        ((int32_t *)GP(0x4d4b9c))[i] = n;
     }
     for (i = 0, n = 0x7ffd; i < 0x20; i++, n--)
-        (*(int32_t **)0x4d4b9c)[i] = n;
+        ((int32_t *)GP(0x4d4b9c))[i] = n;
 }
 
 /* 0x47c330: the per-model vertex buffers for the track's models
@@ -819,29 +826,29 @@ void GAMEAPI reciprocal_table_init(void)
  * cleared. */
 void GAMEAPI model_buffers_init(void)
 {
-    uint8_t *world, **models;
+    uint8_t *world, *models; /* pointers */
     uint32_t total = 0, i, *block;
 
     reciprocal_table_init();
     for (i = 0; i < 0x46; i++)
-        *(uint16_t *)(0x5d8064 + i * 0x40) = 0;
+        *(uint16_t *)GMEM(0x5d8064 + i * 0x40) = 0;
     world = g_world;
-    models = *(uint8_t ***)world;
+    models = GP(world);
     i = 0;
     if (U32(world, 0x10)) {
         do {
             ((uint32_t *)0x5d7de0)[i & 0xffff] = total;
-            total += ((U32(models[i & 0xffff], 0xc) >> 4) + 1) * 0x20;
+            total += ((U32(GP(models + (i & 0xffff) * 4), 0xc) >> 4) + 1) * 0x20;
             i++;
         } while ((i & 0xffff) < U32(world, 0x10));
     }
     ((uint32_t *)0x5d7de0)[i & 0xffff] = total;
     block = mem_alloc(total);
-    *(uint32_t **)0x5d71d0 = block;
+    PTR_SET((uint8_t *)0x5d71d0, 0, block);
     i = 0;
     if (U32(g_world, 0x10) + 1 != 0) {
         do {
-            ((uint32_t *)0x5d7de0)[i & 0xffff] += (uint32_t)block;
+            ((uint32_t *)0x5d7de0)[i & 0xffff] += (uint32_t)(uintptr_t)block;
             i++;
         } while ((i & 0xffff) < U32(g_world, 0x10) + 1);
     }
@@ -867,7 +874,7 @@ void GAMEAPI model_vertex_normals(const uint8_t *model, int16_t *out)
     int32_t v;
 
     for (v = 0; v < (int32_t)U16(model, 4); v++) {
-        const uint32_t *face = *(const uint32_t *const *)(model + 0xc);
+        const uint32_t *face = (const uint32_t *)GP(model + 0xc);
         int32_t vec[3] = {0, 0, 0}, x = 0, y = 0, z = 0, used = 0, faces = U16(model, 6), k;
 
         if (faces > 0) {
@@ -923,19 +930,19 @@ void GAMEAPI model_normals_make(uint8_t *model)
         count += U16(second, 4);
     }
     block = mem_alloc(count * 8);
-    *(int16_t **)(model + 0x48) = block;
+    PTR_SET(model, 0x48, block);
     model_vertex_normals(model, block);
     if (first) {
         int16_t *at = block + U16(model, 4) * 4;
 
-        *(int16_t **)(first + 0x48) = at;
+        PTR_SET(first, 0x48, at);
         model_vertex_normals(first, at);
     }
     if (second) {
         /* sic: reads the first link's count even when there is none */
         int16_t *at = block + ((uint32_t)*(volatile uint16_t *)((uintptr_t)first + 4) + U16(model, 4)) * 4;
 
-        *(int16_t **)(second + 0x48) = at;
+        PTR_SET(second, 0x48, at);
         model_vertex_normals(second, at);
     }
 }
@@ -999,7 +1006,7 @@ uint32_t GAMEAPI pad_button_flags(int32_t player, uint32_t unused, uint32_t stee
 /* 0x489ff0: device `n`'s record (0x43c bytes at 0x4d75c0) has bit 8 set. */
 uint32_t GAMEAPI device_flag(int32_t n)
 {
-    return *(uint32_t *)(0x4d75c0 + n * 0x43c) >> 8 & 1;
+    return *(uint32_t *)GMEM(0x4d75c0 + n * 0x43c) >> 8 & 1;
 }
 
 /* 0x489fa0: device `n` exists (n < *0x4d9554) and is not of type 4. */
@@ -1007,7 +1014,7 @@ int32_t GAMEAPI device_usable(int32_t n)
 {
     if (n >= *(int32_t *)0x4d9554)
         return 0;
-    return (*(uint32_t *)(0x4d75c4 + n * 0x43c) & 0xff00) != 0x400;
+    return (*(uint32_t *)GMEM(0x4d75c4 + n * 0x43c) & 0xff00) != 0x400;
 }
 
 /* 0x428cc0: pad set `set` (< 4) has a device-type binding (+4 == 1 in
@@ -1020,8 +1027,8 @@ int32_t GAMEAPI pad_device_bound(int32_t set, const int16_t *id)
 
     if (set > 3)
         return 0;
-    rec = (const int32_t *)(((uint8_t **)0x4ac6fc)[set] + 8);
-    count = *((int32_t **)0x4ac70c)[set];
+    rec = (const int32_t *)(GP(0x4ac6fc + set * 4) + 8);
+    count = *(const int32_t *)GP(0x4ac70c + set * 4);
     for (i = 0; i < count; i++, rec += 4)
         if (rec[-1] == 1 && rec[0] == *id && device_flag(rec[0]))
             return 1;
@@ -1037,7 +1044,7 @@ uint8_t *GAMEAPI link_pool_take(uint32_t size)
     uint32_t used = *(uint32_t *)0x4d087c;
 
     *(uint32_t *)0x4d087c = used + ((size + 0x7f) & ~0x7fu);
-    return *(uint8_t **)0x6b9b90 + (used & ~3u);
+    return GP(0x6b9b90) + (used & ~3u);
 }
 
 /* 0x460b20: a grid link record: owner, no links. */
@@ -1077,7 +1084,7 @@ void GAMEAPI model_instance_init(uint32_t *inst, uint8_t *model, uint8_t *faces,
     const uint8_t *face = model + I32(model, 0x10);
     uint32_t n;
 
-    inst[0] = (uint32_t)faces;
+    inst[0] = (uint32_t)(uintptr_t)faces;
     inst[1] = extra;
     n = (uint32_t)(I32(model, 0x14) - I32(model, 0x10)) * 2 / 0x28;
     if ((int32_t)n > 0) {
@@ -1141,7 +1148,7 @@ void GAMEAPI body_list_add(uint8_t *body)
 
     if (n >= 0x200)
         return;
-    ((uint8_t **)0x4d0880)[n] = body;
+    PTR_SET((uint8_t *)0x4d0880, n * 4, body);
     U16(body, 0x10e) = (uint16_t)n;
     *(int32_t *)0x4d1088 = n + 1;
 }

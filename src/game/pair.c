@@ -4,10 +4,11 @@
 #include "../runtime.h"
 #include "body.h"
 #include "fixed.h"
+#include "gamefn.h"
 #include "physics.h"
 
 #define SLOT_SIZE 0x48
-#define g_slots (*(uint8_t **)0x6ce740)
+#define g_slots GP(0x6ce740)
 
 /* The slots' relative motion over the step: b - a, the velocity scaled up
  * to the whole step (dt - 1 rounded up to a power of two in 16.16). */
@@ -210,9 +211,9 @@ int32_t GAMEAPI sphere_pair_contact(const uint8_t *a, const uint8_t *b, uint32_t
 
 static int part_override(const uint8_t *body)
 {
-    const char *flag = *(const char *const *)(body + 0x6ac);
+    const char *flag = ((const char *)(uintptr_t)*(const uint32_t *)(body + 0x6ac));
 
-    return (U32(body, FLAGS) & 0x1ff) == 3 && flag != (const char *)-1 && *flag;
+    return (U32(body, FLAGS) & 0x1ff) == 3 && flag != (const char *)0xffffffff && *flag;
 }
 
 /* 0x413c80: when within dt do bodies a and b first touch? Fills the

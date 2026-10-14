@@ -422,7 +422,8 @@ BOOL WINAPI SetCurrentDirectoryA(const char *path)
     return TRUE;
 }
 
-DWORD WINAPI GetFullPathNameA(const char *name, DWORD size, char *buf, char **file_part)
+/* file_part: a 4-byte slot in game memory */
+DWORD WINAPI GetFullPathNameA(const char *name, DWORD size, char *buf, uint32_t *file_part)
 {
     char full[1024];
     DWORD len;
@@ -433,7 +434,7 @@ DWORD WINAPI GetFullPathNameA(const char *name, DWORD size, char *buf, char **fi
     memcpy(buf, full, len + 1);
     if (file_part) {
         char *slash = strrchr(buf, '\\');
-        *file_part = slash ? slash + 1 : buf;
+        *file_part = (uint32_t)(uintptr_t)(slash ? slash + 1 : buf);
     }
     return len;
 }
@@ -670,6 +671,10 @@ static void read_maps(void)
         char perms[8];
         if (sscanf(line, "%lx-%lx %7s", &start, &end, perms) != 3)
             continue;
+        if (start >= 0xfffff000ul) /* above 4 GB: not the game's (64-bit) */
+            continue;
+        if (end > 0xfffff000ul)
+            end = 0xfffff000ul;
         ranges[range_count].start = (uint32_t)start;
         ranges[range_count].end = (uint32_t)end;
         ranges[range_count].prot = (perms[0] == 'r') | (perms[1] == 'w') << 1 | (perms[2] == 'x') << 2;
@@ -763,7 +768,7 @@ _Noreturn void WINAPI ExitProcess(UINT code)
 
 BOOL WINAPI TerminateProcess(HANDLE process, UINT code)
 {
-    if (process == (HANDLE)(intptr_t)-1)
+    if ((uint32_t)(uintptr_t)process == 0xffffffffu) /* also as kept in 32 bits */
         ExitProcess(code);
     return FALSE;
 }
@@ -1053,38 +1058,42 @@ DWORD WINAPI WaitForMultipleObjects(DWORD count, const HANDLE *handles, BOOL all
 }
 
 /* CRITICAL_SECTION (24 bytes in the caller's memory): the first word holds
- * our recursive mutex. */
-void WINAPI InitializeCriticalSection(void **cs)
+ * the (32-bit) address of our recursive mutex, in low memory. */
+#define CS_MUTEX(cs) ((pthread_mutex_t *)(uintptr_t)(cs)[0])
+
+void WINAPI InitializeCriticalSection(uint32_t *cs)
 {
-    pthread_mutex_t *m = malloc(sizeof *m);
+    pthread_mutex_t *m = nt_lowmem_alloc(sizeof *m);
     pthread_mutexattr_t attr;
+    if (!m)
+        nt_fatal("out of memory");
     pthread_mutexattr_init(&attr);
     pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
     pthread_mutex_init(m, &attr);
     memset(cs, 0, 24);
-    cs[0] = m;
+    cs[0] = (uint32_t)(uintptr_t)m;
 }
 
-void WINAPI DeleteCriticalSection(void **cs)
+void WINAPI DeleteCriticalSection(uint32_t *cs)
 {
     if (cs[0]) {
-        pthread_mutex_destroy(cs[0]);
-        free(cs[0]);
+        pthread_mutex_destroy(CS_MUTEX(cs));
+        nt_lowmem_free(CS_MUTEX(cs));
         cs[0] = 0;
     }
 }
 
-void WINAPI EnterCriticalSection(void **cs)
+void WINAPI EnterCriticalSection(uint32_t *cs)
 {
     if (!cs[0])
         InitializeCriticalSection(cs);
-    pthread_mutex_lock(cs[0]);
+    pthread_mutex_lock(CS_MUTEX(cs));
 }
 
-void WINAPI LeaveCriticalSection(void **cs)
+void WINAPI LeaveCriticalSection(uint32_t *cs)
 {
     if (cs[0])
-        pthread_mutex_unlock(cs[0]);
+        pthread_mutex_unlock(CS_MUTEX(cs));
 }
 
 LONG WINAPI InterlockedIncrement(LONG *p)
@@ -1193,13 +1202,16 @@ BOOL WINAPI SetEnvironmentVariableA(const char *name, const char *value)
 
 extern char **environ;
 
+/* the blocks are the game's to read: low memory */
 char *WINAPI GetEnvironmentStrings(void)
 {
     size_t total = 1, pos = 0;
     char **e, *block;
     for (e = environ; *e; e++)
         total += strlen(*e) + 1;
-    block = malloc(total);
+    block = nt_lowmem_alloc((uint32_t)total);
+    if (!block)
+        return 0;
     for (e = environ; *e; e++) {
         size_t len = strlen(*e) + 1;
         memcpy(block + pos, *e, len);
@@ -1214,25 +1226,28 @@ WCHAR *WINAPI GetEnvironmentStringsW(void)
     char *a = GetEnvironmentStrings();
     size_t n = 0, i;
     WCHAR *w;
+    if (!a)
+        return 0;
     while (a[n] || a[n + 1])
         n++;
     n += 2;
-    w = malloc(n * 2);
-    for (i = 0; i < n; i++)
-        w[i] = (uint8_t)a[i];
-    free(a);
+    w = nt_lowmem_alloc((uint32_t)(n * 2));
+    if (w)
+        for (i = 0; i < n; i++)
+            w[i] = (uint8_t)a[i];
+    nt_lowmem_free(a);
     return w;
 }
 
 BOOL WINAPI FreeEnvironmentStringsA(char *p)
 {
-    free(p);
+    nt_lowmem_free(p);
     return TRUE;
 }
 
 BOOL WINAPI FreeEnvironmentStringsW(WCHAR *p)
 {
-    free(p);
+    nt_lowmem_free(p);
     return TRUE;
 }
 
@@ -1479,11 +1494,22 @@ LONG WINAPI UnhandledExceptionFilter(void *info)
 /* src/crash.c's handler: the native build reports faults with a signal handler */
 static void segv(int sig, siginfo_t *si, void *context)
 {
+#if defined(__i386__)
     const uint32_t *gregs = (const uint32_t *)((uint8_t *)context + 20); /* ucontext_t.uc_mcontext.gregs */
     (void)sig;
     nt_log("crash: fault at eip %x accessing %p (eax %x ebx %x ecx %x edx %x esi %x edi %x ebp %x esp %x)",
            gregs[14], si->si_addr, gregs[11], gregs[8], gregs[10], gregs[9], gregs[5], gregs[4], gregs[6],
            gregs[7]);
+#else
+    const greg_t *g = ((ucontext_t *)context)->uc_mcontext.gregs;
+    (void)sig;
+    nt_log("crash: fault at rip %llx accessing %p (rax %llx rbx %llx rcx %llx rdx %llx rsi %llx rdi %llx rbp %llx "
+           "rsp %llx)",
+           (unsigned long long)g[REG_RIP], si->si_addr, (unsigned long long)g[REG_RAX],
+           (unsigned long long)g[REG_RBX], (unsigned long long)g[REG_RCX], (unsigned long long)g[REG_RDX],
+           (unsigned long long)g[REG_RSI], (unsigned long long)g[REG_RDI], (unsigned long long)g[REG_RBP],
+           (unsigned long long)g[REG_RSP]);
+#endif
     _exit(71);
 }
 

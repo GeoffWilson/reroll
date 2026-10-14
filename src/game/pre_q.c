@@ -19,32 +19,33 @@
 #include "body.h"
 #include "fixed.h"
 #include "physics.h"
+#include "gamefn.h"
 
-#define g_race (*(uint8_t **)0x4b1960)
+#define g_race GP(0x4b1960)
 #define g_seed (*(uint32_t *)0x4b11d8)
 #define g_effect_seed (*(uint32_t *)0x4b11dc)
 #define g_steps (*(uint32_t *)0x6c0a50)
 #define g_sin ((const int16_t *)0x4b24f8)
 #define g_cos ((const int16_t *)0x4b2578)
-#define g_sections (*(uint8_t ***)0x6bfac0)
-#define g_palette (*(const uint32_t **)0x6c1e20)
+#define g_section(i) GP(GP(0x6bfac0) + (i) * 4)
+#define g_palette ((const uint32_t *)GP(0x6c1e20))
 
 #define I32(p, off) (*(int32_t *)((p) + (off)))
 #define U32(p, off) (*(uint32_t *)((p) + (off)))
 #define S16(p, off) (*(int16_t *)((p) + (off)))
 #define U16(p, off) (*(uint16_t *)((p) + (off)))
 #define U8(p, off) (*(uint8_t *)((p) + (off)))
-#define PTR(p, off) (*(uint8_t **)((p) + (off)))
+#define PTR(p, off) GP((p) + (off))
 #define SHL(x, n) ((int32_t)((uint32_t)(int32_t)(x) << (n)))
 
 /* The special track objects. */
 #define g_specials_count (*(int32_t *)0x6ce6fc)
-#define g_specials (*(uint8_t ***)0x6ce738)
+#define g_specials GP(0x6ce738)
 
 /* The screen (object kind 0x14). */
 #define g_screen_time (*(int32_t *)0x6ce700)
 #define g_screen_state (*(uint32_t *)0x6ce704)
-#define g_screen_model (*(uint8_t **)0x6ce708)
+#define g_screen_model GP(0x6ce708)
 #define g_screen_polys (*(int16_t *)0x6ce70c)
 #define g_screen_poly ((const int8_t *)0x6ce710)
 #define g_screen_uv ((const uint8_t *)0x6ce714)
@@ -52,7 +53,7 @@
 
 /* Water meshes. */
 #define g_waters_count (*(int32_t *)0x5d637c)
-#define g_waters (*(uint8_t **)0x5d6378)
+#define g_waters GP(0x5d6378)
 
 /* Mesh rows changed this frame. */
 #define g_rows_count (*(uint32_t *)0x5d7fe4)
@@ -63,36 +64,15 @@
 #define g_lights ((uint8_t *)0x5d7300)
 
 /* Pieces: a pool of 0x80 byte records with a free stack and a used list. */
-#define g_pieces (*(uint8_t **)0x6b983c)
-#define g_pieces_free (*(uint16_t **)0x6b9840)
-#define g_pieces_used (*(uint16_t **)0x6b9844)
+#define g_pieces GP(0x6b983c)
+#define g_pieces_free ((uint16_t *)GP(0x6b9840))
+#define g_pieces_used ((uint16_t *)GP(0x6b9844))
 #define g_pieces_used_count (*(int32_t *)0x6b9848)
 #define g_pieces_free_top (*(int32_t *)0x6b984c)
 
 /* GTE scratch registers. */
 #define g_gte_ir ((volatile int16_t *)0x6ccc88) /* three, 4 bytes apart */
 #define g_gte_sqr ((volatile int32_t *)0x6cccc8)
-
-/* Still original. */
-typedef void(GAMEAPI *body_fn)(uint8_t *body);
-typedef void(GAMEAPI *place_fn)(uint8_t *body, int32_t x, int32_t y, int32_t z);
-typedef uint8_t(GAMEAPI *sound_fn)(uint32_t sound, uint32_t a, uint32_t b, uint32_t c, uint32_t d);
-typedef int32_t(GAMEAPI *surface_fn)(uint32_t surface, const int32_t *at);
-typedef void(GAMEAPI *spawn_fn)(const int32_t *pos, int32_t *vel, int32_t kind);
-typedef uint8_t *(GAMEAPI *take_fn)(void);
-typedef uint32_t(GAMEAPI *colour_fn)(uint32_t behaviour, uint32_t life);
-typedef void(GAMEAPI *blast_fn)(const int32_t *at, const int32_t *dir, int32_t size, uint32_t what, uint32_t sound);
-typedef uint8_t *(GAMEAPI *cell_fn)(int32_t x, int32_t y, int32_t z, int32_t *off_track);
-
-#define grid_unlink_at ((body_fn)0x4611d0)
-#define sprite_place ((place_fn)0x460ff0)
-#define sound_play_at ((sound_fn)0x471c90)
-#define surface_near ((surface_fn)0x407f30)
-#define spawn_particle ((spawn_fn)0x462690)
-#define take_particle ((take_fn)0x42ac30)
-#define particle_colour ((colour_fn)0x42d300)
-#define blast_effects ((blast_fn)0x42aa30)
-#define cell_at ((cell_fn)0x419420)
 
 static uint32_t seed_step(uint32_t *seed)
 {
@@ -179,7 +159,7 @@ void GAMEAPI blast_glow_set(const int32_t *pos, int32_t size)
 /* 0x42b3b0: start a smoke cloud in the first free of five slots. */
 void GAMEAPI smoke_cloud_start(const int32_t *pos, int32_t big)
 {
-    uint8_t *base = *(uint8_t **)0x6ccb54, *cloud;
+    uint8_t *base = GP(0x6ccb54), *cloud;
     uint32_t i;
 
     for (i = 0; i < 5; i++)
@@ -221,7 +201,7 @@ void GAMEAPI smoke_cloud_start(const int32_t *pos, int32_t big)
 /* 0x42c360: start a shock wave in the first free of three slots. */
 void GAMEAPI shockwave_start(const int32_t *pos)
 {
-    uint8_t *base = *(uint8_t **)0x6cc800, *wave;
+    uint8_t *base = GP(0x6cc800), *wave;
     uint32_t i;
 
     for (i = 0; i < 3; i++)
@@ -279,7 +259,7 @@ void GAMEAPI pieces_spawn(const int32_t *pos, const int32_t *vel, int32_t size)
         I32(piece, 0x50) = y;
         z = pos[2];
         I32(piece, 0x54) = z;
-        sprite_place(piece, I32(piece, 0x4c), y, z);
+        GCALL(0x460ff0, object_grid_link2_at)(piece, I32(piece, 0x4c), y, z);
         U16(piece, 8) = (uint16_t)((((seed_step(&g_seed) >> 15) << 4) >> 16) + 0x27);
         I32(piece, 0x58) = SHL((int32_t)(((seed_step(&g_seed) >> 15) << 11) >> 16) - 0x400, 11) +
                            (int32_t)((uint32_t)(vel[0] >> 2) & 0xfffff800);
@@ -322,7 +302,7 @@ void GAMEAPI particles_burst(const int32_t *pos, const int32_t *dir, uint32_t si
     n = (n & 0xffffff00) > 0x100 ? n >> 8 : 1;
     round = owner >> 24;
     do {
-        p = take_particle();
+        p = GCALL(0x42ac30, particle_take)();
         U16(p, 0xa2) = (uint16_t)kind;
         I32(p, 0) = 9;
         r = (seed_step(&g_seed) >> 15) & 0xffff;
@@ -357,7 +337,7 @@ void GAMEAPI particles_burst(const int32_t *pos, const int32_t *dir, uint32_t si
             U8(p, 0x95) = (uint8_t)((r & 4) + 0xc);
             break;
         }
-        sprite_place(p, I32(p, 0x88), I32(p, 0x8c), I32(p, 0x90));
+        GCALL(0x460ff0, object_grid_link2_at)(p, I32(p, 0x88), I32(p, 0x8c), I32(p, 0x90));
         U8(p, 0x94) = 1;
         if ((uint16_t)(kind & 0xc)) {
             U16(p, 0x9c) = (uint16_t)((((seed_step(&g_seed) >> 15) << 14) >> 16) + (dir[0] >> 8) - 0x2000);
@@ -385,7 +365,7 @@ void GAMEAPI particles_burst(const int32_t *pos, const int32_t *dir, uint32_t si
             S16(p, 0x9e) = (int16_t)(g_sin[lo] * g_sin[hi] >> 14);
             S16(p, 0xa0) = g_cos[hi];
         }
-        U32(p, 0x98) = particle_colour(behaviour, (uint32_t)life);
+        U32(p, 0x98) = GCALL(0x42d300, sprite_colour)(behaviour, (uint32_t)life);
         U32(p, 0xa4) = owner;
         U8(p, 0xa6) = (uint8_t)number;
         number++;
@@ -440,7 +420,7 @@ void GAMEAPI cell_row_ranges(const uint32_t *cell, uint32_t *out, int32_t level)
     out[0] = out[1] = out[2] = out[3] = 0;
     c1 = cell[1];
     {
-        const uint8_t *rec = *(const uint8_t **)0x6bfb40 + ((c1 >> 16) & 0x3fff) * 6;
+        const uint8_t *rec = GP(0x6bfb40) + ((c1 >> 16) & 0x3fff) * 6;
 
         base = U16(rec, 0) & 0x3ff;
         section = rec[2] & 0x7f;
@@ -456,7 +436,7 @@ void GAMEAPI cell_row_ranges(const uint32_t *cell, uint32_t *out, int32_t level)
         e = ((((uint32_t)0 - a) << 19 ^ o) & 0xfffff) ^ (a << 19);
         out[0] = ((e ^ section) & 0xff) ^ e;
     } else {
-        const uint8_t *p = *(const uint8_t **)0x6bfacc + (c0 & 0x1fff) + 2 * (c1 & 0xffff);
+        const uint8_t *p = GP(0x6bfacc) + (c0 & 0x1fff) + 2 * (c1 & 0xffff);
         uint32_t *o = out, ax;
 
         for (i = 0; i < 4; i++, o++) {
@@ -493,7 +473,7 @@ void GAMEAPI cell_row_ranges(const uint32_t *cell, uint32_t *out, int32_t level)
 
             if (!v)
                 return;
-            n = U32(g_sections[v & 0xff], 0xc);
+            n = U32(g_section(v & 0xff), 0xc);
             e = ((v & 0xfff00000) + 0x100000) ^ (v & 0xfffff);
             out[i] = e;
             if (e >> 20 > n)
@@ -513,7 +493,7 @@ void GAMEAPI cell_row_ranges(const uint32_t *cell, uint32_t *out, int32_t level)
             mid = (lo + hi) >> 1;
             up = (int32_t)(hi - mid);
             down = (int32_t)(mid - lo);
-            last = I32(g_sections[v & 0xff], 0xc) - 1;
+            last = I32(g_section(v & 0xff), 0xc) - 1;
             if (hi < (uint32_t)last)
                 up = scale_half_steps(up, s);
             if ((v & 0xfff00) > 0x100)
@@ -548,7 +528,7 @@ void GAMEAPI scorch_track(const int32_t *pos, uint32_t level)
         level = 6;
     else if (level > 10)
         level = 10;
-    cell = cell_at(pos[0], pos[1], pos[2], &off_track);
+    cell = GCALL(0x419420, track_cell)(pos[0], pos[1], pos[2], &off_track);
     cell_row_ranges((const uint32_t *)cell, rows, (int32_t)level);
     for (k = 0; k < 4; k++) {
         uint32_t v = rows[k], lo, hi, width;
@@ -556,7 +536,7 @@ void GAMEAPI scorch_track(const int32_t *pos, uint32_t level)
 
         if (!v)
             return;
-        section = g_sections[v & 0xff];
+        section = g_section(v & 0xff);
         lo = v >> 8 & 0xfff;
         width = U32(section, 8) + 1;
         hi = (v >> 20) + 1;
@@ -610,7 +590,7 @@ void GAMEAPI water_ripples_update(void)
                 continue;
             for (; (int32_t)cars > 0; cars--, camera = (const uint32_t *)((const uint8_t *)camera + 0x274))
                 if (*camera != 0x12345678 &&
-                    surface_near(U16(water, 0), (const int32_t *)(**(uint8_t ***)0x6bfba8 + 0x34)))
+                    GCALL(0x407f30, cell_has_surface)(U16(water, 0), (const int32_t *)(GP(GP(0x6bfba8)) + 0x34)))
                     break;
             if ((int32_t)cars <= 0)
                 continue;
@@ -702,7 +682,7 @@ void GAMEAPI screen_update(uint8_t *object)
         /* fall through */
     case 3:
         if (g_steps % 25 == 0)
-            sound_play_at(0x28, 6, 0x400, 10000, 0);
+            GCALL(0x471c90, sound_play_body)(0x28, 6, 0x400, 10000, 0);
         return;
     case 4:
         t = g_screen_time * 2;
@@ -773,7 +753,7 @@ void GAMEAPI wreck_burn_update(uint8_t *object)
     uint32_t r, what;
 
     if (state == 3) {
-        grid_unlink_at(object);
+        GCALL(0x4611d0, object_grid_unlink)(object);
         I32(object, 0x184) = 0;
         return;
     }
@@ -790,9 +770,9 @@ void GAMEAPI wreck_burn_update(uint8_t *object)
     r = ((seed_step(&g_effect_seed) >> 15) * 0x7fff) >> 16;
     pos[0] = I32(object, 0x34) + SHL((int32_t)(r & 0x3f) - 0x20, 17);
     pos[2] = I32(object, 0x3c) + SHL((int32_t)(r >> 8 & 0x3f) - 0x20, 17);
-    what = *(const uint32_t *)(0x4a7d20 + *(const uint8_t *)(0x4a7d40 + S16(object, 0x188)) * 4);
+    what = *(const uint32_t *)GMEM(0x4a7d20 + *(const uint8_t *)GMEM(0x4a7d40 + S16(object, 0x188)) * 4);
     if (what)
-        blast_effects(pos, dir, 9, what, 0xb);
+        GCALL(0x42aa30, explosion_effects)(pos, dir, 9, what, 0xb);
     for (i = 0; i < 9; i++)
         S16(object, 0xc4 + i * 2) = (int16_t)fix_mul8(0xfd, S16(object, 0xc4 + i * 2));
     S16(object, 0x188)++;
@@ -857,7 +837,7 @@ void GAMEAPI spray_update(uint8_t *object)
         vel[0] = SHL((int32_t)(r2 & 0xf) - 7, 15);
         vel[2] = SHL((int32_t)((int32_t)r2 >> 10 & 0xf) - 7, 15);
         vel[1] = SHL(-0x18 - (int32_t)((int32_t)r2 >> 6 & 0xf), 15);
-        spawn_particle(pos, vel, 0x19);
+        GCALL(0x462690, particle_spawn)(pos, vel, 0x19);
     }
 }
 
@@ -865,17 +845,17 @@ void GAMEAPI spray_update(uint8_t *object)
 void GAMEAPI track_specials_update(void)
 {
     int32_t n = g_specials_count;
-    uint8_t **object = g_specials;
+    uint8_t *object = g_specials;
 
-    for (; n > 0; n--, object++) {
-        uint32_t kind = U32(*object, 0) & 0x1ff;
+    for (; n > 0; n--, object += 4) {
+        uint32_t kind = U32(GP(object), 0) & 0x1ff;
 
         if (kind == 0x14)
-            screen_update(*object);
+            screen_update(GP(object));
         else if (kind == 0x1f)
-            wreck_burn_update(*object);
+            wreck_burn_update(GP(object));
         else if (kind == 0x20)
-            spray_update(*object);
+            spray_update(GP(object));
     }
 }
 

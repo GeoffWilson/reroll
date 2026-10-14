@@ -29,6 +29,7 @@
 #include "../runtime.h"
 #include "com.h"
 #include "physics.h"
+#include "gamefn.h"
 
 #define U8(p, off) (*(uint8_t *)((uint8_t *)(uintptr_t)(p) + (off)))
 #define U16(p, off) (*(uint16_t *)((uint8_t *)(uintptr_t)(p) + (off)))
@@ -40,26 +41,22 @@
 
 #define PT_STD __attribute__((stdcall))
 
-typedef int32_t(GAMEAPI *pt_fn1)(uint32_t a);
-typedef int32_t(GAMEAPI *pt_fn2)(uint32_t a, uint32_t b);
-typedef int32_t(GAMEAPI *pt_fn3)(uint32_t a, uint32_t b, uint32_t c);
-typedef int32_t(GAMEAPI *pt_fn5)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e);
-
-#define CALL1(a, x) (((pt_fn1)(a))(A(x)))
-#define CALL2(a, x, y) (((pt_fn2)(a))(A(x), A(y)))
-#define CALL3(a, x, y, z) (((pt_fn3)(a))(A(x), A(y), A(z)))
-#define CALL5(a, x, y, z, w, v) (((pt_fn5)(a))(A(x), A(y), A(z), A(w), A(v)))
-
 /* COM methods com.h declares without their context and flags arguments
  * (the callback type's commas cut them off): the full DirectX signatures. */
-/* Outside the group, by address. */
-#define mem_copy_at(d, s, n) CALL3(0x476f30, d, s, n)
-#define mem_fill_at(p, v, n) CALL3(0x476f50, p, v, n)
-#define dx_error_at(hr) CALL1(0x4291f0, hr) /* an empty debug hook */
-#define d3d_window_prepare_at(a, b, c, d, e) CALL5(0x428a50, a, b, c, d, e)
-#define global_block_alloc_at(n, f) CALL2(0x476ae0, n, f)
-#define arena_alloc_low_at(n) CALL1(0x476b80, n)
-#define joy_effects_release_at(j) CALL1(0x489f70, j)
+/* Outside the group, by address (arguments may be game addresses or
+ * pointers). */
+#define mem_copy_at(d, s, n) GCALL(0x476f30, mem_copy)((uint8_t *)GMEM(A(d)), (const uint8_t *)GMEM(A(s)), n)
+#define mem_fill_at(p, v, n) GCALL(0x476f50, mem_fill)((uint8_t *)GMEM(A(p)), (uint8_t)(v), n)
+#if defined(__i386__)
+/* an empty debug hook; the original passes it hr (cdecl: an extra argument) */
+#define dx_error_at(hr) (((void(GAMEAPI *)(int32_t))(uintptr_t)0x4291f0)(hr))
+#else
+#define dx_error_at(hr) ((void)(hr), GCALL(0x4291f0, dx_error_ignore)())
+#endif
+#define d3d_window_prepare_at(a, b, c, d, e) GCALL(0x428a50, render_flags_set)(a, b, c, d, e)
+#define global_block_alloc_at(n, f) GCALL(0x476ae0, global_block_alloc)(n, f)
+#define arena_alloc_low_at(n) GCALL(0x476b80, arena_alloc_low)(n)
+#define joy_effects_release_at(j) GCALL(0x489f70, ff_device_stop_all)(j)
 
 /* This group's functions (also in build/groups/pt_protos.txt). */
 void GAMEAPI dd_surfaces_clear(void); /* 0x487000 */
@@ -525,7 +522,7 @@ int32_t PT_STD dd_driver_enum_cb(uint32_t guid, uint32_t desc, uint32_t name, ui
     (void)ctx;
     if (guid && !g_fullscreen)
         return 1;
-    if (DirectDrawCreate(GMEM(guid), (void **)&dd, 0))
+    if (DirectDrawCreate(GMEM(guid), &dd, 0))
         return 1;
     mem_fill_at(hal, 0, 0x17c);
     mem_fill_at(hel, 0, 0x17c);
@@ -535,7 +532,7 @@ int32_t PT_STD dd_driver_enum_cb(uint32_t guid, uint32_t desc, uint32_t name, ui
         U32(DRIVER(g_driver_count), 0x218) = (U8(hal, 4) & 1) ? 1 : 0;
     U32(DRIVER(g_driver_count), 0x21c) = U32(hal, 0x3c);
     U32(DRIVER(g_driver_count), 0x220) = 0;
-    hr = IDirectDraw_QueryInterface(dd, GMEM(0x4a3540), (void **)&dd2);
+    hr = IDirectDraw_QueryInterface(dd, GMEM(0x4a3540), &dd2);
     g_dd_result = (uint32_t)hr;
     if (hr == 0) {
         scaps[0] = 0x1000;
@@ -932,7 +929,7 @@ int32_t GAMEAPI input_init(void)
 int32_t GAMEAPI di_device_create(uint32_t di, uint32_t guid, uint32_t out, uint32_t outer)
 {
     uint32_t dev = di; /* the original reuses its first argument's slot */
-    int32_t hr = IDirectInputA_CreateDevice(di, GMEM(guid), (void **)&dev, GMEM(outer));
+    int32_t hr = IDirectInputA_CreateDevice(di, GMEM(guid), &dev, GMEM(outer));
     g_di_result = (uint32_t)hr;
     if (hr) {
         U32(out, 0) = 0;

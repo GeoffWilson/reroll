@@ -13,10 +13,11 @@
 #include "body.h"
 #include "fixed.h"
 #include "physics.h"
+#include "gamefn.h"
 
-#define g_race (*(uint8_t **)0x4b1960)
-#define g_world (*(uint8_t **)0x6c1e30)
-#define g_lines (*(uint8_t **)(g_world + 0x60))
+#define g_race (GP(0x4b1960))
+#define g_world (GP(0x6c1e30))
+#define g_lines (GP(g_world + 0x60))
 #define g_car_slots ((uint8_t *)0x6bfb80)
 #define CAR_SLOT_SIZE 0x274
 
@@ -36,13 +37,13 @@
 #define g_target_life ((uint8_t *)0x6cf640)
 
 /* A racing-line node's flags (+8) and links (+0xc). */
-#define NODE_AT(line, node) (*(uint8_t **)(g_lines + (uint16_t)(line) * 0xc + 8) + (uint32_t)(node) * 0x10)
+#define NODE_AT(line, node) (GP(g_lines + (uint16_t)(line) * 0xc + 8) + (uint32_t)(node) * 0x10)
 
 /* Hazards (0x403350): count 0x4b5e54, indices 0x6d0e00, entries at
  * *(0x600664) (8 bytes: object, +6 kind), squared distances 0x6d0e40. */
 #define g_hazard_count (*(uint8_t *)0x4b5e54)
 #define g_hazard_index ((const uint8_t *)0x6d0e00)
-#define g_hazards (*(uint8_t **)0x600664)
+#define g_hazards (GP(0x600664))
 #define g_hazard_distance ((const int32_t *)0x6d0e40)
 
 /* Obstacles (0x403ba0): count 0x4b5f9c, indices 0x6d0dc0, entries 0x6d0a80
@@ -67,8 +68,8 @@ int32_t GAMEAPI svec_dot(const int16_t *a, const int16_t *b)
 int32_t GAMEAPI ai_hazard_cost(const int16_t *from, const int16_t *d, uint32_t idx, int32_t margin, int32_t speed,
                                int32_t extra, int32_t len2, int32_t *len, int32_t *inv)
 {
-    uint8_t *entry = g_hazards + idx * 8, *obj = *(uint8_t **)entry;
-    int32_t radius = *(uint16_t *)(*(uint8_t **)(obj + 0x10) + 0x32), dist = g_hazard_distance[idx];
+    uint8_t *entry = g_hazards + idx * 8, *obj = GP(entry);
+    int32_t radius = *(uint16_t *)(GP(obj + 0x10) + 0x32), dist = g_hazard_distance[idx];
     int16_t rel[3], perp[3];
     int32_t t, m, k, gap, r, limit, e, i;
 
@@ -134,7 +135,7 @@ int32_t GAMEAPI ai_obstacle_hit(const int16_t *a, const int16_t *b, const uint8_
 {
     const uint8_t *entry = g_obstacles + idx * 12, *model;
     uint32_t parts = U32(entry, 4), j;
-    const uint8_t *const *list;
+    const uint32_t *list;
     int32_t ox16, oy16, oz16, ox8, oz8, c, s, ax, az, dx, dz, px8, pz8, dx8, dz8, ay, dy;
 
     if (!parts)
@@ -142,7 +143,7 @@ int32_t GAMEAPI ai_obstacle_hit(const int16_t *a, const int16_t *b, const uint8_
     ox16 = I32(obj, 0x34) >> 16;
     oy16 = I32(obj, 0x38) >> 16;
     oz16 = I32(obj, 0x3c) >> 16;
-    model = *(uint8_t **)(obj + 0x10);
+    model = GP(obj + 0x10);
     c = g_yaw_cos[0x100 - obj[0x199]] >> 6;
     s = g_yaw_sin[0x100 - obj[0x199]] >> 6;
     ox8 = I32(obj, 0x34) >> 8;
@@ -157,10 +158,10 @@ int32_t GAMEAPI ai_obstacle_hit(const int16_t *a, const int16_t *b, const uint8_
     dz8 = (fix_mul8(-dx, s) + fix_mul8(dz, c)) >> 8;
     ay = a[1];
     dy = b[1] - a[1];
-    list = *(const uint8_t *const **)(entry + 8);
+    list = (const uint32_t *)GP(entry + 8);
     for (j = 0; j < parts; j++) {
-        const uint8_t *part = list[j], *face, *planes = *(uint8_t **)(obj + 0x2c);
-        const uint8_t *verts = *(uint8_t **)(model + 0x40) - 8;
+        const uint8_t *part = (const uint8_t *)(uintptr_t)list[j], *face, *planes = GP(obj + 0x2c);
+        const uint8_t *verts = GP(model + 0x40) - 8;
         uint32_t flags, faces, f;
 
         if (!part)
@@ -197,14 +198,14 @@ int32_t GAMEAPI ai_obstacle_hit(const int16_t *a, const int16_t *b, const uint8_
 int32_t GAMEAPI ai_obstacle_cost(const int16_t *a, const int16_t *b, uint32_t idx, int32_t margin, int32_t speed,
                                  int32_t extra)
 {
-    const uint8_t *obj = *(uint8_t **)(g_obstacles + idx * 12);
+    const uint8_t *obj = GP(g_obstacles + idx * 12);
     int32_t dist = g_obstacle_distance[idx], r2, len2, limit;
     uint32_t radius;
     int16_t d[3];
 
     if (obj[0x19a] == 5)
         return 0;
-    radius = *(uint16_t *)(*(uint8_t **)(obj + 0x10) + 0x32);
+    radius = *(uint16_t *)(GP(obj + 0x10) + 0x32);
     r2 = (int32_t)(radius * radius);
     if (dist > r2) {
         if (r2 + dist * 2 < extra)
@@ -263,7 +264,7 @@ int32_t GAMEAPI ai_obstacles_cost(const int16_t *a, const int16_t *b, int32_t ma
 int32_t GAMEAPI ai_target_danger(const uint8_t *car, int32_t k, int32_t hazards, int32_t obstacles)
 {
     const int16_t *target = TARGET(ROUTE_NODE(k));
-    int32_t radius = *(uint16_t *)(*(uint8_t **)(car + 0x10) + 0x32), speed = *(const int16_t *)(car + 0x658);
+    int32_t radius = *(uint16_t *)(GP(car + 0x10) + 0x32), speed = *(const int16_t *)(car + 0x658);
     int32_t total = 0;
     int16_t at[3];
 
@@ -281,7 +282,7 @@ int32_t GAMEAPI ai_target_danger(const uint8_t *car, int32_t k, int32_t hazards,
  * same line) the hazards from the target back to entry k's node. */
 int32_t GAMEAPI ai_target_route_danger(const int16_t *target, int32_t len2, int32_t k, const uint8_t *car)
 {
-    int32_t radius = *(uint16_t *)(*(uint8_t **)(car + 0x10) + 0x32);
+    int32_t radius = *(uint16_t *)(GP(car + 0x10) + 0x32);
     const int16_t *p;
     int16_t node[3];
 
@@ -344,7 +345,7 @@ void GAMEAPI ai_route_add_pickups(uint8_t *car, int32_t *n)
     if (!(car[0x6dc] & 4) || (car[0x67c] != 0xff && car[0x67d] != 0xff))
         return;
     for (k = *n + 1; k < ROUTE_COUNT; k++) {
-        uint8_t *const *list;
+        const uint32_t *list;
         uint16_t line, node;
         int32_t count;
 
@@ -356,9 +357,9 @@ void GAMEAPI ai_route_add_pickups(uint8_t *car, int32_t *n)
         node = ROUTE_NODE(k);
         if (!(U32(NODE_AT(line, node), 8) & 0x100))
             continue;
-        list = *(uint8_t *const **)0x6b8ce0;
+        list = (const uint32_t *)GP(0x6b8ce0);
         for (count = *(int32_t *)0x6b8ce4; count > 0; count--, list++) {
-            const uint8_t *pickup = *list;
+            const uint8_t *pickup = (const uint8_t *)(uintptr_t)*list;
             uint16_t flags = *(const uint16_t *)(pickup + 0x182);
             int32_t d[3], len2, length, v;
             int16_t s[3];
@@ -413,15 +414,15 @@ void GAMEAPI ai_route_add_items(uint8_t *car, int32_t *n)
         node = ROUTE_NODE(k);
         if (!(U32(NODE_AT(line, node), 8) & 0x200))
             continue;
-        item = *(uint8_t **)(*(uint8_t **)0x6c1eb0 + 0xec);
+        item = GP(GP(0x6c1eb0) + 0xec);
         count = *(uint32_t *)0x5f72a4;
         for (j = 0; j < count; j++, item += 0x14) {
-            const uint8_t *a = *(uint8_t **)item, *b = *(uint8_t **)(item + 4);
+            const uint8_t *a = GP(item), *b = GP(item + 4);
             const int16_t *p = (const int16_t *)(item + 8);
             int32_t d[3], len2, length, v;
             int16_t s[3];
 
-            if ((U32(*(uint8_t **)(b + 0x194), (U32(a, 0xc) & 0xf) * 4) & 0xf000000) == 0x5000000 ||
+            if ((U32(GP(b + 0x194), (U32(a, 0xc) & 0xf) * 4) & 0xf000000) == 0x5000000 ||
                 item[0x12] != line || *(const uint16_t *)(item + 0x10) != node)
                 continue;
             s[0] = (int16_t)(p[0] - at[0]);
@@ -452,7 +453,7 @@ void GAMEAPI ai_route_add_markers(uint8_t *car, int32_t *n)
     if (!(car[0x6dc] & 8))
         return;
     for (k = *n + 1; k < ROUTE_COUNT; k++) {
-        const uint8_t *world = *(uint8_t **)(g_world + 8);
+        const uint8_t *world = GP(g_world + 8);
         const int16_t *marker;
         uint16_t line, node;
         int32_t count;
@@ -465,7 +466,7 @@ void GAMEAPI ai_route_add_markers(uint8_t *car, int32_t *n)
         node = ROUTE_NODE(k);
         if (!(U32(NODE_AT(line, node), 8) & 0x400))
             continue;
-        marker = *(const int16_t **)(world + 0xe4);
+        marker = ((const int16_t *)GP(world + 0xe4));
         for (count = world[0xf5]; count > 0; count--, marker += 10) {
             int32_t d[3], len2, length, v;
             int16_t s[3];
@@ -512,7 +513,7 @@ int32_t GAMEAPI ai_player_weight(const uint8_t *car)
 int32_t GAMEAPI ai_player_takes_line(int32_t player, uint32_t line)
 {
     const uint8_t *slot = g_car_slots + player * CAR_SLOT_SIZE;
-    uint16_t target = (*(uint8_t **)(slot + 0x64))[5];
+    uint16_t target = (GP(slot + 0x64))[5];
     uint32_t links;
 
     if (target == (uint16_t)line)

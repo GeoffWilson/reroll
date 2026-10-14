@@ -4,7 +4,8 @@
 
 #define DSERR_NODRIVER 0x88780078u
 
-LONG WINAPI DirectSoundCreate(const void *guid, void **out, void *outer)
+/* out: a 4-byte slot in game memory */
+LONG WINAPI DirectSoundCreate(const void *guid, uint32_t *out, void *outer)
 {
     (void)guid;
     (void)outer;

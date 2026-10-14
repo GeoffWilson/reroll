@@ -33,35 +33,36 @@
 #include "../coverage.h"
 #include "events.h"
 #include "fixed.h"
+#include "gamefn.h"
 
-typedef void(GAMEAPI *void_fn)(void);
-typedef void(GAMEAPI *int_fn)(int32_t);
-typedef void(GAMEAPI *body_fn)(uint8_t *body);
 typedef int32_t(GAMEAPI *callback_fn)(uint8_t *body, uint8_t *other, uint8_t *event);
 
-#define forces_finish ((void_fn)0x4050f0)
+#define forces_finish GCALL(0x4050f0, shock_falloff_apply)
 
 #define g_body_group ((void *)0x6b9b80)
-#define g_bodies (*(uint8_t ***)0x6b9b80)
+#define g_bodies ((uint32_t *)GP(0x6b9b80)) /* 32-bit body pointers */
 #define g_body_count (*(uint32_t *)0x6b9b84 & 0xffff)
 #define g_groups ((uint8_t *)0x6b9880)
 #define g_group_count (*(int32_t *)0x6b9b8c)
 #define GROUP_SIZE 12
 #define g_pair_group ((void *)0x6b9850)
-#define g_pair_bodies (*(uint8_t ***)0x6b9850)
+#define g_pair_bodies ((uint32_t *)GP(0x6b9850))
 #define g_pair_count (*(uint16_t *)0x6b9854)
 #define g_pair_cell (*(uint32_t *)0x6b9858)
-#define g_moved_triggers ((uint8_t **)0x6b8d00) /* bodies whose trigger fired */
+#define g_moved_triggers ((uint32_t *)0x6b8d00) /* bodies whose trigger fired */
 #define g_moved_trigger_count (*(uint32_t *)0x4d11ec)
 #define g_car_slots ((uint8_t *)0x6bfb80)
 #define CAR_SLOT_SIZE 0x274
-#define g_race_data (*(uint8_t **)0x4b1960)
+#define g_race_data GP(0x4b1960)
 #define g_force_scratch_a (*(int32_t *)0x6ccbac)
 #define g_force_scratch_b (*(int32_t *)0x6cca54)
 
 #define g_slow_motion (*(int32_t *)0x5d9b20)          /* on? */
-#define g_slow_motion_body (*(uint8_t **)0x5d9b24)    /* the body it does not slow */
+#define g_slow_motion_body GP(0x5d9b24)    /* the body it does not slow */
 #define g_slow_motion_scale (*(int32_t *)0x5d9b2c)    /* 16.16 */
+
+#define PTR32(v) ((uint8_t *)(uintptr_t)(v))
+#define VAL32(p) ((uint32_t)(uintptr_t)(p))
 
 
 
@@ -159,7 +160,7 @@ void GAMEAPI body_integrate(uint8_t *body, int32_t dt)
         quat_to_matrix(q, (int16_t *)(body + MATRIX));
     }
     if (*(int16_t *)(body + 0x16a))
-        g_moved_triggers[g_moved_trigger_count++] = body;
+        g_moved_triggers[g_moved_trigger_count++] = VAL32(body);
 }
 
 /* 0x45c300: adds a body to group `index` of `groups`. */
@@ -168,8 +169,8 @@ uint8_t *GAMEAPI group_add(uint8_t *body, uint32_t cell, uint8_t *groups, int32_
     uint8_t *group = groups + index * GROUP_SIZE;
     uint16_t *count = (uint16_t *)(group + 4);
 
-    (*(uint8_t ***)group)[*count] = body;
-    *(uint8_t **)(body + 0x130) = group;
+    ((uint32_t *)GP(group))[*count] = VAL32(body);
+    U32(body, 0x130) = VAL32(group);
     (*count)++;
     U32(group, 8) = cell;
     return group;
@@ -184,7 +185,8 @@ void GAMEAPI body_groups_build(void)
 {
     uint32_t n = g_body_count, i;
     int32_t total = 0, k;
-    uint8_t **bodies = g_bodies, *group = g_groups;
+    uint32_t *bodies = g_bodies;
+    uint8_t *group = g_groups;
 
     for (k = g_group_count; k > 0; k--, group += GROUP_SIZE) {
         *(uint16_t *)(group + 4) = 0;
@@ -193,7 +195,7 @@ void GAMEAPI body_groups_build(void)
     g_group_count = 0;
     group = g_groups;
     for (i = 0; i < n; i++) {
-        uint8_t *b = bodies[i];
+        uint8_t *b = PTR32(bodies[i]);
         uint32_t flags = U32(b, FLAGS), cell;
         uint32_t j;
 
@@ -202,7 +204,7 @@ void GAMEAPI body_groups_build(void)
         cell = U32(b, 0x0c) & ~1u;
         if (!*(uint16_t *)(uintptr_t)(cell + 8))
             continue;
-        for (j = 0; j < g_body_count && g_bodies[j] != b; j++)
+        for (j = 0; j < g_body_count && PTR32(g_bodies[j]) != b; j++)
             ;
         if (j == g_body_count)
             continue; /* not in the list: the original adds nothing */
@@ -220,10 +222,10 @@ void GAMEAPI body_groups_build(void)
 void GAMEAPI bodies_begin_step(void)
 {
     uint32_t n = g_body_count, i;
-    uint8_t **bodies = g_bodies;
+    uint32_t *bodies = g_bodies;
 
     for (i = 0; i < n; i++) {
-        uint8_t *b = bodies[i];
+        uint8_t *b = PTR32(bodies[i]);
 
         U32(b, TIME) = 0;
         U32(b, 0x128) = 0;
@@ -237,7 +239,7 @@ void GAMEAPI bodies_begin_step(void)
     }
     n = g_race_data[0x54d];
     for (i = 0; i < n; i++) {
-        uint8_t *car = *(uint8_t **)(g_car_slots + i * CAR_SLOT_SIZE);
+        uint8_t *car = GP(g_car_slots + i * CAR_SLOT_SIZE);
         int32_t flash = car[0x65f] - 0x10;
         car[0x65f] = (uint8_t)(flash < 0 ? 0 : flash);
     }
@@ -247,13 +249,13 @@ void GAMEAPI bodies_begin_step(void)
 void GAMEAPI bodies_apply_forces(void)
 {
     uint32_t n = g_body_count, i;
-    uint8_t **bodies = g_bodies;
+    uint32_t *bodies = g_bodies;
 
     for (i = 0; i < n; i++) {
-        if (U32(bodies[i], FLAGS) & 0x2000)
-            body_script_step(bodies[i]);
+        if (U32(PTR32(bodies[i]), FLAGS) & 0x2000)
+            body_script_step(PTR32(bodies[i]));
         else
-            body_forces(bodies[i]);
+            body_forces(PTR32(bodies[i]));
     }
     forces_finish();
     g_force_scratch_a = 0;
@@ -264,14 +266,14 @@ void GAMEAPI bodies_apply_forces(void)
 void GAMEAPI bodies_prepare(void)
 {
     uint32_t n, i;
-    uint8_t **bodies;
+    uint32_t *bodies;
 
     cars_prepare();
     n = g_body_count;
     bodies = g_bodies;
     for (i = 0; i < n; i++)
-        if (!(U32(bodies[i], FLAGS) & 0x8000))
-            body_prepare(bodies[i] + POSITION);
+        if (!(U32(PTR32(bodies[i]), FLAGS) & 0x8000))
+            body_prepare(PTR32(bodies[i]) + POSITION);
 }
 
 /* 0x461310: moves `body` on by dt, plus push/128 if given, relinking it in
@@ -308,21 +310,21 @@ void GAMEAPI body_move_simple(uint8_t *body, int32_t dt)
     I32(body, POSITION + 8) += dz;
     I32(body, TIME) += dt;
     if (*(int16_t *)(body + 0x16a))
-        g_moved_triggers[g_moved_trigger_count++] = body;
+        g_moved_triggers[g_moved_trigger_count++] = VAL32(body);
 }
 
 /* 0x461ef0 */
 void GAMEAPI bodies_advance_to(int32_t dt)
 {
-    uint8_t **p;
+    uint32_t *p;
 
     for (p = g_bodies; *p; p++) {
-        int32_t left = dt - I32(*p, TIME);
+        int32_t left = dt - I32(PTR32(*p), TIME);
         if (left > 0) {
-            if (U32(*p, FLAGS) & 0x8000)
-                body_move_simple(*p, left);
+            if (U32(PTR32(*p), FLAGS) & 0x8000)
+                body_move_simple(PTR32(*p), left);
             else
-                body_move(*p, left, 0);
+                body_move(PTR32(*p), left, 0);
         }
     }
 }
@@ -336,7 +338,7 @@ int32_t GAMEAPI event_next(uint8_t **event)
     if (!g_event_queue->count)
         return -1;
     key = event_queue_pop(g_event_queue);
-    *event = g_event_queue->events + (key >> 20) * EVENT_SIZE;
+    *event = EVQ_EVENTS(g_event_queue) + (key >> 20) * EVENT_SIZE;
     return ((int32_t)key >> 1) & 0x7ffff;
 }
 
@@ -350,23 +352,23 @@ void GAMEAPI collision_order(uint8_t *event, int32_t *time)
     int32_t offset = -I32(a, TIME); /* read before the null check, as the original */
     callback_fn callback;
 
-    if (a && (callback = *(callback_fn *)(a + CALLBACK)) != 0 &&
+    if (a && (callback = (callback_fn)(uintptr_t)U32(a, CALLBACK)) != 0 &&
         !callback(a, EVENT_BODY(event, EVENT_B), event))
-        EVENT_BODY(event, EVENT_A) = 0;
+        EVENT_BODY_SET(event, EVENT_A, 0);
     b = EVENT_BODY(event, EVENT_B);
     if (b) {
         offset += I32(b, TIME);
-        callback = *(callback_fn *)(b + CALLBACK);
+        callback = (callback_fn)(uintptr_t)U32(b, CALLBACK);
         if (callback && !callback(b, EVENT_BODY(event, EVENT_A), event))
-            EVENT_BODY(event, EVENT_B) = 0;
+            EVENT_BODY_SET(event, EVENT_B, 0);
     }
     if (!EVENT_BODY(event, EVENT_A) && EVENT_BODY(event, EVENT_B)) {
-        EVENT_BODY(event, EVENT_A) = EVENT_BODY(event, EVENT_B);
+        EVENT_BODY_SET(event, EVENT_A, EVENT_BODY(event, EVENT_B));
         I32(event, 0x38) = -I32(event, 0x38);
         I32(event, 0x3c) = -I32(event, 0x3c);
         I32(event, 0x40) = -I32(event, 0x40);
         *time -= offset;
-        EVENT_BODY(event, EVENT_B) = 0;
+        EVENT_BODY_SET(event, EVENT_B, 0);
     }
 }
 
@@ -378,7 +380,7 @@ int32_t GAMEAPI event_queue_drop_bodies(uint8_t *a, uint8_t *b)
     if (!a && !b)
         return 0;
     for (i = (int32_t)g_event_queue->count; i > 0; i--) {
-        uint8_t *event = g_event_queue->events + (g_event_queue->heap[i] >> 20) * EVENT_SIZE;
+        uint8_t *event = EVQ_EVENTS(g_event_queue) + (EVQ_HEAP(g_event_queue)[i] >> 20) * EVENT_SIZE;
         int match = 0;
 
         if (a && (a == EVENT_BODY(event, EVENT_A) || a == EVENT_BODY(event, EVENT_B)))
@@ -409,8 +411,8 @@ int32_t GAMEAPI collisions_find_for(uint8_t *a, uint8_t *b, int32_t dt)
         a = b;
         b = 0;
     }
-    g_pair_bodies[0] = a;
-    g_pair_bodies[1] = b;
+    g_pair_bodies[0] = VAL32(a);
+    g_pair_bodies[1] = VAL32(b);
     g_pair_cell = U32(a, 0x0c) & ~1u;
     g_pair_count = (uint16_t)((b != 0) + 1);
     found = group_contacts(g_pair_group, dt);

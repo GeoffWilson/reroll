@@ -6,6 +6,11 @@
 #include "hook.h"
 #include "log.h"
 #include "verify.h"
+
+#if !defined(__i386__)
+/* the verify points: a 64-bit build has no original code to check against */
+#pragma clang diagnostic ignored "-Wunused-variable"
+#endif
 #include "capture.h"
 #include "subunit.h"
 #include "vkgame.h"
@@ -32,121 +37,174 @@ static const struct hook hooks[] = {
 
 /* Physics entry point: the world step, checked against the original every
  * step when REROLL_VERIFY=1 (verify.c). */
+#if defined(__i386__)
 static int32_t GAMEAPI physics_world_step_entry(int32_t dt)
 {
     return verify_call1("world_step", (verify_fn1)0x461410, physics_world_step, dt);
 }
+#else
+#define physics_world_step_entry physics_world_step /* nothing to verify against */
+#endif
 
 /* Car controls: once per car per step, so only every 31st call is checked
  * (31 is coprime with the car count, so every car comes up in turn). */
 static struct verify_point controls_read_point = VERIFY_POINT("car_controls_read", 31, 100);
 static struct verify_point controls_apply_point = VERIFY_POINT_VOID("car_controls_apply", 31, 100);
 
+#if defined(__i386__)
 static int32_t GAMEAPI car_controls_read_entry(uint8_t *car, int32_t player)
 {
     return verify_call2(&controls_read_point, (verify_fn2)0x41b520, (verify_fn2)(void *)car_controls_read,
                         (int32_t)car, player);
 }
+#else
+#define car_controls_read_entry car_controls_read /* nothing to verify against */
+#endif
 
+#if defined(__i386__)
 static void GAMEAPI car_controls_apply_entry(uint8_t *car)
 {
     verify_call2(&controls_apply_point, (verify_fn2)0x41b7d0, (verify_fn2)(void *)car_controls_apply, (int32_t)car,
                  0);
 }
+#else
+#define car_controls_apply_entry car_controls_apply /* nothing to verify against */
+#endif
 
 /* Per-car updates after the world step, checked like the controls. */
 static struct verify_point speed_point = VERIFY_POINT_VOID("car_speed_and_clock", 31, 100);
 static struct verify_point boost_point = VERIFY_POINT_VOID("car_boost", 31, 100);
 static struct verify_point wheels_place_point = VERIFY_POINT_VOID("car_wheels_place", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI car_speed_and_clock_entry(uint8_t *slot)
 {
     verify_call2(&speed_point, (verify_fn2)0x438620, (verify_fn2)(void *)car_speed_and_clock, (int32_t)slot, 0);
 }
+#else
+#define car_speed_and_clock_entry car_speed_and_clock /* nothing to verify against */
+#endif
 
 static void GAMEAPI car_boost_entry(uint8_t *slot)
 {
-    uint8_t *car = *(uint8_t **)slot;
+    uint8_t *car = (uint8_t *)(uintptr_t)*(uint32_t *)slot;
     int32_t before = *(int32_t *)(car + 0x698);
+#if defined(__i386__)
     verify_call2(&boost_point, (verify_fn2)0x47aa00, (verify_fn2)(void *)car_boost, (int32_t)slot, 0);
+#else
+    car_boost(slot);
+#endif
 #ifdef REROLL_NATIVE
     /* on a boost pad: a rumble for a human car with force feedback on (slot
      * +0x268), on its joystick (+0x26c; the device at 0x4d75b8 + n * 0x43c) */
     if (*(int32_t *)(car + 0x698) > before && slot[0x268]) {
         int16_t joy = *(int16_t *)(slot + 0x26c);
         if (joy >= 0 && joy < *(int32_t *)0x4d9554)
-            nt_rumble_pulse(*(void **)(0x4d75b8 + joy * 0x43c), 0x5000, 0x9000, 90);
+            nt_rumble_pulse((void *)(uintptr_t)*(uint32_t *)(uintptr_t)(0x4d75b8 + joy * 0x43c), 0x5000, 0x9000, 90);
     }
 #endif
 }
 
+#if defined(__i386__)
 static void GAMEAPI car_wheels_place_entry(uint8_t *car)
 {
     verify_call2(&wheels_place_point, (verify_fn2)0x40de60, (verify_fn2)(void *)car_wheels_place, (int32_t)car, 0);
 }
+#else
+#define car_wheels_place_entry car_wheels_place /* nothing to verify against */
+#endif
 
 /* The chase camera, once per player per step. */
 static struct verify_point camera_point = VERIFY_POINT_VOID("camera_update", 7, 100);
 
+#if defined(__i386__)
 static void GAMEAPI camera_update_entry(uint8_t *slot)
 {
     verify_call2(&camera_point, (verify_fn2)0x406e30, (verify_fn2)(void *)camera_update, (int32_t)slot, 0);
 }
+#else
+#define camera_update_entry camera_update /* nothing to verify against */
+#endif
 
 /* The computer drivers' steering, once per AI car per step. */
 static struct verify_point ai_drive_point = VERIFY_POINT_VOID("ai_drive", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI ai_drive_entry(uint8_t *car)
 {
     verify_call2(&ai_drive_point, (verify_fn2)0x425ad0, (verify_fn2)(void *)ai_drive, (int32_t)car, 0);
 }
+#else
+#define ai_drive_entry ai_drive /* nothing to verify against */
+#endif
 
 /* The AI's re-planning: rare, so every call is checked. */
 static struct verify_point ai_replan_point = VERIFY_POINT_VOID("ai_replan", 1, 100);
 
+#if defined(__i386__)
 static void GAMEAPI ai_replan_entry(uint8_t *car, int32_t refresh)
 {
     verify_call2(&ai_replan_point, (verify_fn2)0x4105e0, (verify_fn2)(void *)ai_replan, (int32_t)car, refresh);
 }
+#else
+#define ai_replan_entry ai_replan /* nothing to verify against */
+#endif
 
 /* The AI's thinking, once per AI car per step. */
 static struct verify_point ai_think_point = VERIFY_POINT_VOID("ai_think", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI ai_think_entry(uint8_t *car)
 {
     verify_call2(&ai_think_point, (verify_fn2)0x4015e0, (verify_fn2)(void *)ai_think, (int32_t)car, 0);
 }
+#else
+#define ai_think_entry ai_think /* nothing to verify against */
+#endif
 
 /* The AI's target choice: once per AI car every 6 steps (when +0x6c9
  * comes round), one argument, no result. */
 static struct verify_point ai_choose_target_point = VERIFY_POINT_VOID("ai_choose_target", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI ai_choose_target_entry(uint8_t *car)
 {
     verify_call2(&ai_choose_target_point, (verify_fn2)0x412290, (verify_fn2)(void *)ai_choose_target, (int32_t)car, 0);
 }
+#else
+#define ai_choose_target_entry ai_choose_target /* nothing to verify against */
+#endif
 
 /* The AI's weapons, once per AI car per step (from 0x4015e0). */
 static struct verify_point ai_weapons_point = VERIFY_POINT_VOID("ai_weapons", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI ai_weapons_entry(uint8_t *car)
 {
     verify_call2(&ai_weapons_point, (verify_fn2)0x401780, (verify_fn2)(void *)ai_weapons, (int32_t)car, 0);
 }
+#else
+#define ai_weapons_entry ai_weapons /* nothing to verify against */
+#endif
 
 /* Attached points (0x442840), once per step. */
 static struct verify_point bodies_points_point = VERIFY_POINT_VOID("bodies_points_update", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI bodies_points_entry(void)
 {
     verify_call2(&bodies_points_point, (verify_fn2)0x442840, (verify_fn2)(void *)bodies_points_update, 0, 0);
 }
+#else
+#define bodies_points_entry bodies_points_update /* nothing to verify against */
+#endif
 
 /* Fallen bodies (0x468450), once per step: every step where something is
  * (about to be) put back on the track is checked, otherwise one in 31. */
 static struct verify_point fallen_bodies_point = VERIFY_POINT_VOID("fallen_bodies_update", 31, 100);
 static struct verify_point fallen_respawn_point = VERIFY_POINT_VOID("fallen_bodies_update (respawn)", 1, 1);
 
+#if defined(__i386__)
 static int fallen_respawn_due(void)
 {
     uint8_t **bodies = *(uint8_t ***)0x6b9b80, *race = *(uint8_t **)0x4b1960;
@@ -166,28 +224,38 @@ static int fallen_respawn_due(void)
     }
     return 0;
 }
+#endif
 
+#if defined(__i386__)
 static void GAMEAPI fallen_bodies_entry(void)
 {
     verify_call2(fallen_respawn_due() ? &fallen_respawn_point : &fallen_bodies_point, (verify_fn2)0x468450,
                  (verify_fn2)(void *)fallen_bodies_update, 0, 0);
 }
+#else
+#define fallen_bodies_entry fallen_bodies_update /* nothing to verify against */
+#endif
 
 /* Lap progress (0x43d8e0), per car per step from 0x43d350 (still the
  * original) and on respawns. */
 static struct verify_point slot_checkpoints_point = VERIFY_POINT("slot_checkpoints", 31, 100);
 
+#if defined(__i386__)
 static int32_t GAMEAPI slot_checkpoints_entry(uint8_t *slot, uint32_t probe)
 {
     return verify_call2(&slot_checkpoints_point, (verify_fn2)0x43d8e0, (verify_fn2)(void *)slot_checkpoints,
                         (int32_t)slot, (int32_t)probe);
 }
+#else
+#define slot_checkpoints_entry slot_checkpoints /* nothing to verify against */
+#endif
 
 /* The snatch weapon, once per step after the world step: only live for a
  * few seconds per use, so every live step is checked and idle ones skip
  * the snapshots. */
 static struct verify_point snatch_update_point = VERIFY_POINT_VOID("snatch_update", 1, 50);
 
+#if defined(__i386__)
 static void GAMEAPI snatch_update_entry(void)
 {
     if (*(int32_t *)(*(uint8_t **)0x5d1fc0 + 0x188))
@@ -195,138 +263,209 @@ static void GAMEAPI snatch_update_entry(void)
     else
         snatch_update();
 }
+#else
+#define snatch_update_entry snatch_update /* nothing to verify against */
+#endif
 
 /* After the world step, once per step: the falling rock (0x458010), the
  * cars' engine glow (0x47b8f0) and the shrapnel (0x462840). */
 static struct verify_point rock_update_point = VERIFY_POINT_VOID("rock_update", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI rock_update_entry(void)
 {
     verify_call2(&rock_update_point, (verify_fn2)0x458010, (verify_fn2)(void *)rock_update, 0, 0);
 }
+#else
+#define rock_update_entry rock_update /* nothing to verify against */
+#endif
 
 static struct verify_point cars_glow_point = VERIFY_POINT_VOID("cars_glow", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI cars_glow_entry(void)
 {
     verify_call2(&cars_glow_point, (verify_fn2)0x47b8f0, (verify_fn2)(void *)cars_glow, 0, 0);
 }
+#else
+#define cars_glow_entry cars_glow /* nothing to verify against */
+#endif
 
 static struct verify_point pieces_update_point = VERIFY_POINT_VOID("pieces_update", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI pieces_update_entry(void)
 {
     verify_call2(&pieces_update_point, (verify_fn2)0x462840, (verify_fn2)(void *)pieces_update, 0, 0);
 }
+#else
+#define pieces_update_entry pieces_update /* nothing to verify against */
+#endif
 
 /* Inside the camera director (0x408360, still original, once per
  * viewport per step): its event check every step, its shot choice when a
  * shot ends, and the speed zoom in chase shots. */
 static struct verify_point camera_check_events_point = VERIFY_POINT_VOID("camera_check_events", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI camera_check_events_entry(int32_t view)
 {
     verify_call2(&camera_check_events_point, (verify_fn2)0x407fa0, (verify_fn2)(void *)camera_check_events, view, 0);
 }
+#else
+#define camera_check_events_entry camera_check_events /* nothing to verify against */
+#endif
 
 static struct verify_point camera_choose_shot_point = VERIFY_POINT_VOID("camera_choose_shot", 1, 20);
 
+#if defined(__i386__)
 static void GAMEAPI camera_choose_shot_entry(const void *unused, uint32_t view)
 {
     verify_call2(&camera_choose_shot_point, (verify_fn2)0x40a9b0, (verify_fn2)(void *)camera_choose_shot,
                  (int32_t)unused, (int32_t)view);
 }
+#else
+#define camera_choose_shot_entry camera_choose_shot /* nothing to verify against */
+#endif
 
 static struct verify_point camera_speed_zoom_point = VERIFY_POINT_VOID("camera_speed_zoom", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI camera_speed_zoom_entry(uint8_t *slot, int32_t *at)
 {
     verify_call2(&camera_speed_zoom_point, (verify_fn2)0x40b000, (verify_fn2)(void *)camera_speed_zoom,
                  (int32_t)slot, (int32_t)at);
 }
+#else
+#define camera_speed_zoom_entry camera_speed_zoom /* nothing to verify against */
+#endif
 
 /* After the physics step (group J): weather, timed explosions, sprite effects,
  * shadows, debris, tyre trails, animated car textures; once a step each. */
 static struct verify_point weather_update_point = VERIFY_POINT_VOID("weather_update", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI weather_update_entry(void)
 {
     verify_call2(&weather_update_point, (verify_fn2)0x484080, (verify_fn2)(void *)weather_update, 0, 0);
 }
+#else
+#define weather_update_entry weather_update /* nothing to verify against */
+#endif
 
 static struct verify_point explosions_update_point = VERIFY_POINT_VOID("explosions_update", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI explosions_update_entry(void)
 {
     verify_call2(&explosions_update_point, (verify_fn2)0x405140, (verify_fn2)(void *)explosions_update, 0, 0);
 }
+#else
+#define explosions_update_entry explosions_update /* nothing to verify against */
+#endif
 
 static struct verify_point sprites_update_point = VERIFY_POINT_VOID("sprites_update", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI sprites_update_entry(void)
 {
     verify_call2(&sprites_update_point, (verify_fn2)0x42b990, (verify_fn2)(void *)sprites_update, 0, 0);
 }
+#else
+#define sprites_update_entry sprites_update /* nothing to verify against */
+#endif
 
 static struct verify_point shadows_update_point = VERIFY_POINT_VOID("shadows_update", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI shadows_update_entry(void)
 {
     verify_call2(&shadows_update_point, (verify_fn2)0x46c300, (verify_fn2)(void *)shadows_update, 0, 0);
 }
+#else
+#define shadows_update_entry shadows_update /* nothing to verify against */
+#endif
 
 static struct verify_point debris_update_point = VERIFY_POINT_VOID("debris_update", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI debris_update_entry(void)
 {
     verify_call2(&debris_update_point, (verify_fn2)0x47c210, (verify_fn2)(void *)debris_update, 0, 0);
 }
+#else
+#define debris_update_entry debris_update /* nothing to verify against */
+#endif
 
 static struct verify_point tyre_trails_update_point = VERIFY_POINT_VOID("tyre_trails_update", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI tyre_trails_update_entry(void)
 {
     verify_call2(&tyre_trails_update_point, (verify_fn2)0x481f20, (verify_fn2)(void *)tyre_trails_update, 0, 0);
 }
+#else
+#define tyre_trails_update_entry tyre_trails_update /* nothing to verify against */
+#endif
 
 static struct verify_point car_textures_update_point = VERIFY_POINT_VOID("car_textures_update", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI car_textures_update_entry(void)
 {
     verify_call2(&car_textures_update_point, (verify_fn2)0x4751b0, (verify_fn2)(void *)car_textures_update, 0, 0);
 }
+#else
+#define car_textures_update_entry car_textures_update /* nothing to verify against */
+#endif
 
 /* The track's ripples, sound markers and their particle bursts: once per step. */
 static struct verify_point ripple_update_point = VERIFY_POINT_VOID("ripple_update", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI ripple_update_entry(void)
 {
     verify_call2(&ripple_update_point, (verify_fn2)0x43e270, (verify_fn2)(void *)ripple_update, 0, 0);
 }
+#else
+#define ripple_update_entry ripple_update /* nothing to verify against */
+#endif
 
 /* Collapsing buildings: once per step (busy only while one falls). */
 static struct verify_point crumble_update_point = VERIFY_POINT_VOID("crumble_update", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI crumble_update_entry(void)
 {
     verify_call2(&crumble_update_point, (verify_fn2)0x405f70, (verify_fn2)(void *)crumble_update, 0, 0);
 }
+#else
+#define crumble_update_entry crumble_update /* nothing to verify against */
+#endif
 
 /* Bomblets thrown out by collapses: once per step. */
 static struct verify_point bomblet_update_point = VERIFY_POINT_VOID("bomblet_update", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI bomblet_update_entry(void)
 {
     verify_call2(&bomblet_update_point, (verify_fn2)0x46bfa0, (verify_fn2)(void *)bomblet_update, 0, 0);
 }
+#else
+#define bomblet_update_entry bomblet_update /* nothing to verify against */
+#endif
 
 /* Glints: once per step. */
 static struct verify_point glint_update_point = VERIFY_POINT_VOID("glint_update", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI glint_update_entry(void)
 {
     verify_call2(&glint_update_point, (verify_fn2)0x443180, (verify_fn2)(void *)glint_update, 0, 0);
 }
+#else
+#define glint_update_entry glint_update /* nothing to verify against */
+#endif
 
 /* The race's state machine, messages and pause check: once per step; 1
  * ends the race. */
@@ -335,6 +474,7 @@ static struct verify_point race_progress_point = VERIFY_POINT("race_progress", 3
 /* Only racing states 1-5 with nobody pressing pause are checked: the end of
  * the race, the quit menu and the pause menu reach code outside the
  * snapshot (allocation, files, sound) that must not run twice. */
+#if defined(__i386__)
 static int race_progress_checkable(void)
 {
     uint8_t *race = *(uint8_t **)0x4b1960;
@@ -348,19 +488,25 @@ static int race_progress_checkable(void)
             return 0;
     return 1;
 }
+#endif
 
+#if defined(__i386__)
 static int32_t GAMEAPI race_progress_entry(void)
 {
     if (!race_progress_checkable())
         return race_progress();
     return verify_call2(&race_progress_point, (verify_fn2)0x46a530, (verify_fn2)(void *)race_progress, 0, 0);
 }
+#else
+#define race_progress_entry race_progress /* nothing to verify against */
+#endif
 
 static struct verify_point weapons_update_point = VERIFY_POINT_VOID("weapons_update", 31, 100);
 
 /* Not checked while a time warp runs: its palette (0x47d5a0, still
  * original) rewrites a texture and keeps a frame stamp, neither of which a
  * snapshot puts back, so it cannot run twice. */
+#if defined(__i386__)
 static void GAMEAPI weapons_update_entry(void)
 {
     if (*(uint32_t *)0x5d9b20) {
@@ -369,6 +515,9 @@ static void GAMEAPI weapons_update_entry(void)
     }
     verify_call2(&weapons_update_point, (verify_fn2)0x47ab40, (verify_fn2)(void *)weapons_update, 0, 0);
 }
+#else
+#define weapons_update_entry weapons_update /* nothing to verify against */
+#endif
 
 /* The race order, once per step before the world step (0x43d350); it also
  * follows every car's checkpoints, so lap ends, the finish and the results
@@ -376,6 +525,7 @@ static void GAMEAPI weapons_update_entry(void)
  * twice, so network games are not checked. */
 static struct verify_point race_positions_point = VERIFY_POINT_VOID("race_positions_update", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI race_positions_entry(void)
 {
     if (*(uint32_t *)0x5d622c & 1) {
@@ -384,11 +534,15 @@ static void GAMEAPI race_positions_entry(void)
     }
     verify_call2(&race_positions_point, (verify_fn2)0x43d350, (verify_fn2)(void *)race_positions_update, 0, 0);
 }
+#else
+#define race_positions_entry race_positions_update /* nothing to verify against */
+#endif
 
 /* Network cars' controls from their pending packets, once per step before
  * the world step: only checked when some car has a packet. */
 static struct verify_point cars_network_controls_point = VERIFY_POINT_VOID("cars_network_controls", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI cars_network_controls_entry(void)
 {
     uint8_t *race = *(uint8_t **)0x4b1960;
@@ -402,11 +556,15 @@ static void GAMEAPI cars_network_controls_entry(void)
         }
     cars_network_controls();
 }
+#else
+#define cars_network_controls_entry cars_network_controls /* nothing to verify against */
+#endif
 
 /* The track's moved vertices, once per step: only checked on tracks that
  * have any. */
 static struct verify_point track_vertices_copy_point = VERIFY_POINT_VOID("track_vertices_copy", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI track_vertices_copy_entry(void)
 {
     if ((*(uint8_t **)0x6c1eb0)[0xfc] && *(int32_t *)0x6c1eb4 > 0)
@@ -415,20 +573,28 @@ static void GAMEAPI track_vertices_copy_entry(void)
     else
         track_vertices_copy();
 }
+#else
+#define track_vertices_copy_entry track_vertices_copy /* nothing to verify against */
+#endif
 
 /* The catch-up handicap (gap to the leader), once per step. */
 static struct verify_point cars_catch_up_point = VERIFY_POINT_VOID("cars_catch_up", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI cars_catch_up_entry(void)
 {
     verify_call2(&cars_catch_up_point, (verify_fn2)0x4112e0, (verify_fn2)(void *)cars_catch_up, 0, 0);
 }
+#else
+#define cars_catch_up_entry cars_catch_up /* nothing to verify against */
+#endif
 
 /* The local player's extra buttons, once per car per step. Not checked
  * when a chat macro button is down: sending the chat (0x48d270, network)
  * must not run twice. */
 static struct verify_point car_extra_buttons_point = VERIFY_POINT_VOID("car_extra_buttons", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI car_extra_buttons_entry(uint8_t *slot)
 {
     if (*(uint32_t *)(*(uint8_t **)slot + 0x704) & 0x3ff00000)
@@ -437,6 +603,9 @@ static void GAMEAPI car_extra_buttons_entry(uint8_t *slot)
         verify_call2(&car_extra_buttons_point, (verify_fn2)0x41c7a0, (verify_fn2)(void *)car_extra_buttons,
                      (int32_t)slot, 0);
 }
+#else
+#define car_extra_buttons_entry car_extra_buttons /* nothing to verify against */
+#endif
 
 /* A car's engine, surface, boost and horn sounds and force feedback, once
  * per car per step. Its sound starts go through 0x471c90 / 0x471da0, which
@@ -444,93 +613,133 @@ static void GAMEAPI car_extra_buttons_entry(uint8_t *slot)
  * only set values, so running them twice is harmless. */
 static struct verify_point car_sounds_point = VERIFY_POINT_VOID("car_sounds", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI car_sounds_entry(uint8_t *car, int32_t player)
 {
     verify_call2(&car_sounds_point, (verify_fn2)0x473250, (verify_fn2)(void *)car_sounds, (int32_t)car, player);
 }
+#else
+#define car_sounds_entry car_sounds /* nothing to verify against */
+#endif
 
 /* The track's animated pieces (water ripples, screens, burning wrecks,
  * sprays): once per step before the world step. */
 static struct verify_point track_animation_update_point = VERIFY_POINT_VOID("track_animation_update", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI track_animation_update_entry(void)
 {
     verify_call2(&track_animation_update_point, (verify_fn2)0x41ac50, (verify_fn2)(void *)track_animation_update, 0,
                  0);
 }
+#else
+#define track_animation_update_entry track_animation_update /* nothing to verify against */
+#endif
 
 /* Track loading (race setup): the TV camera rails and the lit-model flags.
  * Once per race; only data-section tables and the models' flags are
  * written, so both can run twice. */
 static struct verify_point track_tv_spots_point = VERIFY_POINT_VOID("track_tv_spots", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI track_tv_spots_entry(void)
 {
     verify_call2(&track_tv_spots_point, (verify_fn2)0x40b5b0, (verify_fn2)(void *)track_tv_spots, 0, 0);
 }
+#else
+#define track_tv_spots_entry track_tv_spots /* nothing to verify against */
+#endif
 
 static struct verify_point track_models_mark_lit_point = VERIFY_POINT("track_models_mark_lit", 1, 1);
 
+#if defined(__i386__)
 static int32_t GAMEAPI track_models_mark_lit_entry(int32_t count, const uint8_t *records)
 {
     return verify_call2(&track_models_mark_lit_point, (verify_fn2)0x478f80, (verify_fn2)(void *)track_models_mark_lit,
                         count, (int32_t)(uintptr_t)records);
 }
+#else
+#define track_models_mark_lit_entry track_models_mark_lit /* nothing to verify against */
+#endif
 
 /* Race setup, group T: checked once each per race (sample 1). */
 
 /* A slot's race state at the start, and its nearest racing line. */
 static struct verify_point slot_race_reset_point = VERIFY_POINT_VOID("slot_race_reset", 1, 6);
 
+#if defined(__i386__)
 static void GAMEAPI slot_race_reset_entry(uint8_t *slot)
 {
     verify_call2(&slot_race_reset_point, (verify_fn2)0x43d280, (verify_fn2)(void *)slot_race_reset,
                  (int32_t)slot, 0);
 }
+#else
+#define slot_race_reset_entry slot_race_reset /* nothing to verify against */
+#endif
 
 /* A car's shadow and its two packets. */
 static struct verify_point car_shadow_init_point = VERIFY_POINT_VOID("car_shadow_init", 1, 6);
 
+#if defined(__i386__)
 static void GAMEAPI car_shadow_init_entry(uint8_t *shadow)
 {
     verify_call2(&car_shadow_init_point, (verify_fn2)0x46c220, (verify_fn2)(void *)car_shadow_init,
                  (int32_t)shadow, 0);
 }
+#else
+#define car_shadow_init_entry car_shadow_init /* nothing to verify against */
+#endif
 
 /* A player car's replay record, recording or playing back. */
 static struct verify_point replay_start_point = VERIFY_POINT_VOID("replay_start", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI replay_start_entry(uint8_t *car, int32_t mode)
 {
     verify_call2(&replay_start_point, (verify_fn2)0x41b8f0, (verify_fn2)(void *)replay_start, (int32_t)car,
                  mode);
 }
+#else
+#define replay_start_entry replay_start /* nothing to verify against */
+#endif
 
 /* A car's four trail packets. */
 static struct verify_point car_trails_init_point = VERIFY_POINT_VOID("car_trails_init", 1, 6);
 
+#if defined(__i386__)
 static void GAMEAPI car_trails_init_entry(uint8_t *car)
 {
     verify_call2(&car_trails_init_point, (verify_fn2)0x421dd0, (verify_fn2)(void *)car_trails_init,
                  (int32_t)car, 0);
 }
+#else
+#define car_trails_init_entry car_trails_init /* nothing to verify against */
+#endif
 
 /* An engine glow's vertices and faces (and the random phase). */
 static struct verify_point glow_pick_vertices_point = VERIFY_POINT_VOID("glow_pick_vertices", 1, 6);
 
+#if defined(__i386__)
 static void GAMEAPI glow_pick_vertices_entry(uint8_t *glow)
 {
     verify_call2(&glow_pick_vertices_point, (verify_fn2)0x47b280, (verify_fn2)(void *)glow_pick_vertices,
                  (int32_t)glow, 0);
 }
+#else
+#define glow_pick_vertices_entry glow_pick_vertices /* nothing to verify against */
+#endif
 
 /* The grey ramp at the top of the palette, once per race. */
 static struct verify_point palette_ramp_init_point = VERIFY_POINT_VOID("palette_ramp_init", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI palette_ramp_init_entry(void)
 {
     verify_call2(&palette_ramp_init_point, (verify_fn2)0x42c1d0, (verify_fn2)(void *)palette_ramp_init, 0, 0);
 }
+#else
+#define palette_ramp_init_entry palette_ramp_init /* nothing to verify against */
+#endif
 
 /* Race setup group U: the split-screen views (once per race and at
  * start-up), and three per-race clears; all touch only game memory (the
@@ -539,73 +748,109 @@ static void GAMEAPI palette_ramp_init_entry(void)
  * is fuzzed only. */
 static struct verify_point viewports_setup_point = VERIFY_POINT_VOID("viewports_setup", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI viewports_setup_entry(void)
 {
     verify_call2(&viewports_setup_point, (verify_fn2)0x444080, (verify_fn2)(void *)viewports_setup, 0, 0);
 }
+#else
+#define viewports_setup_entry viewports_setup /* nothing to verify against */
+#endif
 
 static struct verify_point explosions_reset_point = VERIFY_POINT_VOID("explosions_reset", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI explosions_reset_entry(void)
 {
     verify_call2(&explosions_reset_point, (verify_fn2)0x405050, (verify_fn2)(void *)explosions_reset, 0, 0);
 }
+#else
+#define explosions_reset_entry explosions_reset /* nothing to verify against */
+#endif
 
 static struct verify_point attached_points_reset_point = VERIFY_POINT_VOID("attached_points_reset", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI attached_points_reset_entry(void)
 {
     verify_call2(&attached_points_reset_point, (verify_fn2)0x442660, (verify_fn2)(void *)attached_points_reset, 0,
                  0);
 }
+#else
+#define attached_points_reset_entry attached_points_reset /* nothing to verify against */
+#endif
 
 static struct verify_point shadows_reset_point = VERIFY_POINT_VOID("shadows_reset", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI shadows_reset_entry(void)
 {
     verify_call2(&shadows_reset_point, (verify_fn2)0x46c210, (verify_fn2)(void *)shadows_reset, 0, 0);
 }
+#else
+#define shadows_reset_entry shadows_reset /* nothing to verify against */
+#endif
 
 /* Whether a pad set has a usable device binding: once per player at the
  * race start. */
 static struct verify_point pad_device_bound_point = VERIFY_POINT("pad_device_bound", 1, 1);
 
+#if defined(__i386__)
 static int32_t GAMEAPI pad_device_bound_entry(int32_t set, const int16_t *id)
 {
     return verify_call2(&pad_device_bound_point, (verify_fn2)0x428cc0, (verify_fn2)(void *)pad_device_bound, set,
                         (int32_t)id);
 }
+#else
+#define pad_device_bound_entry pad_device_bound /* nothing to verify against */
+#endif
 
 /* Race setup (once per race), group V: the parts whose whole call tree
  * stays in game memory (no allocation, files, sound or DirectX). */
 static struct verify_point track_specials_setup_point = VERIFY_POINT_VOID("track_specials_setup", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI track_specials_setup_entry(void)
 {
     verify_call2(&track_specials_setup_point, (verify_fn2)0x41ab80, (verify_fn2)(void *)track_specials_setup, 0, 0);
 }
+#else
+#define track_specials_setup_entry track_specials_setup /* nothing to verify against */
+#endif
 
 static struct verify_point car_textures_setup_point = VERIFY_POINT_VOID("car_textures_setup", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI car_textures_setup_entry(void)
 {
     verify_call2(&car_textures_setup_point, (verify_fn2)0x475090, (verify_fn2)(void *)car_textures_setup, 0, 0);
 }
+#else
+#define car_textures_setup_entry car_textures_setup /* nothing to verify against */
+#endif
 
 static struct verify_point slots_controls_setup_point = VERIFY_POINT("slots_controls_setup", 1, 1);
 
+#if defined(__i386__)
 static int32_t GAMEAPI slots_controls_setup_entry(uint8_t *slot)
 {
     return verify_call2(&slots_controls_setup_point, (verify_fn2)0x41b460, (verify_fn2)(void *)slots_controls_setup,
                         (int32_t)slot, 0);
 }
+#else
+#define slots_controls_setup_entry slots_controls_setup /* nothing to verify against */
+#endif
 
 static struct verify_point time_warp_reset_point = VERIFY_POINT_VOID("time_warp_reset", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI time_warp_reset_entry(void)
 {
     verify_call2(&time_warp_reset_point, (verify_fn2)0x479720, (verify_fn2)(void *)time_warp_reset, 0, 0);
 }
+#else
+#define time_warp_reset_entry time_warp_reset /* nothing to verify against */
+#endif
 
 /* Race setup (group W): checked once per race. */
 
@@ -613,6 +858,7 @@ static void GAMEAPI time_warp_reset_entry(void)
  * animated shield texture (0x46d0c0 locks a DirectDraw surface). */
 static struct verify_point shield_setup_point = VERIFY_POINT_VOID("shield_setup", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI shield_setup_entry(void)
 {
     if (*(uint32_t *)0x4bcd54 && (*(uint8_t **)0x4b2198)[0x2a] && *(int32_t *)0x4b24a0 != -1) {
@@ -621,23 +867,34 @@ static void GAMEAPI shield_setup_entry(void)
     }
     verify_call2(&shield_setup_point, (verify_fn2)0x46d2b0, (verify_fn2)(void *)shield_setup, 0, 0);
 }
+#else
+#define shield_setup_entry shield_setup /* nothing to verify against */
+#endif
 
 /* Track water: ripple vertices and water meshes (0x41aa60). */
 static struct verify_point track_water_setup_point = VERIFY_POINT_VOID("track_water_setup", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI track_water_setup_entry(void)
 {
     verify_call2(&track_water_setup_point, (verify_fn2)0x41aa60, (verify_fn2)(void *)track_water_setup, 0, 0);
 }
+#else
+#define track_water_setup_entry track_water_setup /* nothing to verify against */
+#endif
 
 /* The attract / network start messages (0x463860). */
 static struct verify_point race_start_messages_point = VERIFY_POINT_VOID("race_start_messages", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI race_start_messages_entry(int32_t mode)
 {
     verify_call2(&race_start_messages_point, (verify_fn2)0x463860, (verify_fn2)(void *)race_start_messages, mode,
                  0);
 }
+#else
+#define race_start_messages_entry race_start_messages /* nothing to verify against */
+#endif
 
 /* Race setup, group X: each checked at every call (once per race, or once
  * per car). The font setup (0x42e0c0, 0x478ff0) loads FONT.BMP into
@@ -645,53 +902,81 @@ static void GAMEAPI race_start_messages_entry(int32_t mode)
  * checked. */
 static struct verify_point ai_car_race_start_point = VERIFY_POINT_VOID("ai_car_race_start", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI ai_car_race_start_entry(uint8_t *slot)
 {
     verify_call2(&ai_car_race_start_point, (verify_fn2)0x401470, (verify_fn2)(void *)ai_car_race_start, (int32_t)slot,
                  0);
 }
+#else
+#define ai_car_race_start_entry ai_car_race_start /* nothing to verify against */
+#endif
 
 static struct verify_point track_lights_init_point = VERIFY_POINT_VOID("track_lights_init", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI track_lights_init_entry(void)
 {
     verify_call2(&track_lights_init_point, (verify_fn2)0x441b90, (verify_fn2)(void *)track_lights_init, 0, 0);
 }
+#else
+#define track_lights_init_entry track_lights_init /* nothing to verify against */
+#endif
 
 static struct verify_point tyre_trails_init_point = VERIFY_POINT_VOID("tyre_trails_init", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI tyre_trails_init_entry(void)
 {
     verify_call2(&tyre_trails_init_point, (verify_fn2)0x481e50, (verify_fn2)(void *)tyre_trails_init, 0, 0);
 }
+#else
+#define tyre_trails_init_entry tyre_trails_init /* nothing to verify against */
+#endif
 
 static struct verify_point slot_glow_init_point = VERIFY_POINT_VOID("slot_glow_init", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI slot_glow_init_entry(uint8_t *car, int32_t index)
 {
     verify_call2(&slot_glow_init_point, (verify_fn2)0x490390, (verify_fn2)(void *)slot_glow_init, (int32_t)car, index);
 }
+#else
+#define slot_glow_init_entry slot_glow_init /* nothing to verify against */
+#endif
 
 static struct verify_point countdown_init_point = VERIFY_POINT_VOID("countdown_init", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI countdown_init_entry(void)
 {
     verify_call2(&countdown_init_point, (verify_fn2)0x46a940, (verify_fn2)(void *)countdown_init, 0, 0);
 }
+#else
+#define countdown_init_entry countdown_init /* nothing to verify against */
+#endif
 
 static struct verify_point race_sounds_init_point = VERIFY_POINT_VOID("race_sounds_init", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI race_sounds_init_entry(void)
 {
     verify_call2(&race_sounds_init_point, (verify_fn2)0x4730b0, (verify_fn2)(void *)race_sounds_init, 0, 0);
 }
+#else
+#define race_sounds_init_entry race_sounds_init /* nothing to verify against */
+#endif
 
 static struct verify_point race_fade_init_point = VERIFY_POINT_VOID("race_fade_init", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI race_fade_init_entry(int32_t unused)
 {
     verify_call2(&race_fade_init_point, (verify_fn2)0x463930, (verify_fn2)(void *)race_fade_init, unused, 0);
 }
+#else
+#define race_fade_init_entry race_fade_init /* nothing to verify against */
+#endif
 
 /* Front end, group M: only the two pure-memory menu functions are checked
  * (each call, as they run on a menu choice or page change); the layout and
@@ -699,53 +984,77 @@ static void GAMEAPI race_fade_init_entry(int32_t unused)
  * the snapshot, and the mode start / menus build pages and start races. */
 static struct verify_point menu_extra_row_reset_point = VERIFY_POINT("menu_extra_row_reset", 1, 20);
 
+#if defined(__i386__)
 static int32_t GAMEAPI menu_extra_row_reset_entry(void)
 {
     return verify_call2(&menu_extra_row_reset_point, (verify_fn2)0x4456e0,
                         (verify_fn2)(void *)menu_extra_row_reset, 0, 0);
 }
+#else
+#define menu_extra_row_reset_entry menu_extra_row_reset /* nothing to verify against */
+#endif
 
 static struct verify_point driver_choose_point = VERIFY_POINT("driver_choose", 1, 10);
 
+#if defined(__i386__)
 static int32_t GAMEAPI driver_choose_entry(int32_t unused, int32_t car)
 {
     return verify_call2(&driver_choose_point, (verify_fn2)0x44fcd0, (verify_fn2)(void *)driver_choose, unused, car);
 }
+#else
+#define driver_choose_entry driver_choose /* nothing to verify against */
+#endif
 
 /* Front end, group N: only the functions that touch nothing but game
  * memory are checked. The menu builders and option handlers open menus and
  * lay out text (text slots outside the snapshot), so they are fuzz only. */
 static struct verify_point car_stat_bar_point = VERIFY_POINT("car_stat_bar", 31, 100);
 
+#if defined(__i386__)
 static int32_t GAMEAPI car_stat_bar_entry(uint32_t stat, int32_t car)
 {
     return verify_call2(&car_stat_bar_point, (verify_fn2)0x456f70, (verify_fn2)(void *)car_stat_bar, (int32_t)stat,
                         car);
 }
+#else
+#define car_stat_bar_entry car_stat_bar /* nothing to verify against */
+#endif
 
 static struct verify_point menu_model_find_point = VERIFY_POINT("menu_model_find", 31, 100);
 
+#if defined(__i386__)
 static uint8_t *GAMEAPI menu_model_find_entry(int32_t id)
 {
     return (uint8_t *)verify_call2(&menu_model_find_point, (verify_fn2)0x4539d0, (verify_fn2)(void *)menu_model_find,
                                    id, 0);
 }
+#else
+#define menu_model_find_entry menu_model_find /* nothing to verify against */
+#endif
 
 static struct verify_point network_menu_mode_point = VERIFY_POINT("network_menu_mode", 1, 1);
 
+#if defined(__i386__)
 static int32_t GAMEAPI network_menu_mode_entry(int32_t mode)
 {
     return verify_call2(&network_menu_mode_point, (verify_fn2)0x45f500, (verify_fn2)(void *)network_menu_mode, mode,
                         0);
 }
+#else
+#define network_menu_mode_entry network_menu_mode /* nothing to verify against */
+#endif
 
 static struct verify_point grid_highlight_set_point = VERIFY_POINT("grid_highlight_set", 31, 100);
 
+#if defined(__i386__)
 static int32_t GAMEAPI grid_highlight_set_entry(int32_t cell)
 {
     return verify_call2(&grid_highlight_set_point, (verify_fn2)0x490ec0, (verify_fn2)(void *)grid_highlight_set, cell,
                         0);
 }
+#else
+#define grid_highlight_set_entry grid_highlight_set /* nothing to verify against */
+#endif
 
 /* Front end, group O: the menu select / back checks run every front-end
  * frame (one in 31 checked); a cursor move and a history push happen on a
@@ -753,34 +1062,50 @@ static int32_t GAMEAPI grid_highlight_set_entry(int32_t cell)
  * and menu globals). */
 static struct verify_point fe_menu_select_pressed_point = VERIFY_POINT("fe_menu_select_pressed", 31, 100);
 
+#if defined(__i386__)
 static int32_t GAMEAPI fe_menu_select_pressed_entry(int32_t player)
 {
     return verify_call2(&fe_menu_select_pressed_point, (verify_fn2)0x449ee0, (verify_fn2)(void *)fe_menu_select_pressed,
                         player, 0);
 }
+#else
+#define fe_menu_select_pressed_entry fe_menu_select_pressed /* nothing to verify against */
+#endif
 
 static struct verify_point fe_menu_back_pressed_point = VERIFY_POINT("fe_menu_back_pressed", 31, 100);
 
+#if defined(__i386__)
 static int32_t GAMEAPI fe_menu_back_pressed_entry(int32_t player)
 {
     return verify_call2(&fe_menu_back_pressed_point, (verify_fn2)0x449f80, (verify_fn2)(void *)fe_menu_back_pressed,
                         player, 0);
 }
+#else
+#define fe_menu_back_pressed_entry fe_menu_back_pressed /* nothing to verify against */
+#endif
 
 static struct verify_point fe_menu_cursor_move_point = VERIFY_POINT_VOID("fe_menu_cursor_move", 1, 10);
 
+#if defined(__i386__)
 static void GAMEAPI fe_menu_cursor_move_entry(int32_t up)
 {
     verify_call2(&fe_menu_cursor_move_point, (verify_fn2)0x447b60, (verify_fn2)(void *)fe_menu_cursor_move, up, 0);
 }
+#else
+#define fe_menu_cursor_move_entry fe_menu_cursor_move /* nothing to verify against */
+#endif
 
 static struct verify_point fe_history_push_point = VERIFY_POINT_VOID("fe_history_push", 1, 10);
 
+#if defined(__i386__)
 static void GAMEAPI fe_history_push_entry(int32_t from, uint32_t screen)
 {
     verify_call2(&fe_history_push_point, (verify_fn2)0x447a60, (verify_fn2)(void *)fe_history_push, from,
                  (int32_t)screen);
 }
+#else
+#define fe_history_push_entry fe_history_push /* nothing to verify against */
+#endif
 
 /* Front end, group Y: making a menu entry current (0x448b50) only writes the
  * options block and menu globals, so it is checked at every call. The rest
@@ -788,29 +1113,41 @@ static void GAMEAPI fe_history_push_entry(int32_t from, uint32_t screen)
  * surfaces), so they are fuzz-tested only. */
 static struct verify_point menu_entry_select_point = VERIFY_POINT("menu_entry_select", 1, 100);
 
+#if defined(__i386__)
 static int32_t GAMEAPI menu_entry_select_entry(int32_t entry)
 {
     return verify_call2(&menu_entry_select_point, (verify_fn2)0x448b50, (verify_fn2)(void *)menu_entry_select, entry,
                         0);
 }
+#else
+#define menu_entry_select_entry menu_entry_select /* nothing to verify against */
+#endif
 
 /* Front end, group Z: the two menu helpers whose whole call tree stays in
  * game memory (config table at *0x4b2198, no text file, sound or DirectX):
  * checked at every call (a menu choice, not per frame). */
 static struct verify_point track_menu_choice_fix_point = VERIFY_POINT_VOID("track_menu_choice_fix", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI track_menu_choice_fix_entry(void)
 {
     verify_call2(&track_menu_choice_fix_point, (verify_fn2)0x44ea70, (verify_fn2)(void *)track_menu_choice_fix, 0, 0);
 }
+#else
+#define track_menu_choice_fix_entry track_menu_choice_fix /* nothing to verify against */
+#endif
 
 static struct verify_point track_records_rename_point = VERIFY_POINT_VOID("track_records_rename", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI track_records_rename_entry(int32_t track, int32_t slot)
 {
     verify_call2(&track_records_rename_point, (verify_fn2)0x405860, (verify_fn2)(void *)track_records_rename, track,
                  slot);
 }
+#else
+#define track_records_rename_entry track_records_rename /* nothing to verify against */
+#endif
 
 /* Startup group SA: the two pure helpers still called from original code
  * (the series setter from the controls menu 0x451bf5, the saved binding
@@ -818,18 +1155,26 @@ static void GAMEAPI track_records_rename_entry(int32_t track, int32_t slot)
  * ported. Checked at every call. */
 static struct verify_point config_series_set_point = VERIFY_POINT_VOID("config_series_set", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI config_series_set_entry(int32_t series)
 {
     verify_call2(&config_series_set_point, (verify_fn2)0x4498d0, (verify_fn2)(void *)config_series_set, series, 0);
 }
+#else
+#define config_series_set_entry config_series_set /* nothing to verify against */
+#endif
 
 static struct verify_point binding_saved_get_point = VERIFY_POINT("binding_saved_get", 1, 1);
 
+#if defined(__i386__)
 static uint8_t *GAMEAPI binding_saved_get_entry(int32_t set, int32_t activity)
 {
     return (uint8_t *)verify_call2(&binding_saved_get_point, (verify_fn2)0x449c40, (verify_fn2)(void *)binding_saved_get,
                                    set, activity);
 }
+#else
+#define binding_saved_get_entry binding_saved_get /* nothing to verify against */
+#endif
 
 /* Startup, group SB: only the functions that touch nothing but game memory are checked (the key and
  * option checks, the text width, the archive name lookup, the level name, the settings table copies and
@@ -838,111 +1183,171 @@ static uint8_t *GAMEAPI binding_saved_get_entry(int32_t set, int32_t activity)
  * seeds it from the clock). */
 static struct verify_point debug_key_event_point = VERIFY_POINT_VOID("debug_key_event", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI debug_key_event_entry(int32_t key)
 {
     verify_call2(&debug_key_event_point, (verify_fn2)0x43605a, (verify_fn2)(void *)debug_key_event, (int32_t)key, 0);
 }
+#else
+#define debug_key_event_entry debug_key_event /* nothing to verify against */
+#endif
 
 static struct verify_point setting5_next_point = VERIFY_POINT_VOID("setting5_next", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI setting5_next_entry(void)
 {
     verify_call2(&setting5_next_point, (verify_fn2)0x4483c0, (verify_fn2)(void *)setting5_next, 0, 0);
 }
+#else
+#define setting5_next_entry setting5_next /* nothing to verify against */
+#endif
 
 static struct verify_point movie_mode_point = VERIFY_POINT("movie_mode", 1, 1);
 
+#if defined(__i386__)
 static int32_t GAMEAPI movie_mode_entry(void)
 {
     return (int32_t)verify_call2(&movie_mode_point, (verify_fn2)0x444c50, (verify_fn2)(void *)movie_mode, 0, 0);
 }
+#else
+#define movie_mode_entry movie_mode /* nothing to verify against */
+#endif
 
 static struct verify_point credits_wanted_point = VERIFY_POINT("credits_wanted", 1, 1);
 
+#if defined(__i386__)
 static int32_t GAMEAPI credits_wanted_entry(void)
 {
     return (int32_t)verify_call2(&credits_wanted_point, (verify_fn2)0x444ca0, (verify_fn2)(void *)credits_wanted, 0, 0);
 }
+#else
+#define credits_wanted_entry credits_wanted /* nothing to verify against */
+#endif
 
 static struct verify_point movies_wanted_point = VERIFY_POINT("movies_wanted", 1, 1);
 
+#if defined(__i386__)
 static int32_t GAMEAPI movies_wanted_entry(void)
 {
     return (int32_t)verify_call2(&movies_wanted_point, (verify_fn2)0x444ce0, (verify_fn2)(void *)movies_wanted, 0, 0);
 }
+#else
+#define movies_wanted_entry movies_wanted /* nothing to verify against */
+#endif
 
 static struct verify_point text_width_point = VERIFY_POINT("text_width", 31, 100);
 
+#if defined(__i386__)
 static int32_t GAMEAPI text_width_entry(const uint8_t *text)
 {
     return (int32_t)verify_call2(&text_width_point, (verify_fn2)0x488c30, (verify_fn2)(void *)text_width, (int32_t)text, 0);
 }
+#else
+#define text_width_entry text_width /* nothing to verify against */
+#endif
 
 static struct verify_point archive_find_by_name_point = VERIFY_POINT("archive_find_by_name", 31, 100);
 
+#if defined(__i386__)
 static uint32_t GAMEAPI archive_find_by_name_entry(uint32_t name)
 {
     return (uint32_t)verify_call2(&archive_find_by_name_point, (verify_fn2)0x43b550, (verify_fn2)(void *)archive_find_by_name, (int32_t)name, 0);
 }
+#else
+#define archive_find_by_name_entry archive_find_by_name /* nothing to verify against */
+#endif
 
 static struct verify_point level_name_set_point = VERIFY_POINT_VOID("level_name_set", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI level_name_set_entry(void)
 {
     verify_call2(&level_name_set_point, (verify_fn2)0x430130, (verify_fn2)(void *)level_name_set, 0, 0);
 }
+#else
+#define level_name_set_entry level_name_set /* nothing to verify against */
+#endif
 
 static struct verify_point table_copy_point = VERIFY_POINT_VOID("table_copy", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI table_copy_entry(int32_t op, const uint32_t *table)
 {
     verify_call2(&table_copy_point, (verify_fn2)0x474500, (verify_fn2)(void *)table_copy, (int32_t)op, (int32_t)table);
 }
+#else
+#define table_copy_entry table_copy /* nothing to verify against */
+#endif
 
 static struct verify_point settings_table_load_point = VERIFY_POINT_VOID("settings_table_load", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI settings_table_load_entry(void)
 {
     verify_call2(&settings_table_load_point, (verify_fn2)0x4745d0, (verify_fn2)(void *)settings_table_load, 0, 0);
 }
+#else
+#define settings_table_load_entry settings_table_load /* nothing to verify against */
+#endif
 
 static struct verify_point settings_screen_store_point = VERIFY_POINT_VOID("settings_screen_store", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI settings_screen_store_entry(void)
 {
     verify_call2(&settings_screen_store_point, (verify_fn2)0x4746b0, (verify_fn2)(void *)settings_screen_store, 0, 0);
 }
+#else
+#define settings_screen_store_entry settings_screen_store /* nothing to verify against */
+#endif
 
 static struct verify_point flags_5d622c_clear_point = VERIFY_POINT_VOID("flags_5d622c_clear", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI flags_5d622c_clear_entry(void)
 {
     verify_call2(&flags_5d622c_clear_point, (verify_fn2)0x48d370, (verify_fn2)(void *)flags_5d622c_clear, 0, 0);
 }
+#else
+#define flags_5d622c_clear_entry flags_5d622c_clear /* nothing to verify against */
+#endif
 
 static struct verify_point mask_full_point = VERIFY_POINT("mask_full", 31, 100);
 
+#if defined(__i386__)
 static int32_t GAMEAPI mask_full_entry(uint32_t mask, int32_t n)
 {
     return (int32_t)verify_call2(&mask_full_point, (verify_fn2)0x430b70, (verify_fn2)(void *)mask_full, (int32_t)mask, (int32_t)n);
 }
+#else
+#define mask_full_entry mask_full /* nothing to verify against */
+#endif
 
 static struct verify_point slot_value_free_point = VERIFY_POINT("slot_value_free", 31, 100);
 
+#if defined(__i386__)
 static int32_t GAMEAPI slot_value_free_entry(uint32_t value)
 {
     return (int32_t)verify_call2(&slot_value_free_point, (verify_fn2)0x433ca0, (verify_fn2)(void *)slot_value_free, (int32_t)value, 0);
 }
+#else
+#define slot_value_free_entry slot_value_free /* nothing to verify against */
+#endif
 
 /* Group SC: the per-frame key state 0x43c420 (with 0x43c3f0 / 0x43c6a0 on
  * first use) only touches game memory (key buffer at *0x4b2ca4 = 0x4d9558,
  * key tables, events, flags): checked every 31st frame. */
 static struct verify_point keyboard_update_point = VERIFY_POINT_VOID("keyboard_update", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI keyboard_update_entry(void)
 {
     verify_call2(&keyboard_update_point, (verify_fn2)0x43c420, (verify_fn2)(void *)keyboard_update, 0, 0);
 }
+#else
+#define keyboard_update_entry keyboard_update /* nothing to verify against */
+#endif
 
 /* Sound engine, group DA: the three functions whose whole call tree stays in
  * game memory (no QMixer, file, allocation or DirectX call): the box merge of
@@ -953,25 +1358,37 @@ static void GAMEAPI keyboard_update_entry(void)
  * through the import table and is fuzz-only. */
 static struct verify_point snd_box_merge_point = VERIFY_POINT("snd_box_merge", 31, 100);
 
+#if defined(__i386__)
 static int32_t GAMEAPI snd_box_merge_entry(uint8_t *holder, uint8_t *box)
 {
     return verify_call2(&snd_box_merge_point, (verify_fn2)0x46f080, (verify_fn2)(void *)snd_box_merge,
                         (int32_t)holder, (int32_t)box);
 }
+#else
+#define snd_box_merge_entry snd_box_merge /* nothing to verify against */
+#endif
 
 static struct verify_point snd_rate_for_point = VERIFY_POINT("snd_rate_for", 1, 1);
 
+#if defined(__i386__)
 static int32_t GAMEAPI snd_rate_for_entry(int32_t rate)
 {
     return verify_call2(&snd_rate_for_point, (verify_fn2)0x46f6e0, (verify_fn2)(void *)snd_rate_for, rate, 0);
 }
+#else
+#define snd_rate_for_entry snd_rate_for /* nothing to verify against */
+#endif
 
 static struct verify_point snd_stats_clear_point = VERIFY_POINT_VOID("snd_stats_clear", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI snd_stats_clear_entry(void)
 {
     verify_call2(&snd_stats_clear_point, (verify_fn2)0x470680, (verify_fn2)(void *)snd_stats_clear, 0, 0);
 }
+#else
+#define snd_stats_clear_entry snd_stats_clear /* nothing to verify against */
+#endif
 
 /* Sound engine, group DB: of the functions here only these two take at most
  * two arguments and touch nothing but compared game memory (the voice table
@@ -979,17 +1396,25 @@ static void GAMEAPI snd_stats_clear_entry(void)
  * voice helpers would check nothing). Both are rare: every call. */
 static struct verify_point sound_eax_first_point = VERIFY_POINT("sound_eax_first", 1, 1);
 
+#if defined(__i386__)
 static uint32_t GAMEAPI sound_eax_first_entry(void)
 {
     return (uint32_t)verify_call2(&sound_eax_first_point, (verify_fn2)0x471700, (verify_fn2)(void *)sound_eax_first, 0, 0);
 }
+#else
+#define sound_eax_first_entry sound_eax_first /* nothing to verify against */
+#endif
 
 static struct verify_point sound_volume_set_point = VERIFY_POINT_VOID("sound_volume_set", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI sound_volume_set_entry(uint32_t volume)
 {
     verify_call2(&sound_volume_set_point, (verify_fn2)0x471b80, (verify_fn2)(void *)sound_volume_set, (int32_t)volume, 0);
 }
+#else
+#define sound_volume_set_entry sound_volume_set /* nothing to verify against */
+#endif
 
 /* Group GA: the chase/replay camera director, once per viewport per step.
  * Its whole call tree stays in game memory (camera helpers in post_i.c,
@@ -1000,10 +1425,14 @@ static void GAMEAPI sound_volume_set_entry(uint32_t volume)
  * checked inside controls_analogue's verify point. */
 static struct verify_point camera_director_point = VERIFY_POINT_VOID("camera_director", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI camera_director_entry(int32_t view)
 {
     verify_call2(&camera_director_point, (verify_fn2)0x408360, (verify_fn2)(void *)camera_director, view, 0);
 }
+#else
+#define camera_director_entry camera_director /* nothing to verify against */
+#endif
 
 /* Race and car setup, group GB: the functions whose whole call tree stays
  * in game memory. The sky record is set once per track load; the hit timer
@@ -1012,84 +1441,128 @@ static void GAMEAPI camera_director_entry(int32_t view)
  * shock_falloff 0x405210). */
 static struct verify_point sky_set_point = VERIFY_POINT_VOID("sky_set", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI sky_set_entry(uint8_t *sky)
 {
     verify_call2(&sky_set_point, (verify_fn2)0x404480, (verify_fn2)(void *)sky_set, (int32_t)sky, 0);
 }
+#else
+#define sky_set_entry sky_set /* nothing to verify against */
+#endif
 
 static struct verify_point car_hit_timer_start_point = VERIFY_POINT_VOID("car_hit_timer_start", 1, 20);
 
+#if defined(__i386__)
 static void GAMEAPI car_hit_timer_start_entry(uint8_t *car, int32_t force)
 {
     verify_call2(&car_hit_timer_start_point, (verify_fn2)0x40fd40, (verify_fn2)(void *)car_hit_timer_start,
                  (int32_t)car, force);
 }
+#else
+#define car_hit_timer_start_entry car_hit_timer_start /* nothing to verify against */
+#endif
 
 static struct verify_point shock_falloff_apply_point = VERIFY_POINT_VOID("shock_falloff_apply", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI shock_falloff_apply_entry(void)
 {
     verify_call2(&shock_falloff_apply_point, (verify_fn2)0x4050f0, (verify_fn2)(void *)shock_falloff_apply, 0, 0);
 }
+#else
+#define shock_falloff_apply_entry shock_falloff_apply /* nothing to verify against */
+#endif
 
 /* Group GC: the pure-memory ones called from original code or by address.
  * particles_update (3 arguments) and the skid marks / blast mark (3) are
  * fuzz-only: verify_call2 takes two. */
 static struct verify_point trigger_queue_process_point = VERIFY_POINT_VOID("trigger_queue_process", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI trigger_queue_process_entry(void)
 {
     verify_call2(&trigger_queue_process_point, (verify_fn2)0x442890, (verify_fn2)(void *)trigger_queue_process, 0, 0);
 }
+#else
+#define trigger_queue_process_entry trigger_queue_process /* nothing to verify against */
+#endif
 
 static struct verify_point car_wheel_dust_point = VERIFY_POINT_VOID("car_wheel_dust", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI car_wheel_dust_entry(uint8_t *car)
 {
     verify_call2(&car_wheel_dust_point, (verify_fn2)0x4219e0, (verify_fn2)(void *)car_wheel_dust, (int32_t)car, 0);
 }
+#else
+#define car_wheel_dust_entry car_wheel_dust /* nothing to verify against */
+#endif
 
 static struct verify_point snatch_mesh_update_point = VERIFY_POINT_VOID("snatch_mesh_update", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI snatch_mesh_update_entry(uint8_t *obj)
 {
     verify_call2(&snatch_mesh_update_point, (verify_fn2)0x48f930, (verify_fn2)(void *)snatch_mesh_update, (int32_t)obj, 0);
 }
+#else
+#define snatch_mesh_update_entry snatch_mesh_update /* nothing to verify against */
+#endif
 
 static struct verify_point car_blast_hit_point = VERIFY_POINT_VOID("car_blast_hit", 1, 20);
 
+#if defined(__i386__)
 static void GAMEAPI car_blast_hit_entry(uint8_t *obj, const uint8_t *from)
 {
     verify_call2(&car_blast_hit_point, (verify_fn2)0x4599c0, (verify_fn2)(void *)car_blast_hit, (int32_t)obj, (int32_t)from);
 }
+#else
+#define car_blast_hit_entry car_blast_hit /* nothing to verify against */
+#endif
 
 static struct verify_point body_sparks_point = VERIFY_POINT_VOID("body_sparks", 1, 20);
 
+#if defined(__i386__)
 static void GAMEAPI body_sparks_entry(uint8_t *body, int32_t n)
 {
     verify_call2(&body_sparks_point, (verify_fn2)0x45bd30, (verify_fn2)(void *)body_sparks, (int32_t)body, (int32_t)n);
 }
+#else
+#define body_sparks_entry body_sparks /* nothing to verify against */
+#endif
 
 static struct verify_point pair_users_release_point = VERIFY_POINT_VOID("pair_users_release", 1, 20);
 
+#if defined(__i386__)
 static void GAMEAPI pair_users_release_entry(uint32_t key)
 {
     verify_call2(&pair_users_release_point, (verify_fn2)0x403950, (verify_fn2)(void *)pair_users_release, (int32_t)key, 0);
 }
+#else
+#define pair_users_release_entry pair_users_release /* nothing to verify against */
+#endif
 
 static struct verify_point pair_list_remove_point = VERIFY_POINT("pair_list_remove", 1, 20);
 
+#if defined(__i386__)
 static uint32_t GAMEAPI pair_list_remove_entry(uint32_t key)
 {
     return (uint32_t)verify_call2(&pair_list_remove_point, (verify_fn2)0x478430, (verify_fn2)(void *)pair_list_remove, (int32_t)key, 0);
 }
+#else
+#define pair_list_remove_entry pair_list_remove /* nothing to verify against */
+#endif
 
 static struct verify_point body_velocity_gap_point = VERIFY_POINT("body_velocity_gap", 31, 100);
 
+#if defined(__i386__)
 static uint32_t GAMEAPI body_velocity_gap_entry(uint8_t *a, const uint8_t *b)
 {
     return (uint32_t)verify_call2(&body_velocity_gap_point, (verify_fn2)0x46c1a0, (verify_fn2)(void *)body_velocity_gap, (int32_t)a, (int32_t)b);
 }
+#else
+#define body_velocity_gap_entry body_velocity_gap /* nothing to verify against */
+#endif
 
 /* Group GD: the functions whose whole call tree stays in game memory (no sound, DirectX, text file,
  * allocation): the depth flag table, the menu held-button words, the config toggles, the race
@@ -1098,125 +1571,190 @@ static uint32_t GAMEAPI body_velocity_gap_entry(uint8_t *a, const uint8_t *b)
  * every 31st. */
 static struct verify_point ddraw_depth_flag_point = VERIFY_POINT("ddraw_depth_flag", 1, 1);
 
+#if defined(__i386__)
 static int32_t GAMEAPI ddraw_depth_flag_entry(int32_t bpp)
 {
     return verify_call2(&ddraw_depth_flag_point, (verify_fn2)0x41d640, (verify_fn2)(void *)ddraw_depth_flag, bpp, 0);
 }
+#else
+#define ddraw_depth_flag_entry ddraw_depth_flag /* nothing to verify against */
+#endif
 
 static struct verify_point menu_hold_clear_point = VERIFY_POINT_VOID("menu_hold_clear", 31, 1);
 
+#if defined(__i386__)
 static void GAMEAPI menu_hold_clear_entry(void)
 {
     verify_call2(&menu_hold_clear_point, (verify_fn2)0x4474e0, (verify_fn2)(void *)menu_hold_clear, 0, 0);
 }
+#else
+#define menu_hold_clear_entry menu_hold_clear /* nothing to verify against */
+#endif
 
 static struct verify_point menu_hold_reset_point = VERIFY_POINT_VOID("menu_hold_reset", 31, 1);
 
+#if defined(__i386__)
 static void GAMEAPI menu_hold_reset_entry(void)
 {
     verify_call2(&menu_hold_reset_point, (verify_fn2)0x447500, (verify_fn2)(void *)menu_hold_reset, 0, 0);
 }
+#else
+#define menu_hold_reset_entry menu_hold_reset /* nothing to verify against */
+#endif
 
 static struct verify_point config_flag7_toggle_point = VERIFY_POINT_VOID("config_flag7_toggle", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI config_flag7_toggle_entry(void)
 {
     verify_call2(&config_flag7_toggle_point, (verify_fn2)0x447f60, (verify_fn2)(void *)config_flag7_toggle, 0, 0);
 }
+#else
+#define config_flag7_toggle_entry config_flag7_toggle /* nothing to verify against */
+#endif
 
 static struct verify_point config_mirror_flag_point = VERIFY_POINT_VOID("config_mirror_flag", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI config_mirror_flag_entry(void)
 {
     verify_call2(&config_mirror_flag_point, (verify_fn2)0x448380, (verify_fn2)(void *)config_mirror_flag, 0, 0);
 }
+#else
+#define config_mirror_flag_entry config_mirror_flag /* nothing to verify against */
+#endif
 
 static struct verify_point race_setting_trim_point = VERIFY_POINT_VOID("race_setting_trim", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI race_setting_trim_entry(void)
 {
     verify_call2(&race_setting_trim_point, (verify_fn2)0x4503c0, (verify_fn2)(void *)race_setting_trim, 0, 0);
 }
+#else
+#define race_setting_trim_entry race_setting_trim /* nothing to verify against */
+#endif
 
 static struct verify_point joy_pov_edge_point = VERIFY_POINT("joy_pov_edge", 31, 1);
 
+#if defined(__i386__)
 static int32_t GAMEAPI joy_pov_edge_entry(int32_t joy, uint32_t dir)
 {
     return verify_call2(&joy_pov_edge_point, (verify_fn2)0x48a2f0, (verify_fn2)(void *)joy_pov_edge, joy,
                         (int32_t)dir);
 }
+#else
+#define joy_pov_edge_entry joy_pov_edge /* nothing to verify against */
+#endif
 
 static struct verify_point joy_pov_edge_0_point = VERIFY_POINT("joy_pov_edge_0", 31, 1);
 
+#if defined(__i386__)
 static int32_t GAMEAPI joy_pov_edge_0_entry(int32_t joy)
 {
     return verify_call2(&joy_pov_edge_0_point, (verify_fn2)0x48a3e0, (verify_fn2)(void *)joy_pov_edge_0, joy, 0);
 }
+#else
+#define joy_pov_edge_0_entry joy_pov_edge_0 /* nothing to verify against */
+#endif
 
 static struct verify_point joy_pov_edge_1_point = VERIFY_POINT("joy_pov_edge_1", 31, 1);
 
+#if defined(__i386__)
 static int32_t GAMEAPI joy_pov_edge_1_entry(int32_t joy)
 {
     return verify_call2(&joy_pov_edge_1_point, (verify_fn2)0x48a3f0, (verify_fn2)(void *)joy_pov_edge_1, joy, 0);
 }
+#else
+#define joy_pov_edge_1_entry joy_pov_edge_1 /* nothing to verify against */
+#endif
 
 static struct verify_point joy_pov_edge_2_point = VERIFY_POINT("joy_pov_edge_2", 31, 1);
 
+#if defined(__i386__)
 static int32_t GAMEAPI joy_pov_edge_2_entry(int32_t joy)
 {
     return verify_call2(&joy_pov_edge_2_point, (verify_fn2)0x48a400, (verify_fn2)(void *)joy_pov_edge_2, joy, 0);
 }
+#else
+#define joy_pov_edge_2_entry joy_pov_edge_2 /* nothing to verify against */
+#endif
 
 static struct verify_point joy_pov_edge_3_point = VERIFY_POINT("joy_pov_edge_3", 31, 1);
 
+#if defined(__i386__)
 static int32_t GAMEAPI joy_pov_edge_3_entry(int32_t joy)
 {
     return verify_call2(&joy_pov_edge_3_point, (verify_fn2)0x48a410, (verify_fn2)(void *)joy_pov_edge_3, joy, 0);
 }
+#else
+#define joy_pov_edge_3_entry joy_pov_edge_3 /* nothing to verify against */
+#endif
 
 static struct verify_point joy_record_point = VERIFY_POINT("joy_record", 31, 1);
 
+#if defined(__i386__)
 static uint8_t *GAMEAPI joy_record_entry(int32_t joy)
 {
     return (uint8_t *)verify_call2(&joy_record_point, (verify_fn2)0x48a590, (verify_fn2)(void *)joy_record, joy, 0);
 }
+#else
+#define joy_record_entry joy_record /* nothing to verify against */
+#endif
 
 static struct verify_point joy_device_value_point = VERIFY_POINT("joy_device_value", 31, 1);
 
+#if defined(__i386__)
 static int32_t GAMEAPI joy_device_value_entry(int32_t joy)
 {
     return verify_call2(&joy_device_value_point, (verify_fn2)0x488d60, (verify_fn2)(void *)joy_device_value, joy, 0);
 }
+#else
+#define joy_device_value_entry joy_device_value /* nothing to verify against */
+#endif
 
 /* Group CA (crt_ca.c): the pure ones. The rest does file I/O, MCI, mixer
  * and aux calls, allocation or x87 control-word changes: fuzz-only. */
 static struct verify_point archive_get_record_point = VERIFY_POINT("archive_get_record", 1, 1);
 
+#if defined(__i386__)
 static uint8_t *GAMEAPI archive_get_record_entry(int32_t index)
 {
     return (uint8_t *)(uintptr_t)verify_call2(&archive_get_record_point, (verify_fn2)0x496570,
                                               (verify_fn2)(void *)archive_get_record, index, 0);
 }
+#else
+#define archive_get_record_entry archive_get_record /* nothing to verify against */
+#endif
 
 static struct verify_point cdaudio_set_shuffle_point = VERIFY_POINT_VOID("cdaudio_set_shuffle", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI cdaudio_set_shuffle_entry(int32_t mode)
 {
     verify_call2(&cdaudio_set_shuffle_point, (verify_fn2)0x496c50, (verify_fn2)(void *)cdaudio_set_shuffle, mode, 0);
 }
+#else
+#define cdaudio_set_shuffle_entry cdaudio_set_shuffle /* nothing to verify against */
+#endif
 
 static struct verify_point cdaudio_set_skip_first_point = VERIFY_POINT_VOID("cdaudio_set_skip_first", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI cdaudio_set_skip_first_entry(int32_t skip)
 {
     verify_call2(&cdaudio_set_skip_first_point, (verify_fn2)0x496c80, (verify_fn2)(void *)cdaudio_set_skip_first,
                  skip, 0);
 }
+#else
+#define cdaudio_set_skip_first_entry cdaudio_set_skip_first /* nothing to verify against */
+#endif
 
 /* Checked only in the "C" locale (with one set it takes the runtime's
  * locale lock and allocates); the string is the cheat buffer 0x4be3bc. */
 static struct verify_point crt_strlwr_point = VERIFY_POINT("crt_strlwr", 1, 1);
 
+#if defined(__i386__)
 static char *GAMEAPI crt_strlwr_entry(char *s)
 {
     if (*(uint32_t *)0x4db37c)
@@ -1224,6 +1762,9 @@ static char *GAMEAPI crt_strlwr_entry(char *s)
     return (char *)(uintptr_t)verify_call2(&crt_strlwr_point, (verify_fn2)0x4a1c3c, (verify_fn2)(void *)crt_strlwr,
                                            (int32_t)(uintptr_t)s, 0);
 }
+#else
+#define crt_strlwr_entry crt_strlwr /* nothing to verify against */
+#endif
 
 /* Group CB (crt_cb.c): only pure, read-only entries with at most two
  * arguments: atoi (script parsing, rare) and strstr (cheat-code checks on
@@ -1232,19 +1773,27 @@ static char *GAMEAPI crt_strlwr_entry(char *s)
  * per-thread data) or writes to the caller's stack: fuzz-only. */
 static struct verify_point msvc_atoi_point = VERIFY_POINT("msvc_atoi", 1, 1);
 
+#if defined(__i386__)
 static int32_t GAMEAPI msvc_atoi_entry(const char *s)
 {
     return verify_call2(&msvc_atoi_point, (verify_fn2)0x498046, (verify_fn2)(void *)msvc_atoi,
                         (int32_t)(uintptr_t)s, 0);
 }
+#else
+#define msvc_atoi_entry msvc_atoi /* nothing to verify against */
+#endif
 
 static struct verify_point msvc_strstr_point = VERIFY_POINT("msvc_strstr", 1, 1);
 
+#if defined(__i386__)
 static char *GAMEAPI msvc_strstr_entry(const char *s, const char *find)
 {
     return (char *)(uintptr_t)verify_call2(&msvc_strstr_point, (verify_fn2)0x4980d0, (verify_fn2)(void *)msvc_strstr,
                                            (int32_t)(uintptr_t)s, (int32_t)(uintptr_t)find);
 }
+#else
+#define msvc_strstr_entry msvc_strstr /* nothing to verify against */
+#endif
 
 /* Group CC (crt_cc.c): none. Everything here does Windows calls (files,
  * TLS, locks, the heap), changes the x87 control word, or runs the
@@ -1257,42 +1806,62 @@ static char *GAMEAPI msvc_strstr_entry(const char *s, const char *find)
  * called from object_part_hit, now C, so it gets no wrapper.) */
 static struct verify_point sky_quads_draw_point = VERIFY_POINT_VOID("sky_quads_draw", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI sky_quads_draw_entry(void)
 {
     verify_call2(&sky_quads_draw_point, (verify_fn2)0x404f50, (verify_fn2)(void *)sky_quads_draw, 0, 0);
 }
+#else
+#define sky_quads_draw_entry sky_quads_draw /* nothing to verify against */
+#endif
 
 static struct verify_point camera_blend_begin_point = VERIFY_POINT_VOID("camera_blend_begin", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI camera_blend_begin_entry(uint8_t **rec)
 {
     verify_call2(&camera_blend_begin_point, (verify_fn2)0x40cbe0, (verify_fn2)(void *)camera_blend_begin,
                  (int32_t)(uintptr_t)rec, 0);
 }
+#else
+#define camera_blend_begin_entry camera_blend_begin /* nothing to verify against */
+#endif
 
 static struct verify_point camera_blend_end_point = VERIFY_POINT_VOID("camera_blend_end", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI camera_blend_end_entry(uint8_t **rec)
 {
     verify_call2(&camera_blend_end_point, (verify_fn2)0x40cd00, (verify_fn2)(void *)camera_blend_end,
                  (int32_t)(uintptr_t)rec, 0);
 }
+#else
+#define camera_blend_end_entry camera_blend_end /* nothing to verify against */
+#endif
 
 static struct verify_point blast_object_hit_point = VERIFY_POINT("blast_object_hit", 1, 10);
 
+#if defined(__i386__)
 static int32_t GAMEAPI blast_object_hit_entry(uint8_t *obj)
 {
     return verify_call2(&blast_object_hit_point, (verify_fn2)0x405280, (verify_fn2)(void *)blast_object_hit,
                         (int32_t)(uintptr_t)obj, 0);
 }
+#else
+#define blast_object_hit_entry blast_object_hit /* nothing to verify against */
+#endif
 
 static struct verify_point track_object_vanish_point = VERIFY_POINT("track_object_vanish", 1, 10);
 
+#if defined(__i386__)
 static int32_t GAMEAPI track_object_vanish_entry(uint8_t *obj)
 {
     return verify_call2(&track_object_vanish_point, (verify_fn2)0x401230, (verify_fn2)(void *)track_object_vanish,
                         (int32_t)(uintptr_t)obj, 0);
 }
+#else
+#define track_object_vanish_entry track_object_vanish /* nothing to verify against */
+#endif
 
 /* Group NB: the functions whose whole call tree stays in game memory: the clip drivers (with the
  * frustum passes 0x417060..0x4177b0, the facing test 0x4278f0 and the projection 0x428900, all pure x87
@@ -1301,55 +1870,83 @@ static int32_t GAMEAPI track_object_vanish_entry(uint8_t *obj)
  * per-frame screen colours at every 31st, the once-only ones at every call. */
 static struct verify_point clip_polygon_a_point = VERIFY_POINT("clip_polygon_a", 127, 1);
 
+#if defined(__i386__)
 static int32_t GAMEAPI clip_polygon_a_entry(uint32_t flags)
 {
     return verify_call2(&clip_polygon_a_point, (verify_fn2)0x417af0, (verify_fn2)(void *)clip_polygon_a,
                         (int32_t)flags, 0);
 }
+#else
+#define clip_polygon_a_entry clip_polygon_a /* nothing to verify against */
+#endif
 
 static struct verify_point clip_polygon_b_point = VERIFY_POINT("clip_polygon_b", 127, 1);
 
+#if defined(__i386__)
 static int32_t GAMEAPI clip_polygon_b_entry(uint32_t flags)
 {
     return verify_call2(&clip_polygon_b_point, (verify_fn2)0x417ce0, (verify_fn2)(void *)clip_polygon_b,
                         (int32_t)flags, 0);
 }
+#else
+#define clip_polygon_b_entry clip_polygon_b /* nothing to verify against */
+#endif
 
 static struct verify_point clip_polygon_2d_point = VERIFY_POINT("clip_polygon_2d", 127, 1);
 
+#if defined(__i386__)
 static int32_t GAMEAPI clip_polygon_2d_entry(void)
 {
     return verify_call2(&clip_polygon_2d_point, (verify_fn2)0x418290, (verify_fn2)(void *)clip_polygon_2d, 0, 0);
 }
+#else
+#define clip_polygon_2d_entry clip_polygon_2d /* nothing to verify against */
+#endif
 
 static struct verify_point clip_vertices_restart_point = VERIFY_POINT_VOID("clip_vertices_restart", 127, 1);
 
+#if defined(__i386__)
 static void GAMEAPI clip_vertices_restart_entry(void)
 {
     verify_call2(&clip_vertices_restart_point, (verify_fn2)0x418260, (verify_fn2)(void *)clip_vertices_restart, 0,
                  0);
 }
+#else
+#define clip_vertices_restart_entry clip_vertices_restart /* nothing to verify against */
+#endif
 
 static struct verify_point screen_colour_apply_point = VERIFY_POINT_VOID("screen_colour_apply", 31, 1);
 
+#if defined(__i386__)
 static void GAMEAPI screen_colour_apply_entry(void)
 {
     verify_call2(&screen_colour_apply_point, (verify_fn2)0x41b2f0, (verify_fn2)(void *)screen_colour_apply, 0, 0);
 }
+#else
+#define screen_colour_apply_entry screen_colour_apply /* nothing to verify against */
+#endif
 
 static struct verify_point d3d_state_defaults_point = VERIFY_POINT_VOID("d3d_state_defaults", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI d3d_state_defaults_entry(void)
 {
     verify_call2(&d3d_state_defaults_point, (verify_fn2)0x41dee0, (verify_fn2)(void *)d3d_state_defaults, 0, 0);
 }
+#else
+#define d3d_state_defaults_entry d3d_state_defaults /* nothing to verify against */
+#endif
 
 static struct verify_point cpu_features_read_point = VERIFY_POINT_VOID("cpu_features_read", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI cpu_features_read_entry(void)
 {
     verify_call2(&cpu_features_read_point, (verify_fn2)0x41c8f0, (verify_fn2)(void *)cpu_features_read, 0, 0);
 }
+#else
+#define cpu_features_read_entry cpu_features_read /* nothing to verify against */
+#endif
 
 /* Group PA: the functions whose whole call tree stays in game memory (no DirectX, no allocation):
  * the free texture slot search, the texture format choice, the vertex snap switch and the snap
@@ -1358,55 +1955,83 @@ static void GAMEAPI cpu_features_read_entry(void)
  * (0x420a30 / 0x420a90 / 0x420b10): fuzz only. */
 static struct verify_point texture_slot_free_find_point = VERIFY_POINT("texture_slot_free_find", 1, 1);
 
+#if defined(__i386__)
 static int32_t GAMEAPI texture_slot_free_find_entry(void)
 {
     return verify_call2(&texture_slot_free_find_point, (verify_fn2)0x41ec20, (verify_fn2)(void *)texture_slot_free_find,
                         0, 0);
 }
+#else
+#define texture_slot_free_find_entry texture_slot_free_find /* nothing to verify against */
+#endif
 
 static struct verify_point texture_format_choose_point = VERIFY_POINT("texture_format_choose", 1, 1);
 
+#if defined(__i386__)
 static int32_t GAMEAPI texture_format_choose_entry(uint32_t rgb_only, uint32_t alpha_wanted)
 {
     return verify_call2(&texture_format_choose_point, (verify_fn2)0x41f060, (verify_fn2)(void *)texture_format_choose,
                         (int32_t)rgb_only, (int32_t)alpha_wanted);
 }
+#else
+#define texture_format_choose_entry texture_format_choose /* nothing to verify against */
+#endif
 
 static struct verify_point vertex_snap_set_point = VERIFY_POINT_VOID("vertex_snap_set", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI vertex_snap_set_entry(uint32_t on)
 {
     verify_call2(&vertex_snap_set_point, (verify_fn2)0x41f3f0, (verify_fn2)(void *)vertex_snap_set, (int32_t)on, 0);
 }
+#else
+#define vertex_snap_set_entry vertex_snap_set /* nothing to verify against */
+#endif
 
 static struct verify_point bytes_sum8_point = VERIFY_POINT("bytes_sum8", 1, 1);
 
+#if defined(__i386__)
 static uint32_t GAMEAPI bytes_sum8_entry(const uint8_t *p, int32_t n)
 {
     return (uint32_t)verify_call2(&bytes_sum8_point, (verify_fn2)0x41f700, (verify_fn2)(void *)bytes_sum8,
                                   (int32_t)(uintptr_t)p, n) & 0xff;
 }
+#else
+#define bytes_sum8_entry bytes_sum8 /* nothing to verify against */
+#endif
 
 static struct verify_point texture_page_next_point = VERIFY_POINT("texture_page_next", 1, 1);
 
+#if defined(__i386__)
 static int32_t GAMEAPI texture_page_next_entry(void)
 {
     return verify_call2(&texture_page_next_point, (verify_fn2)0x4205f0, (verify_fn2)(void *)texture_page_next, 0, 0);
 }
+#else
+#define texture_page_next_entry texture_page_next /* nothing to verify against */
+#endif
 
 static struct verify_point vertices_snap_point = VERIFY_POINT_VOID("vertices_snap", 31, 1);
 
+#if defined(__i386__)
 static void GAMEAPI vertices_snap_entry(void)
 {
     verify_call2(&vertices_snap_point, (verify_fn2)0x420600, (verify_fn2)(void *)vertices_snap, 0, 0);
 }
+#else
+#define vertices_snap_entry vertices_snap /* nothing to verify against */
+#endif
 
 static struct verify_point vertices_snap_thunk_point = VERIFY_POINT_VOID("vertices_snap_thunk", 31, 1);
 
+#if defined(__i386__)
 static void GAMEAPI vertices_snap_thunk_entry(void)
 {
     verify_call2(&vertices_snap_thunk_point, (verify_fn2)0x420650, (verify_fn2)(void *)vertices_snap_thunk, 0, 0);
 }
+#else
+#define vertices_snap_thunk_entry vertices_snap_thunk /* nothing to verify against */
+#endif
 
 /* Group PB: the car functions whose whole call tree stays in game memory and that the C reaches by
  * address from cars_draw: the packet ring advance (with the tag list clear 0x427a40), the ride offset,
@@ -1416,26 +2041,38 @@ static void GAMEAPI vertices_snap_thunk_entry(void)
  * would always differ, and the rest calls Direct3D or takes more than two arguments. */
 static struct verify_point cars_packets_next_point = VERIFY_POINT_VOID("cars_packets_next", 31, 1);
 
+#if defined(__i386__)
 static void GAMEAPI cars_packets_next_entry(void)
 {
     verify_call2(&cars_packets_next_point, (verify_fn2)0x422080, (verify_fn2)(void *)cars_packets_next, 0, 0);
 }
+#else
+#define cars_packets_next_entry cars_packets_next /* nothing to verify against */
+#endif
 
 static struct verify_point car_ride_offset_update_point = VERIFY_POINT_VOID("car_ride_offset_update", 31, 1);
 
+#if defined(__i386__)
 static void GAMEAPI car_ride_offset_update_entry(uint32_t car)
 {
     verify_call2(&car_ride_offset_update_point, (verify_fn2)0x422140, (verify_fn2)(void *)car_ride_offset_update,
                  (int32_t)car, 0);
 }
+#else
+#define car_ride_offset_update_entry car_ride_offset_update /* nothing to verify against */
+#endif
 
 static struct verify_point cars_reflections_update_point = VERIFY_POINT_VOID("cars_reflections_update", 31, 1);
 
+#if defined(__i386__)
 static void GAMEAPI cars_reflections_update_entry(void)
 {
     verify_call2(&cars_reflections_update_point, (verify_fn2)0x422c80, (verify_fn2)(void *)cars_reflections_update,
                  0, 0);
 }
+#else
+#define cars_reflections_update_entry cars_reflections_update /* nothing to verify against */
+#endif
 
 /* Group PC: functions whose whole call tree stays in game memory: the per-frame car view flags and
  * smoke clouds (through the transform pointers, the sin / cos tables), the GTE state loads, the int16
@@ -1445,178 +2082,278 @@ static void GAMEAPI cars_reflections_update_entry(void)
  * per-vertex ones every 127th call, per-frame ones every 31st, rare set-up every call. */
 static struct verify_point cars_view_flags_update_point = VERIFY_POINT_VOID("cars_view_flags_update", 31, 1);
 
+#if defined(__i386__)
 static void GAMEAPI cars_view_flags_update_entry(void)
 {
     verify_call2(&cars_view_flags_update_point, (verify_fn2)0x4231f0, (verify_fn2)(void *)cars_view_flags_update, 0, 0);
 }
+#else
+#define cars_view_flags_update_entry cars_view_flags_update /* nothing to verify against */
+#endif
 
 static struct verify_point view_matrix_store_point = VERIFY_POINT_VOID("view_matrix_store", 31, 1);
 
+#if defined(__i386__)
 static void GAMEAPI view_matrix_store_entry(const uint32_t *m)
 {
     verify_call2(&view_matrix_store_point, (verify_fn2)0x423d10, (verify_fn2)(void *)view_matrix_store, (int32_t)(uintptr_t)m, 0);
 }
+#else
+#define view_matrix_store_entry view_matrix_store /* nothing to verify against */
+#endif
 
 static struct verify_point view_camera_load_point = VERIFY_POINT_VOID("view_camera_load", 31, 1);
 
+#if defined(__i386__)
 static void GAMEAPI view_camera_load_entry(const uint8_t *view)
 {
     verify_call2(&view_camera_load_point, (verify_fn2)0x423df0, (verify_fn2)(void *)view_camera_load, (int32_t)(uintptr_t)view, 0);
 }
+#else
+#define view_camera_load_entry view_camera_load /* nothing to verify against */
+#endif
 
 static struct verify_point view_lod_set_point = VERIFY_POINT_VOID("view_lod_set", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI view_lod_set_entry(uint32_t zoom)
 {
     verify_call2(&view_lod_set_point, (verify_fn2)0x423e10, (verify_fn2)(void *)view_lod_set, (int32_t)zoom, 0);
 }
+#else
+#define view_lod_set_entry view_lod_set /* nothing to verify against */
+#endif
 
 static struct verify_point view_zoom_set_point = VERIFY_POINT_VOID("view_zoom_set", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI view_zoom_set_entry(uint32_t zoom)
 {
     verify_call2(&view_zoom_set_point, (verify_fn2)0x423f00, (verify_fn2)(void *)view_zoom_set, (int32_t)zoom, 0);
 }
+#else
+#define view_zoom_set_entry view_zoom_set /* nothing to verify against */
+#endif
 
 static struct verify_point gte_screen_offset_set_point = VERIFY_POINT_VOID("gte_screen_offset_set", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI gte_screen_offset_set_entry(int32_t x, int32_t y)
 {
     verify_call2(&gte_screen_offset_set_point, (verify_fn2)0x426200, (verify_fn2)(void *)gte_screen_offset_set, (int32_t)x, (int32_t)y);
 }
+#else
+#define gte_screen_offset_set_entry gte_screen_offset_set /* nothing to verify against */
+#endif
 
 static struct verify_point gte_matrix_load_point = VERIFY_POINT_VOID("gte_matrix_load", 31, 1);
 
+#if defined(__i386__)
 static void GAMEAPI gte_matrix_load_entry(const uint8_t *m)
 {
     verify_call2(&gte_matrix_load_point, (verify_fn2)0x426330, (verify_fn2)(void *)gte_matrix_load, (int32_t)(uintptr_t)m, 0);
 }
+#else
+#define gte_matrix_load_entry gte_matrix_load /* nothing to verify against */
+#endif
 
 static struct verify_point gte_translation_load_point = VERIFY_POINT_VOID("gte_translation_load", 31, 1);
 
+#if defined(__i386__)
 static void GAMEAPI gte_translation_load_entry(const uint8_t *v)
 {
     verify_call2(&gte_translation_load_point, (verify_fn2)0x426530, (verify_fn2)(void *)gte_translation_load, (int32_t)(uintptr_t)v, 0);
 }
+#else
+#define gte_translation_load_entry gte_translation_load /* nothing to verify against */
+#endif
 
 static struct verify_point gte_rt_float_point = VERIFY_POINT_VOID("gte_rt_float", 127, 1);
 
+#if defined(__i386__)
 static void GAMEAPI gte_rt_float_entry(void)
 {
     verify_call2(&gte_rt_float_point, (verify_fn2)0x426620, (verify_fn2)(void *)gte_rt_float, 0, 0);
 }
+#else
+#define gte_rt_float_entry gte_rt_float /* nothing to verify against */
+#endif
 
 static struct verify_point gte_rtps_float_point = VERIFY_POINT_VOID("gte_rtps_float", 127, 1);
 
+#if defined(__i386__)
 static void GAMEAPI gte_rtps_float_entry(void)
 {
     verify_call2(&gte_rtps_float_point, (verify_fn2)0x4266d0, (verify_fn2)(void *)gte_rtps_float, 0, 0);
 }
+#else
+#define gte_rtps_float_entry gte_rtps_float /* nothing to verify against */
+#endif
 
 static struct verify_point matrix_mul_into_point = VERIFY_POINT_VOID("matrix_mul_into", 31, 1);
 
+#if defined(__i386__)
 static void GAMEAPI matrix_mul_into_entry(const uint8_t *a, uint8_t *b)
 {
     verify_call2(&matrix_mul_into_point, (verify_fn2)0x426e90, (verify_fn2)(void *)matrix_mul_into, (int32_t)(uintptr_t)a, (int32_t)(uintptr_t)b);
 }
+#else
+#define matrix_mul_into_entry matrix_mul_into /* nothing to verify against */
+#endif
 
 static struct verify_point matrix_translation_set_point = VERIFY_POINT_VOID("matrix_translation_set", 31, 1);
 
+#if defined(__i386__)
 static void GAMEAPI matrix_translation_set_entry(uint8_t *m, const int32_t *v)
 {
     verify_call2(&matrix_translation_set_point, (verify_fn2)0x426f60, (verify_fn2)(void *)matrix_translation_set, (int32_t)(uintptr_t)m, (int32_t)(uintptr_t)v);
 }
+#else
+#define matrix_translation_set_entry matrix_translation_set /* nothing to verify against */
+#endif
 
 static struct verify_point gte_light_colour_point = VERIFY_POINT_VOID("gte_light_colour", 127, 1);
 
+#if defined(__i386__)
 static void GAMEAPI gte_light_colour_entry(void)
 {
     verify_call2(&gte_light_colour_point, (verify_fn2)0x427100, (verify_fn2)(void *)gte_light_colour, 0, 0);
 }
+#else
+#define gte_light_colour_entry gte_light_colour /* nothing to verify against */
+#endif
 
 static struct verify_point gte_light_colour_float_point = VERIFY_POINT_VOID("gte_light_colour_float", 127, 1);
 
+#if defined(__i386__)
 static void GAMEAPI gte_light_colour_float_entry(void)
 {
     verify_call2(&gte_light_colour_float_point, (verify_fn2)0x427400, (verify_fn2)(void *)gte_light_colour_float, 0, 0);
 }
+#else
+#define gte_light_colour_float_entry gte_light_colour_float /* nothing to verify against */
+#endif
 
 static struct verify_point gte_nclip_point = VERIFY_POINT("gte_nclip", 127, 1);
 
+#if defined(__i386__)
 static int32_t GAMEAPI gte_nclip_entry(void)
 {
     return (int32_t)verify_call2(&gte_nclip_point, (verify_fn2)0x4278a0, (verify_fn2)(void *)gte_nclip, 0, 0);
 }
+#else
+#define gte_nclip_entry gte_nclip /* nothing to verify against */
+#endif
 
 static struct verify_point ot_clear_reverse_point = VERIFY_POINT("ot_clear_reverse", 31, 1);
 
+#if defined(__i386__)
 static int32_t GAMEAPI ot_clear_reverse_entry(uint32_t *ot, uint32_t n)
 {
     return (int32_t)verify_call2(&ot_clear_reverse_point, (verify_fn2)0x427a70, (verify_fn2)(void *)ot_clear_reverse, (int32_t)(uintptr_t)ot, (int32_t)n);
 }
+#else
+#define ot_clear_reverse_entry ot_clear_reverse /* nothing to verify against */
+#endif
 
 static struct verify_point ot_add_prim_point = VERIFY_POINT("ot_add_prim", 127, 1);
 
+#if defined(__i386__)
 static uint32_t GAMEAPI ot_add_prim_entry(uint32_t entry, uint32_t *prim)
 {
     return (uint32_t)verify_call2(&ot_add_prim_point, (verify_fn2)0x427ab0, (verify_fn2)(void *)ot_add_prim, (int32_t)entry, (int32_t)(uintptr_t)prim);
 }
+#else
+#define ot_add_prim_entry ot_add_prim /* nothing to verify against */
+#endif
 
 static struct verify_point vertex_project_float_point = VERIFY_POINT_VOID("vertex_project_float", 127, 1);
 
+#if defined(__i386__)
 static void GAMEAPI vertex_project_float_entry(uint32_t a)
 {
     verify_call2(&vertex_project_float_point, (verify_fn2)0x428900, (verify_fn2)(void *)vertex_project_float, (int32_t)a, 0);
 }
+#else
+#define vertex_project_float_entry vertex_project_float /* nothing to verify against */
+#endif
 
 static struct verify_point light_matrix_load_point = VERIFY_POINT_VOID("light_matrix_load", 31, 1);
 
+#if defined(__i386__)
 static void GAMEAPI light_matrix_load_entry(const uint32_t *m)
 {
     verify_call2(&light_matrix_load_point, (verify_fn2)0x428940, (verify_fn2)(void *)light_matrix_load, (int32_t)(uintptr_t)m, 0);
 }
+#else
+#define light_matrix_load_entry light_matrix_load /* nothing to verify against */
+#endif
 
 static struct verify_point projection_push_point = VERIFY_POINT_VOID("projection_push", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI projection_push_entry(void)
 {
     verify_call2(&projection_push_point, (verify_fn2)0x428a80, (verify_fn2)(void *)projection_push, 0, 0);
 }
+#else
+#define projection_push_entry projection_push /* nothing to verify against */
+#endif
 
 static struct verify_point projection_pop_point = VERIFY_POINT_VOID("projection_pop", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI projection_pop_entry(void)
 {
     verify_call2(&projection_pop_point, (verify_fn2)0x428b00, (verify_fn2)(void *)projection_pop, 0, 0);
 }
+#else
+#define projection_pop_entry projection_pop /* nothing to verify against */
+#endif
 
 static struct verify_point far_plane_set_point = VERIFY_POINT_VOID("far_plane_set", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI far_plane_set_entry(uint32_t f)
 {
     verify_call2(&far_plane_set_point, (verify_fn2)0x428b90, (verify_fn2)(void *)far_plane_set, (int32_t)f, 0);
 }
+#else
+#define far_plane_set_entry far_plane_set /* nothing to verify against */
+#endif
 
 static struct verify_point matrix_transpose_s16_point = VERIFY_POINT_VOID("matrix_transpose_s16", 31, 1);
 
+#if defined(__i386__)
 static void GAMEAPI matrix_transpose_s16_entry(const uint8_t *src, int16_t *dst)
 {
     verify_call2(&matrix_transpose_s16_point, (verify_fn2)0x428be0, (verify_fn2)(void *)matrix_transpose_s16, (int32_t)(uintptr_t)src, (int32_t)(uintptr_t)dst);
 }
+#else
+#define matrix_transpose_s16_entry matrix_transpose_s16 /* nothing to verify against */
+#endif
 
 static struct verify_point vec_normalise_x87_point = VERIFY_POINT("vec_normalise_x87", 31, 1);
 
+#if defined(__i386__)
 static int32_t GAMEAPI vec_normalise_x87_entry(uint32_t a, uint32_t b)
 {
     return (int32_t)verify_call2(&vec_normalise_x87_point, (verify_fn2)0x4290b0, (verify_fn2)(void *)vec_normalise_x87, (int32_t)a, (int32_t)b);
 }
+#else
+#define vec_normalise_x87_entry vec_normalise_x87 /* nothing to verify against */
+#endif
 
 static struct verify_point smoke_clouds_draw_point = VERIFY_POINT_VOID("smoke_clouds_draw", 31, 1);
 
+#if defined(__i386__)
 static void GAMEAPI smoke_clouds_draw_entry(void)
 {
     verify_call2(&smoke_clouds_draw_point, (verify_fn2)0x42b9a0, (verify_fn2)(void *)smoke_clouds_draw, 0, 0);
 }
+#else
+#define smoke_clouds_draw_entry smoke_clouds_draw /* nothing to verify against */
+#endif
 
 /* Group PD: functions whose whole call tree stays in game memory: the screen tints (the shake flash also
  * through 0x485050 in network play, the tint quad through the empty 0x479ae0), the font lookup, the text
@@ -1626,144 +2363,220 @@ static void GAMEAPI smoke_clouds_draw_entry(void)
  * arguments, allocates or logs. */
 static struct verify_point shake_flash_tint_point = VERIFY_POINT_VOID("shake_flash_tint", 31, 1);
 
+#if defined(__i386__)
 static void GAMEAPI shake_flash_tint_entry(uint32_t car)
 {
     verify_call2(&shake_flash_tint_point, (verify_fn2)0x42be20, (verify_fn2)(void *)shake_flash_tint, (int32_t)car, 0);
 }
+#else
+#define shake_flash_tint_entry shake_flash_tint /* nothing to verify against */
+#endif
 
 static struct verify_point fade_tint_add_point = VERIFY_POINT_VOID("fade_tint_add", 31, 1);
 
+#if defined(__i386__)
 static void GAMEAPI fade_tint_add_entry(int32_t n)
 {
     verify_call2(&fade_tint_add_point, (verify_fn2)0x42bf20, (verify_fn2)(void *)fade_tint_add, (int32_t)n, 0);
 }
+#else
+#define fade_tint_add_entry fade_tint_add /* nothing to verify against */
+#endif
 
 static struct verify_point screen_tint_add_point = VERIFY_POINT("screen_tint_add", 31, 1);
 
+#if defined(__i386__)
 static uint32_t GAMEAPI screen_tint_add_entry(uint32_t colour)
 {
     return (uint32_t)verify_call2(&screen_tint_add_point, (verify_fn2)0x42bfc0, (verify_fn2)(void *)screen_tint_add, (int32_t)colour, 0);
 }
+#else
+#define screen_tint_add_entry screen_tint_add /* nothing to verify against */
+#endif
 
 static struct verify_point screen_tint_draw_point = VERIFY_POINT_VOID("screen_tint_draw", 31, 1);
 
+#if defined(__i386__)
 static void GAMEAPI screen_tint_draw_entry(uint32_t arg)
 {
     verify_call2(&screen_tint_draw_point, (verify_fn2)0x42c0a0, (verify_fn2)(void *)screen_tint_draw, (int32_t)arg, 0);
 }
+#else
+#define screen_tint_draw_entry screen_tint_draw /* nothing to verify against */
+#endif
 
 static struct verify_point font_by_id_point = VERIFY_POINT("font_by_id", 127, 1);
 
+#if defined(__i386__)
 static uint32_t GAMEAPI font_by_id_entry(uint32_t id)
 {
     return (uint32_t)verify_call2(&font_by_id_point, (verify_fn2)0x42e050, (verify_fn2)(void *)font_by_id, (int32_t)id, 0);
 }
+#else
+#define font_by_id_entry font_by_id /* nothing to verify against */
+#endif
 
 static struct verify_point text_section_find_point = VERIFY_POINT("text_section_find", 31, 1);
 
+#if defined(__i386__)
 static uint32_t GAMEAPI text_section_find_entry(const char *name)
 {
     return (uint32_t)verify_call2(&text_section_find_point, (verify_fn2)0x42e4b0, (verify_fn2)(void *)text_section_find, (int32_t)(uintptr_t)name, 0);
 }
+#else
+#define text_section_find_entry text_section_find /* nothing to verify against */
+#endif
 
 static struct verify_point string_active_point = VERIFY_POINT("string_active", 127, 1);
 
+#if defined(__i386__)
 static uint32_t GAMEAPI string_active_entry(int32_t i)
 {
     return (uint32_t)verify_call2(&string_active_point, (verify_fn2)0x42ea00, (verify_fn2)(void *)string_active, (int32_t)i, 0);
 }
+#else
+#define string_active_entry string_active /* nothing to verify against */
+#endif
 
 static struct verify_point string_off_point = VERIFY_POINT_VOID("string_off", 31, 1);
 
+#if defined(__i386__)
 static void GAMEAPI string_off_entry(int32_t i)
 {
     verify_call2(&string_off_point, (verify_fn2)0x42eab0, (verify_fn2)(void *)string_off, (int32_t)i, 0);
 }
+#else
+#define string_off_entry string_off /* nothing to verify against */
+#endif
 
 static struct verify_point string_get_width_point = VERIFY_POINT("string_get_width", 31, 1);
 
+#if defined(__i386__)
 static uint32_t GAMEAPI string_get_width_entry(int32_t i)
 {
     return (uint32_t)verify_call2(&string_get_width_point, (verify_fn2)0x42f030, (verify_fn2)(void *)string_get_width, (int32_t)i, 0);
 }
+#else
+#define string_get_width_entry string_get_width /* nothing to verify against */
+#endif
 
 static struct verify_point string_get_height_point = VERIFY_POINT("string_get_height", 31, 1);
 
+#if defined(__i386__)
 static uint32_t GAMEAPI string_get_height_entry(int32_t i)
 {
     return (uint32_t)verify_call2(&string_get_height_point, (verify_fn2)0x42f070, (verify_fn2)(void *)string_get_height, (int32_t)i, 0);
 }
+#else
+#define string_get_height_entry string_get_height /* nothing to verify against */
+#endif
 
 static struct verify_point string_has_marks_point = VERIFY_POINT("string_has_marks", 31, 1);
 
+#if defined(__i386__)
 static uint32_t GAMEAPI string_has_marks_entry(int32_t i)
 {
     return (uint32_t)verify_call2(&string_has_marks_point, (verify_fn2)0x42f0b0, (verify_fn2)(void *)string_has_marks, (int32_t)i, 0);
 }
+#else
+#define string_has_marks_entry string_has_marks /* nothing to verify against */
+#endif
 
 /* Group PE: the one- and two-argument functions whose call tree stays in game memory (text digits and
  * tab stops, the free text slot, the language, the frame sprites' set-up, the fades). Per-frame ones
  * every 31st call, the frame set-up every call. The rest take more arguments: fuzz only. */
 static struct verify_point decimal9_format_point = VERIFY_POINT_VOID("decimal9_format", 31, 1);
 
+#if defined(__i386__)
 static void GAMEAPI decimal9_format_entry(char *out, uint32_t v)
 {
     verify_call2(&decimal9_format_point, (verify_fn2)0x42fc40, (verify_fn2)(void *)decimal9_format,
                  (int32_t)(uintptr_t)out, (int32_t)v);
 }
+#else
+#define decimal9_format_entry decimal9_format /* nothing to verify against */
+#endif
 
 static struct verify_point decimal_parse_point = VERIFY_POINT("decimal_parse", 31, 1);
 
+#if defined(__i386__)
 static int32_t GAMEAPI decimal_parse_entry(const uint8_t *s, int32_t *value)
 {
     return verify_call2(&decimal_parse_point, (verify_fn2)0x42fcd0, (verify_fn2)(void *)decimal_parse,
                         (int32_t)(uintptr_t)s, (int32_t)(uintptr_t)value);
 }
+#else
+#define decimal_parse_entry decimal_parse /* nothing to verify against */
+#endif
 
 static struct verify_point text_slot_free_point = VERIFY_POINT("text_slot_free", 31, 1);
 
+#if defined(__i386__)
 static int32_t GAMEAPI text_slot_free_entry(void)
 {
     return verify_call2(&text_slot_free_point, (verify_fn2)0x42fd10, (verify_fn2)(void *)text_slot_free, 0, 0);
 }
+#else
+#define text_slot_free_entry text_slot_free /* nothing to verify against */
+#endif
 
 static struct verify_point text_tab_next_point = VERIFY_POINT("text_tab_next", 31, 1);
 
+#if defined(__i386__)
 static uint32_t GAMEAPI text_tab_next_entry(uint32_t x)
 {
     return (uint32_t)verify_call2(&text_tab_next_point, (verify_fn2)0x42fd60, (verify_fn2)(void *)text_tab_next,
                                   (int32_t)x, 0);
 }
+#else
+#define text_tab_next_entry text_tab_next /* nothing to verify against */
+#endif
 
 static struct verify_point language_get_point = VERIFY_POINT("language_get", 31, 1);
 
+#if defined(__i386__)
 static uint32_t GAMEAPI language_get_entry(void)
 {
     return (uint32_t)verify_call2(&language_get_point, (verify_fn2)0x430120, (verify_fn2)(void *)language_get, 0, 0);
 }
+#else
+#define language_get_entry language_get /* nothing to verify against */
+#endif
 
 static struct verify_point fe_frame_sprites_init_point = VERIFY_POINT_VOID("fe_frame_sprites_init", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI fe_frame_sprites_init_entry(uint8_t *p)
 {
     verify_call2(&fe_frame_sprites_init_point, (verify_fn2)0x4316d0, (verify_fn2)(void *)fe_frame_sprites_init,
                  (int32_t)(uintptr_t)p, 0);
 }
+#else
+#define fe_frame_sprites_init_entry fe_frame_sprites_init /* nothing to verify against */
+#endif
 
 static struct verify_point colour_fade_apply_point = VERIFY_POINT_VOID("colour_fade_apply", 31, 1);
 
+#if defined(__i386__)
 static void GAMEAPI colour_fade_apply_entry(uint8_t *out, const uint8_t *in)
 {
     verify_call2(&colour_fade_apply_point, (verify_fn2)0x432820, (verify_fn2)(void *)colour_fade_apply,
                  (int32_t)(uintptr_t)out, (int32_t)(uintptr_t)in);
 }
+#else
+#define colour_fade_apply_entry colour_fade_apply /* nothing to verify against */
+#endif
 
 static struct verify_point fade_scale_point = VERIFY_POINT("fade_scale", 31, 1);
 
+#if defined(__i386__)
 static int32_t GAMEAPI fade_scale_entry(int32_t v)
 {
     return verify_call2(&fade_scale_point, (verify_fn2)0x4328a0, (verify_fn2)(void *)fade_scale, v, 0);
 }
+#else
+#define fade_scale_entry fade_scale /* nothing to verify against */
+#endif
 
 /* Group PF: the HUD update (its tree builds sprite packets in the data section: the HUD pieces 0x438df0..0x439f20,
  * still original, and hud_sprite_set 0x4387d0, ours), every 31st call. The trails / beams (0x433f00 / 0x4345c0)
@@ -1772,10 +2585,14 @@ static int32_t GAMEAPI fade_scale_entry(int32_t v)
  * file loading, texture pages or the network HUD (0x45cfe0). */
 static struct verify_point hud_update_point = VERIFY_POINT_VOID("hud_update", 31, 1);
 
+#if defined(__i386__)
 static void GAMEAPI hud_update_entry(uint32_t *slot)
 {
     verify_call2(&hud_update_point, (verify_fn2)0x4386f0, (verify_fn2)(void *)hud_update, (int32_t)(uintptr_t)slot, 0);
 }
+#else
+#define hud_update_entry hud_update /* nothing to verify against */
+#endif
 
 /* Group PG: the HUD pieces called from hud_update (sprite packets in the data section through
  * hud_sprite_set 0x4387d0; no transform, text or message calls) and the light slot moves / frees
@@ -1786,113 +2603,173 @@ static void GAMEAPI hud_update_entry(uint32_t *slot)
  * light_slot_new, flare_add / flare_quad / flare_quad_colour (more than two arguments), the CPU checks. */
 static struct verify_point hud_speed_digits_point = VERIFY_POINT_VOID("hud_speed_digits", 31, 1);
 
+#if defined(__i386__)
 static void GAMEAPI hud_speed_digits_entry(int32_t v)
 {
     verify_call2(&hud_speed_digits_point, (verify_fn2)0x438df0, (verify_fn2)(void *)hud_speed_digits, v, 0);
 }
+#else
+#define hud_speed_digits_entry hud_speed_digits /* nothing to verify against */
+#endif
 
 static struct verify_point hud_lap_place_point = VERIFY_POINT_VOID("hud_lap_place", 31, 1);
 
+#if defined(__i386__)
 static void GAMEAPI hud_lap_place_entry(uint8_t *slot)
 {
     verify_call2(&hud_lap_place_point, (verify_fn2)0x438e60, (verify_fn2)(void *)hud_lap_place, (int32_t)(uintptr_t)slot, 0);
 }
+#else
+#define hud_lap_place_entry hud_lap_place /* nothing to verify against */
+#endif
 
 static struct verify_point hud_time_digits_point = VERIFY_POINT_VOID("hud_time_digits", 31, 1);
 
+#if defined(__i386__)
 static void GAMEAPI hud_time_digits_entry(uint8_t *slot)
 {
     verify_call2(&hud_time_digits_point, (verify_fn2)0x438fb0, (verify_fn2)(void *)hud_time_digits, (int32_t)(uintptr_t)slot, 0);
 }
+#else
+#define hud_time_digits_entry hud_time_digits /* nothing to verify against */
+#endif
 
 static struct verify_point hud_warning_sprite_point = VERIFY_POINT("hud_warning_sprite", 31, 1);
 
+#if defined(__i386__)
 static int32_t GAMEAPI hud_warning_sprite_entry(uint8_t *slot)
 {
     return verify_call2(&hud_warning_sprite_point, (verify_fn2)0x439050, (verify_fn2)(void *)hud_warning_sprite,
                         (int32_t)(uintptr_t)slot, 0);
 }
+#else
+#define hud_warning_sprite_entry hud_warning_sprite /* nothing to verify against */
+#endif
 
 static struct verify_point hud_weapon_icons_point = VERIFY_POINT_VOID("hud_weapon_icons", 31, 1);
 
+#if defined(__i386__)
 static void GAMEAPI hud_weapon_icons_entry(uint8_t *slot)
 {
     verify_call2(&hud_weapon_icons_point, (verify_fn2)0x4390c0, (verify_fn2)(void *)hud_weapon_icons, (int32_t)(uintptr_t)slot, 0);
 }
+#else
+#define hud_weapon_icons_entry hud_weapon_icons /* nothing to verify against */
+#endif
 
 static struct verify_point hud_lap_banner_point = VERIFY_POINT_VOID("hud_lap_banner", 31, 1);
 
+#if defined(__i386__)
 static void GAMEAPI hud_lap_banner_entry(uint8_t *slot, int32_t hide)
 {
     verify_call2(&hud_lap_banner_point, (verify_fn2)0x439270, (verify_fn2)(void *)hud_lap_banner, (int32_t)(uintptr_t)slot, hide);
 }
+#else
+#define hud_lap_banner_entry hud_lap_banner /* nothing to verify against */
+#endif
 
 static struct verify_point hud_banner_set_point = VERIFY_POINT_VOID("hud_banner_set", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI hud_banner_set_entry(int32_t final)
 {
     verify_call2(&hud_banner_set_point, (verify_fn2)0x4392e0, (verify_fn2)(void *)hud_banner_set, final, 0);
 }
+#else
+#define hud_banner_set_entry hud_banner_set /* nothing to verify against */
+#endif
 
 static struct verify_point hud_split_layout_point = VERIFY_POINT_VOID("hud_split_layout", 31, 1);
 
+#if defined(__i386__)
 static void GAMEAPI hud_split_layout_entry(uint8_t *slot, int32_t mode)
 {
     verify_call2(&hud_split_layout_point, (verify_fn2)0x439f20, (verify_fn2)(void *)hud_split_layout, (int32_t)(uintptr_t)slot, mode);
 }
+#else
+#define hud_split_layout_entry hud_split_layout /* nothing to verify against */
+#endif
 
 static struct verify_point light_cells_remove_point = VERIFY_POINT_VOID("light_cells_remove", 31, 1);
 
+#if defined(__i386__)
 static void GAMEAPI light_cells_remove_entry(uint32_t n)
 {
     verify_call2(&light_cells_remove_point, (verify_fn2)0x4410f0, (verify_fn2)(void *)light_cells_remove, (int32_t)n, 0);
 }
+#else
+#define light_cells_remove_entry light_cells_remove /* nothing to verify against */
+#endif
 
 static struct verify_point light_slot_free_point = VERIFY_POINT_VOID("light_slot_free", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI light_slot_free_entry(uint32_t n)
 {
     verify_call2(&light_slot_free_point, (verify_fn2)0x441370, (verify_fn2)(void *)light_slot_free, (int32_t)n, 0);
 }
+#else
+#define light_slot_free_entry light_slot_free /* nothing to verify against */
+#endif
 
 static struct verify_point light_reposition_point = VERIFY_POINT_VOID("light_reposition", 31, 1);
 
+#if defined(__i386__)
 static void GAMEAPI light_reposition_entry(uint32_t n, const int32_t *pos)
 {
     verify_call2(&light_reposition_point, (verify_fn2)0x4413a0, (verify_fn2)(void *)light_reposition, (int32_t)n,
                  (int32_t)(uintptr_t)pos);
 }
+#else
+#define light_reposition_entry light_reposition /* nothing to verify against */
+#endif
 
 /* Group PH: the argument-less set-ups whose call tree stays in game memory (the cursor bar's,
  * the menu tiles' and the frame sprites' sprites, every call) and the menu measuring (every 31st
  * call). The rest: fuzz only (allocation, drawing into ordering tables, sound, or more arguments). */
 static struct verify_point menu_bar_sprites_init_point = VERIFY_POINT_VOID("menu_bar_sprites_init", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI menu_bar_sprites_init_entry(void)
 {
     verify_call2(&menu_bar_sprites_init_point, (verify_fn2)0x446250, (verify_fn2)(void *)menu_bar_sprites_init, 0, 0);
 }
+#else
+#define menu_bar_sprites_init_entry menu_bar_sprites_init /* nothing to verify against */
+#endif
 
 static struct verify_point menu_tiles_init_point = VERIFY_POINT_VOID("menu_tiles_init", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI menu_tiles_init_entry(void)
 {
     verify_call2(&menu_tiles_init_point, (verify_fn2)0x453020, (verify_fn2)(void *)menu_tiles_init, 0, 0);
 }
+#else
+#define menu_tiles_init_entry menu_tiles_init /* nothing to verify against */
+#endif
 
 static struct verify_point menu_frame_sprites_init_point = VERIFY_POINT_VOID("menu_frame_sprites_init", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI menu_frame_sprites_init_entry(void)
 {
     verify_call2(&menu_frame_sprites_init_point, (verify_fn2)0x453130, (verify_fn2)(void *)menu_frame_sprites_init, 0, 0);
 }
+#else
+#define menu_frame_sprites_init_entry menu_frame_sprites_init /* nothing to verify against */
+#endif
 
 static struct verify_point menu_measure_all_point = VERIFY_POINT_VOID("menu_measure_all", 31, 1);
 
+#if defined(__i386__)
 static void GAMEAPI menu_measure_all_entry(void)
 {
     verify_call2(&menu_measure_all_point, (verify_fn2)0x44cc50, (verify_fn2)(void *)menu_measure_all, 0, 0);
 }
+#else
+#define menu_measure_all_entry menu_measure_all /* nothing to verify against */
+#endif
 
 /* Group PI: the menu box quads (per frame, every 31st call; fade_scale and word_exchange only touch game
  * memory), the side panel quad's and the text box frames' set-up (every call). The side panel placing takes
@@ -1900,26 +2777,38 @@ static void GAMEAPI menu_measure_all_entry(void)
  * fuzz only. */
 static struct verify_point menu_box_quads_draw_point = VERIFY_POINT_VOID("menu_box_quads_draw", 31, 1);
 
+#if defined(__i386__)
 static void GAMEAPI menu_box_quads_draw_entry(uint32_t ot, int32_t page)
 {
     verify_call2(&menu_box_quads_draw_point, (verify_fn2)0x453220, (verify_fn2)(void *)menu_box_quads_draw,
                  (int32_t)ot, page);
 }
+#else
+#define menu_box_quads_draw_entry menu_box_quads_draw /* nothing to verify against */
+#endif
 
 static struct verify_point fe_side_panel_init_point = VERIFY_POINT_VOID("fe_side_panel_init", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI fe_side_panel_init_entry(void)
 {
     verify_call2(&fe_side_panel_init_point, (verify_fn2)0x453570, (verify_fn2)(void *)fe_side_panel_init, 0, 0);
 }
+#else
+#define fe_side_panel_init_entry fe_side_panel_init /* nothing to verify against */
+#endif
 
 static struct verify_point fe_corner_frames_init_point = VERIFY_POINT_VOID("fe_corner_frames_init", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI fe_corner_frames_init_entry(void)
 {
     verify_call2(&fe_corner_frames_init_point, (verify_fn2)0x453710, (verify_fn2)(void *)fe_corner_frames_init,
                  0, 0);
 }
+#else
+#define fe_corner_frames_init_entry fe_corner_frames_init /* nothing to verify against */
+#endif
 
 /* Group PJ: the flame step (per front-end frame through 0x457e90, and 50 times at set-up; only the flame
  * buffers 0x6b9d60..0x6bf160 and the generator seed 0x4b11d8), every 31st call. The front-end models and
@@ -1927,10 +2816,14 @@ static void GAMEAPI fe_corner_frames_init_entry(void)
  * surface: fuzz only. */
 static struct verify_point flame_step_point = VERIFY_POINT_VOID("flame_step", 31, 1);
 
+#if defined(__i386__)
 static void GAMEAPI flame_step_entry(void)
 {
     verify_call2(&flame_step_point, (verify_fn2)0x457bf0, (verify_fn2)(void *)flame_step, 0, 0);
 }
+#else
+#define flame_step_entry flame_step /* nothing to verify against */
+#endif
 
 /* Group PK: the functions whose whole call tree stays in game memory: the incoming-missile level, the light
  * colour matrices (their out / in arrays are the caller's, written / read only), the
@@ -1941,108 +2834,160 @@ static void GAMEAPI flame_step_entry(void)
  * 0x6ccbf2; 0x45ba30 / 0x45bb70 take three arguments: fuzz only. */
 static struct verify_point missile_lock_level_point = VERIFY_POINT("missile_lock_level", 31, 100);
 
+#if defined(__i386__)
 static int32_t GAMEAPI missile_lock_level_entry(const uint32_t *who)
 {
     return verify_call2(&missile_lock_level_point, (verify_fn2)0x458760, (verify_fn2)(void *)missile_lock_level,
                         (int32_t)who, 0);
 }
+#else
+#define missile_lock_level_entry missile_lock_level /* nothing to verify against */
+#endif
 
 static struct verify_point light_colours_from_ids_point = VERIFY_POINT_VOID("light_colours_from_ids", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI light_colours_from_ids_entry(uint32_t ids, uint32_t *out)
 {
     verify_call2(&light_colours_from_ids_point, (verify_fn2)0x459cb0, (verify_fn2)(void *)light_colours_from_ids,
                  (int32_t)ids, (int32_t)out);
 }
+#else
+#define light_colours_from_ids_entry light_colours_from_ids /* nothing to verify against */
+#endif
 
 static struct verify_point prim_uv_rotate_point = VERIFY_POINT_VOID("prim_uv_rotate", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI prim_uv_rotate_entry(uint8_t *prim, int32_t k)
 {
     verify_call2(&prim_uv_rotate_point, (verify_fn2)0x45a2f0, (verify_fn2)(void *)prim_uv_rotate, (int32_t)prim, k);
 }
+#else
+#define prim_uv_rotate_entry prim_uv_rotate /* nothing to verify against */
+#endif
 
 static struct verify_point light_colours_set_point = VERIFY_POINT_VOID("light_colours_set", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI light_colours_set_entry(const uint32_t *lights)
 {
     verify_call2(&light_colours_set_point, (verify_fn2)0x45b200, (verify_fn2)(void *)light_colours_set,
                  (int32_t)lights, 0);
 }
+#else
+#define light_colours_set_entry light_colours_set /* nothing to verify against */
+#endif
 
 static struct verify_point tint_byte_approach_point = VERIFY_POINT("tint_byte_approach", 31, 100);
 
+#if defined(__i386__)
 static uint32_t GAMEAPI tint_byte_approach_entry(uint32_t cur, uint32_t want)
 {
     return (uint32_t)verify_call2(&tint_byte_approach_point, (verify_fn2)0x45b9f0,
                                   (verify_fn2)(void *)tint_byte_approach, (int32_t)cur, (int32_t)want);
 }
+#else
+#define tint_byte_approach_entry tint_byte_approach /* nothing to verify against */
+#endif
 
 static struct verify_point k5_object_trigger_point = VERIFY_POINT("k5_object_trigger", 1, 1);
 
+#if defined(__i386__)
 static int32_t GAMEAPI k5_object_trigger_entry(uint8_t *body)
 {
     return verify_call2(&k5_object_trigger_point, (verify_fn2)0x45bbf0, (verify_fn2)(void *)k5_object_trigger,
                         (int32_t)body, 0);
 }
+#else
+#define k5_object_trigger_entry k5_object_trigger /* nothing to verify against */
+#endif
 
 /* Group PL: the two that run outside network play and touch only game memory: the chat text ids
  * reset (0x45cfb0) and the chat / key-slot reset (0x45c340; 0x439fd0 clears the key slots). Every call. */
 static struct verify_point netplay_chat_reset_point = VERIFY_POINT("netplay_chat_reset", 1, 1);
 
+#if defined(__i386__)
 static int32_t GAMEAPI netplay_chat_reset_entry(void)
 {
     return verify_call2(&netplay_chat_reset_point, (verify_fn2)0x45c340, (verify_fn2)(void *)netplay_chat_reset, 0, 0);
 }
+#else
+#define netplay_chat_reset_entry netplay_chat_reset /* nothing to verify against */
+#endif
 
 static struct verify_point netplay_chat_texts_clear_point = VERIFY_POINT_VOID("netplay_chat_texts_clear", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI netplay_chat_texts_clear_entry(void)
 {
     verify_call2(&netplay_chat_texts_clear_point, (verify_fn2)0x45cfb0, (verify_fn2)(void *)netplay_chat_texts_clear,
                  0, 0);
 }
+#else
+#define netplay_chat_texts_clear_entry netplay_chat_texts_clear /* nothing to verify against */
+#endif
 
 /* Group PM: the two that run in menus / the attract demo and touch only game memory: the controls
  * sequence step (0x45ef40) and the front end's sparks drawn (0x462bb0; the clip test 0x426b80, the
  * ordering-table link 0x429080 and 0x4290a0 are memory only). Every 31st call. */
 static struct verify_point net_sequence_advance_point = VERIFY_POINT_VOID("net_sequence_advance", 31, 1);
 
+#if defined(__i386__)
 static void GAMEAPI net_sequence_advance_entry(void)
 {
     verify_call2(&net_sequence_advance_point, (verify_fn2)0x45ef40, (verify_fn2)(void *)net_sequence_advance, 0, 0);
 }
+#else
+#define net_sequence_advance_entry net_sequence_advance /* nothing to verify against */
+#endif
 
 static struct verify_point sparks_draw_point = VERIFY_POINT_VOID("sparks_draw", 31, 1);
 
+#if defined(__i386__)
 static void GAMEAPI sparks_draw_entry(uint32_t depth)
 {
     verify_call2(&sparks_draw_point, (verify_fn2)0x462bb0, (verify_fn2)(void *)sparks_draw, (int32_t)depth, 0);
 }
+#else
+#define sparks_draw_entry sparks_draw /* nothing to verify against */
+#endif
 
 /* Group PN: the per-frame drawing that touches only game memory (the GTE transform / projection through
  * 0x6ccd78 / 0x6ccd80 and 0x4288c0 / 0x426b00, __ftol): the car shadows (0x46c840, 0x46c9d0, x87) and the
  * meters' colours (0x469d60, race mode 4). */
 static struct verify_point shadows_draw_point = VERIFY_POINT_VOID("shadows_draw", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI shadows_draw_entry(void)
 {
     verify_call2(&shadows_draw_point, (verify_fn2)0x46c840, (verify_fn2)(void *)shadows_draw, 0, 0);
 }
+#else
+#define shadows_draw_entry shadows_draw /* nothing to verify against */
+#endif
 
 static struct verify_point shadow_add_point = VERIFY_POINT_VOID("shadow_add", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI shadow_add_entry(uint32_t car, uint32_t ot)
 {
     verify_call2(&shadow_add_point, (verify_fn2)0x46c9d0, (verify_fn2)(void *)shadow_add, car, ot);
 }
+#else
+#define shadow_add_entry shadow_add /* nothing to verify against */
+#endif
 
 static struct verify_point meters_colour_set_point = VERIFY_POINT_VOID("meters_colour_set", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI meters_colour_set_entry(uint32_t rgb)
 {
     verify_call2(&meters_colour_set_point, (verify_fn2)0x469d60, (verify_fn2)(void *)meters_colour_set, rgb, 0);
 }
+#else
+#define meters_colour_set_entry meters_colour_set /* nothing to verify against */
+#endif
 
 /* Group PO: the tyre trail (src/game/orig_po.c). Its texture words (0x46e450, on surface changes) and the
  * per-car trail packets (0x46e4b0: 0x486270, gte_rotate 0x428090 and the x87 transform 0x426620, packets into
@@ -2050,19 +2995,27 @@ static void GAMEAPI meters_colour_set_entry(uint32_t rgb)
  * builders are fuzz-only: the transform leaves 0x6ccd74 pointing at their stack records. */
 static struct verify_point car_trail_texture_set_point = VERIFY_POINT_VOID("car_trail_texture_set", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI car_trail_texture_set_entry(uint8_t *trail, uint32_t tex)
 {
     verify_call2(&car_trail_texture_set_point, (verify_fn2)0x46e450, (verify_fn2)(void *)car_trail_texture_set,
                  (int32_t)trail, (int32_t)tex);
 }
+#else
+#define car_trail_texture_set_entry car_trail_texture_set /* nothing to verify against */
+#endif
 
 static struct verify_point car_trail_draw_point = VERIFY_POINT_VOID("car_trail_draw", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI car_trail_draw_entry(uint8_t *car, uint32_t ot)
 {
     verify_call2(&car_trail_draw_point, (verify_fn2)0x46e4b0, (verify_fn2)(void *)car_trail_draw, (int32_t)car,
                  (int32_t)ot);
 }
+#else
+#define car_trail_draw_entry car_trail_draw /* nothing to verify against */
+#endif
 
 /* Group PP: no verify wrappers; every function is fuzz-only. The car flame (0x475580) and the track section
  * drawing (0x477940 / 0x4779f0) run the GTE transform, which leaves 0x6ccd74 pointing at the caller's stack
@@ -2083,13 +3036,18 @@ static void GAMEAPI car_trail_draw_entry(uint8_t *car, uint32_t ot)
  * 0x47b470 and the debris burst 0x47be70 (more than two arguments; the burst runs under 0x47c110). */
 static struct verify_point texture_anims_step_point = VERIFY_POINT_VOID("texture_anims_step", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI texture_anims_step_entry(void)
 {
     verify_call2(&texture_anims_step_point, (verify_fn2)0x478df0, (verify_fn2)(void *)texture_anims_step, 0, 0);
 }
+#else
+#define texture_anims_step_entry texture_anims_step /* nothing to verify against */
+#endif
 
 static struct verify_point text_messages_draw_point = VERIFY_POINT_VOID("text_messages_draw", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI text_messages_draw_entry(uint32_t owner, int32_t mode)
 {
     if (mode == 1) {
@@ -2099,62 +3057,93 @@ static void GAMEAPI text_messages_draw_entry(uint32_t owner, int32_t mode)
     verify_call2(&text_messages_draw_point, (verify_fn2)0x4792a0, (verify_fn2)(void *)text_messages_draw,
                  (int32_t)owner, mode);
 }
+#else
+#define text_messages_draw_entry text_messages_draw /* nothing to verify against */
+#endif
 
 static struct verify_point time_warp_view_effect_point = VERIFY_POINT_VOID("time_warp_view_effect", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI time_warp_view_effect_entry(const uint32_t *slot)
 {
     verify_call2(&time_warp_view_effect_point, (verify_fn2)0x479940, (verify_fn2)(void *)time_warp_view_effect,
                  (int32_t)(uintptr_t)slot, 0);
 }
+#else
+#define time_warp_view_effect_entry time_warp_view_effect /* nothing to verify against */
+#endif
 
 static struct verify_point view_surface_tint_point = VERIFY_POINT_VOID("view_surface_tint", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI view_surface_tint_entry(uint8_t *slot)
 {
     verify_call2(&view_surface_tint_point, (verify_fn2)0x479b30, (verify_fn2)(void *)view_surface_tint,
                  (int32_t)(uintptr_t)slot, 0);
 }
+#else
+#define view_surface_tint_entry view_surface_tint /* nothing to verify against */
+#endif
 
 static struct verify_point view_depth_markers_link_point = VERIFY_POINT_VOID("view_depth_markers_link", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI view_depth_markers_link_entry(void)
 {
     verify_call2(&view_depth_markers_link_point, (verify_fn2)0x479f60, (verify_fn2)(void *)view_depth_markers_link,
                  0, 0);
 }
+#else
+#define view_depth_markers_link_entry view_depth_markers_link /* nothing to verify against */
+#endif
 
 static struct verify_point track_runs_diff_texture_point = VERIFY_POINT_VOID("track_runs_diff_texture", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI track_runs_diff_texture_entry(uint32_t *now, uint32_t *before)
 {
     verify_call2(&track_runs_diff_texture_point, (verify_fn2)0x47a500, (verify_fn2)(void *)track_runs_diff_texture,
                  (int32_t)(uintptr_t)now, (int32_t)(uintptr_t)before);
 }
+#else
+#define track_runs_diff_texture_entry track_runs_diff_texture /* nothing to verify against */
+#endif
 
 static struct verify_point cars_glow_texture_cycle_point = VERIFY_POINT_VOID("cars_glow_texture_cycle", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI cars_glow_texture_cycle_entry(void)
 {
     verify_call2(&cars_glow_texture_cycle_point, (verify_fn2)0x47bd20, (verify_fn2)(void *)cars_glow_texture_cycle,
                  0, 0);
 }
+#else
+#define cars_glow_texture_cycle_entry cars_glow_texture_cycle /* nothing to verify against */
+#endif
 
 static struct verify_point object_debris_break_point = VERIFY_POINT("object_debris_break", 1, 10);
 
+#if defined(__i386__)
 static int32_t GAMEAPI object_debris_break_entry(uint8_t *obj)
 {
     return verify_call2(&object_debris_break_point, (verify_fn2)0x47c110, (verify_fn2)(void *)object_debris_break,
                         (int32_t)(uintptr_t)obj, 0);
 }
+#else
+#define object_debris_break_entry object_debris_break /* nothing to verify against */
+#endif
 
 static struct verify_point track_runs_light_flags_point = VERIFY_POINT_VOID("track_runs_light_flags", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI track_runs_light_flags_entry(uint32_t *list)
 {
     verify_call2(&track_runs_light_flags_point, (verify_fn2)0x47c420, (verify_fn2)(void *)track_runs_light_flags,
                  (int32_t)(uintptr_t)list, 0);
 }
+#else
+#define track_runs_light_flags_entry track_runs_light_flags /* nothing to verify against */
+#endif
 
 /* Group PR: the warp / ice overlays and sprites (src/game/orig_pr.c). The overlay draws (0x47db20 / 0x47db80:
  * the screen tint 0x42bfc0 and flash 0x42c040, globals only, once per frame), the light sprite release
@@ -2163,33 +3152,49 @@ static void GAMEAPI track_runs_light_flags_entry(uint32_t *list)
  * set-up and texture updates are fuzz-only (allocation, BMP files, DirectDraw texture locks). */
 static struct verify_point warp_overlay_draw_point = VERIFY_POINT_VOID("warp_overlay_draw", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI warp_overlay_draw_entry(void)
 {
     verify_call2(&warp_overlay_draw_point, (verify_fn2)0x47db20, (verify_fn2)(void *)warp_overlay_draw, 0, 0);
 }
+#else
+#define warp_overlay_draw_entry warp_overlay_draw /* nothing to verify against */
+#endif
 
 static struct verify_point ice_overlay_draw_point = VERIFY_POINT_VOID("ice_overlay_draw", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI ice_overlay_draw_entry(void)
 {
     verify_call2(&ice_overlay_draw_point, (verify_fn2)0x47db80, (verify_fn2)(void *)ice_overlay_draw, 0, 0);
 }
+#else
+#define ice_overlay_draw_entry ice_overlay_draw /* nothing to verify against */
+#endif
 
 static struct verify_point light_sprite_release_point = VERIFY_POINT_VOID("light_sprite_release", 1, 20);
 
+#if defined(__i386__)
 static void GAMEAPI light_sprite_release_entry(int32_t index)
 {
     verify_call2(&light_sprite_release_point, (verify_fn2)0x47dca0, (verify_fn2)(void *)light_sprite_release,
                  index, 0);
 }
+#else
+#define light_sprite_release_entry light_sprite_release /* nothing to verify against */
+#endif
 
 static struct verify_point marker_proximity_tint_point = VERIFY_POINT_VOID("marker_proximity_tint", 31, 100);
 
+#if defined(__i386__)
 static void GAMEAPI marker_proximity_tint_entry(const uint8_t *body)
 {
     verify_call2(&marker_proximity_tint_point, (verify_fn2)0x47ea00, (verify_fn2)(void *)marker_proximity_tint,
                  (int32_t)body, 0);
 }
+#else
+#define marker_proximity_tint_entry marker_proximity_tint /* nothing to verify against */
+#endif
 
 /* Group PS: functions whose whole call tree stays in game memory: the lock marker (0x4266d0, packets), the
  * weather's per-view drawing (screen flakes, rain / snow sprites through the transform pointers), the screen
@@ -2199,59 +3204,91 @@ static void GAMEAPI marker_proximity_tint_entry(const uint8_t *body)
  * surface lock / unlock, the low arena). */
 static struct verify_point lock_marker_draw_point = VERIFY_POINT_VOID("lock_marker_draw", 31, 1);
 
+#if defined(__i386__)
 static void GAMEAPI lock_marker_draw_entry(uint8_t *rec)
 {
     verify_call2(&lock_marker_draw_point, (verify_fn2)0x483d20, (verify_fn2)(void *)lock_marker_draw, (int32_t)(uintptr_t)rec, 0);
 }
+#else
+#define lock_marker_draw_entry lock_marker_draw /* nothing to verify against */
+#endif
 
 static struct verify_point weather_draw_point = VERIFY_POINT_VOID("weather_draw", 31, 1);
 
+#if defined(__i386__)
 static void GAMEAPI weather_draw_entry(uint8_t *slot)
 {
     verify_call2(&weather_draw_point, (verify_fn2)0x484980, (verify_fn2)(void *)weather_draw, (int32_t)(uintptr_t)slot, 0);
 }
+#else
+#define weather_draw_entry weather_draw /* nothing to verify against */
+#endif
 
 static struct verify_point net_tint_level_get_point = VERIFY_POINT("net_tint_level_get", 31, 1);
 
+#if defined(__i386__)
 static int32_t GAMEAPI net_tint_level_get_entry(int32_t *out)
 {
     return (int32_t)verify_call2(&net_tint_level_get_point, (verify_fn2)0x485050, (verify_fn2)(void *)net_tint_level_get, (int32_t)(uintptr_t)out, 0);
 }
+#else
+#define net_tint_level_get_entry net_tint_level_get /* nothing to verify against */
+#endif
 
 static struct verify_point screen_flakes_update_point = VERIFY_POINT_VOID("screen_flakes_update", 31, 1);
 
+#if defined(__i386__)
 static void GAMEAPI screen_flakes_update_entry(int32_t outdoors)
 {
     verify_call2(&screen_flakes_update_point, (verify_fn2)0x4857f0, (verify_fn2)(void *)screen_flakes_update, outdoors, 0);
 }
+#else
+#define screen_flakes_update_entry screen_flakes_update /* nothing to verify against */
+#endif
 
 static struct verify_point weather_brightness_point = VERIFY_POINT("weather_brightness", 31, 1);
 
+#if defined(__i386__)
 static int32_t GAMEAPI weather_brightness_entry(void)
 {
     return (int32_t)verify_call2(&weather_brightness_point, (verify_fn2)0x486240, (verify_fn2)(void *)weather_brightness, 0, 0);
 }
+#else
+#define weather_brightness_entry weather_brightness /* nothing to verify against */
+#endif
 
 static struct verify_point weather_level_lower_point = VERIFY_POINT("weather_level_lower", 31, 1);
 
+#if defined(__i386__)
 static int32_t GAMEAPI weather_level_lower_entry(void)
 {
     return (int32_t)verify_call2(&weather_level_lower_point, (verify_fn2)0x486270, (verify_fn2)(void *)weather_level_lower, 0, 0);
 }
+#else
+#define weather_level_lower_entry weather_level_lower /* nothing to verify against */
+#endif
 
 static struct verify_point weather_sky_offset_point = VERIFY_POINT("weather_sky_offset", 31, 1);
 
+#if defined(__i386__)
 static int32_t GAMEAPI weather_sky_offset_entry(void)
 {
     return (int32_t)verify_call2(&weather_sky_offset_point, (verify_fn2)0x486310, (verify_fn2)(void *)weather_sky_offset, 0, 0);
 }
+#else
+#define weather_sky_offset_entry weather_sky_offset /* nothing to verify against */
+#endif
 
 static struct verify_point weather_palette_get_point = VERIFY_POINT("weather_palette_get", 31, 1);
 
+#if defined(__i386__)
 static uint32_t GAMEAPI weather_palette_get_entry(void)
 {
     return (uint32_t)verify_call2(&weather_palette_get_point, (verify_fn2)0x486350, (verify_fn2)(void *)weather_palette_get, 0, 0);
 }
+#else
+#define weather_palette_get_entry weather_palette_get /* nothing to verify against */
+#endif
 
 /* Group PU: no verify wrappers; every function is fuzz-only. They call Windows (events, the mutex, the
  * receive thread, timeGetTime busy-waits, the dialog), DirectPlay / DirectPlayLobby / DirectInput through COM
@@ -2264,10 +3301,14 @@ static uint32_t GAMEAPI weather_palette_get_entry(void)
  * 0x6ccc6a a stack leftover in the original). The thunks only jump through the import table. */
 static struct verify_point net_chat_clear_point = VERIFY_POINT_VOID("net_chat_clear", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI net_chat_clear_entry(void)
 {
     verify_call2(&net_chat_clear_point, (verify_fn2)0x48d350, (verify_fn2)(void *)net_chat_clear, 0, 0);
 }
+#else
+#define net_chat_clear_entry net_chat_clear /* nothing to verify against */
+#endif
 
 /* Group XA: the front end items' callbacks whose call tree stays in game memory (config / race bytes, the
  * remembered item text, 0x447f20's 0x4cb46c, menu_param_callback 0x44d000 / track_title 0x448580; text
@@ -2277,192 +3318,300 @@ static void GAMEAPI net_chat_clear_entry(void)
  * and the time item (sprintf of a double) are fuzz-only. */
 static struct verify_point menu_item_text_keep_point = VERIFY_POINT_VOID("menu_item_text_keep", 1, 10);
 
+#if defined(__i386__)
 static void GAMEAPI menu_item_text_keep_entry(void)
 {
     verify_call2(&menu_item_text_keep_point, (verify_fn2)0x448cf0, (verify_fn2)(void *)menu_item_text_keep, 0, 0);
 }
+#else
+#define menu_item_text_keep_entry menu_item_text_keep /* nothing to verify against */
+#endif
 
 static struct verify_point menu_slider_set_64_point = VERIFY_POINT("menu_slider_set_64", 1, 10);
 
+#if defined(__i386__)
 static uint32_t GAMEAPI menu_slider_set_64_entry(uint32_t a)
 {
     return (uint32_t)verify_call2(&menu_slider_set_64_point, (verify_fn2)0x44ce70, (verify_fn2)(void *)menu_slider_set_64, (int32_t)a, 0);
 }
+#else
+#define menu_slider_set_64_entry menu_slider_set_64 /* nothing to verify against */
+#endif
 
 static struct verify_point menu_slider_set_68_point = VERIFY_POINT("menu_slider_set_68", 1, 10);
 
+#if defined(__i386__)
 static uint32_t GAMEAPI menu_slider_set_68_entry(uint32_t a)
 {
     return (uint32_t)verify_call2(&menu_slider_set_68_point, (verify_fn2)0x44ce80, (verify_fn2)(void *)menu_slider_set_68, (int32_t)a, 0);
 }
+#else
+#define menu_slider_set_68_entry menu_slider_set_68 /* nothing to verify against */
+#endif
 
 static struct verify_point menu_slider_set_6c_point = VERIFY_POINT("menu_slider_set_6c", 1, 10);
 
+#if defined(__i386__)
 static uint32_t GAMEAPI menu_slider_set_6c_entry(uint32_t a)
 {
     return (uint32_t)verify_call2(&menu_slider_set_6c_point, (verify_fn2)0x44ce90, (verify_fn2)(void *)menu_slider_set_6c, (int32_t)a, 0);
 }
+#else
+#define menu_slider_set_6c_entry menu_slider_set_6c /* nothing to verify against */
+#endif
 
 static struct verify_point menu_slider_set_70_point = VERIFY_POINT("menu_slider_set_70", 1, 10);
 
+#if defined(__i386__)
 static uint32_t GAMEAPI menu_slider_set_70_entry(uint32_t a)
 {
     return (uint32_t)verify_call2(&menu_slider_set_70_point, (verify_fn2)0x44cea0, (verify_fn2)(void *)menu_slider_set_70, (int32_t)a, 0);
 }
+#else
+#define menu_slider_set_70_entry menu_slider_set_70 /* nothing to verify against */
+#endif
 
 static struct verify_point menu_names_cb_point = VERIFY_POINT("menu_names_cb", 1, 10);
 
+#if defined(__i386__)
 static int32_t GAMEAPI menu_names_cb_entry(int32_t cmd, uint8_t *dst)
 {
     return verify_call2(&menu_names_cb_point, (verify_fn2)0x44ceb0, (verify_fn2)(void *)menu_names_cb, cmd, (int32_t)dst);
 }
+#else
+#define menu_names_cb_entry menu_names_cb /* nothing to verify against */
+#endif
 
 static struct verify_point menu_param_cb_0b_point = VERIFY_POINT("menu_param_cb_0b", 1, 10);
 
+#if defined(__i386__)
 static int32_t GAMEAPI menu_param_cb_0b_entry(int32_t cmd, uint8_t *dst)
 {
     return verify_call2(&menu_param_cb_0b_point, (verify_fn2)0x44cfc0, (verify_fn2)(void *)menu_param_cb_0b, cmd, (int32_t)dst);
 }
+#else
+#define menu_param_cb_0b_entry menu_param_cb_0b /* nothing to verify against */
+#endif
 
 static struct verify_point menu_param_cb_1f_point = VERIFY_POINT("menu_param_cb_1f", 1, 10);
 
+#if defined(__i386__)
 static int32_t GAMEAPI menu_param_cb_1f_entry(int32_t cmd, uint8_t *dst)
 {
     return verify_call2(&menu_param_cb_1f_point, (verify_fn2)0x44d130, (verify_fn2)(void *)menu_param_cb_1f, cmd, (int32_t)dst);
 }
+#else
+#define menu_param_cb_1f_entry menu_param_cb_1f /* nothing to verify against */
+#endif
 
 static struct verify_point menu_split_mode_cb_point = VERIFY_POINT("menu_split_mode_cb", 1, 10);
 
+#if defined(__i386__)
 static int32_t GAMEAPI menu_split_mode_cb_entry(int32_t cmd, uint8_t *dst)
 {
     return verify_call2(&menu_split_mode_cb_point, (verify_fn2)0x44d170, (verify_fn2)(void *)menu_split_mode_cb, cmd, (int32_t)dst);
 }
+#else
+#define menu_split_mode_cb_entry menu_split_mode_cb /* nothing to verify against */
+#endif
 
 static struct verify_point menu_movie_cb_point = VERIFY_POINT("menu_movie_cb", 1, 10);
 
+#if defined(__i386__)
 static int32_t GAMEAPI menu_movie_cb_entry(int32_t cmd, uint8_t *dst)
 {
     return verify_call2(&menu_movie_cb_point, (verify_fn2)0x44d2f0, (verify_fn2)(void *)menu_movie_cb, cmd, (int32_t)dst);
 }
+#else
+#define menu_movie_cb_entry menu_movie_cb /* nothing to verify against */
+#endif
 
 static struct verify_point menu_toggle_0c_point = VERIFY_POINT("menu_toggle_0c", 1, 10);
 
+#if defined(__i386__)
 static int32_t GAMEAPI menu_toggle_0c_entry(int32_t a)
 {
     return (int32_t)verify_call2(&menu_toggle_0c_point, (verify_fn2)0x44d3e0, (verify_fn2)(void *)menu_toggle_0c, (int32_t)a, 0);
 }
+#else
+#define menu_toggle_0c_entry menu_toggle_0c /* nothing to verify against */
+#endif
 
 static struct verify_point menu_toggle_0e_point = VERIFY_POINT("menu_toggle_0e", 1, 10);
 
+#if defined(__i386__)
 static int32_t GAMEAPI menu_toggle_0e_entry(int32_t a)
 {
     return (int32_t)verify_call2(&menu_toggle_0e_point, (verify_fn2)0x44d420, (verify_fn2)(void *)menu_toggle_0e, (int32_t)a, 0);
 }
+#else
+#define menu_toggle_0e_entry menu_toggle_0e /* nothing to verify against */
+#endif
 
 static struct verify_point menu_toggle_39_point = VERIFY_POINT("menu_toggle_39", 1, 10);
 
+#if defined(__i386__)
 static int32_t GAMEAPI menu_toggle_39_entry(int32_t a)
 {
     return (int32_t)verify_call2(&menu_toggle_39_point, (verify_fn2)0x44d460, (verify_fn2)(void *)menu_toggle_39, (int32_t)a, 0);
 }
+#else
+#define menu_toggle_39_entry menu_toggle_39 /* nothing to verify against */
+#endif
 
 static struct verify_point menu_toggle_0a_point = VERIFY_POINT("menu_toggle_0a", 1, 10);
 
+#if defined(__i386__)
 static int32_t GAMEAPI menu_toggle_0a_entry(int32_t a)
 {
     return (int32_t)verify_call2(&menu_toggle_0a_point, (verify_fn2)0x44d4a0, (verify_fn2)(void *)menu_toggle_0a, (int32_t)a, 0);
 }
+#else
+#define menu_toggle_0a_entry menu_toggle_0a /* nothing to verify against */
+#endif
 
 static struct verify_point menu_race_bit_720_5_point = VERIFY_POINT("menu_race_bit_720_5", 1, 10);
 
+#if defined(__i386__)
 static int32_t GAMEAPI menu_race_bit_720_5_entry(int32_t a)
 {
     return (int32_t)verify_call2(&menu_race_bit_720_5_point, (verify_fn2)0x44d4e0, (verify_fn2)(void *)menu_race_bit_720_5, (int32_t)a, 0);
 }
+#else
+#define menu_race_bit_720_5_entry menu_race_bit_720_5 /* nothing to verify against */
+#endif
 
 static struct verify_point menu_race_bit_721_0_point = VERIFY_POINT("menu_race_bit_721_0", 1, 10);
 
+#if defined(__i386__)
 static int32_t GAMEAPI menu_race_bit_721_0_entry(int32_t a)
 {
     return (int32_t)verify_call2(&menu_race_bit_721_0_point, (verify_fn2)0x44d540, (verify_fn2)(void *)menu_race_bit_721_0, (int32_t)a, 0);
 }
+#else
+#define menu_race_bit_721_0_entry menu_race_bit_721_0 /* nothing to verify against */
+#endif
 
 static struct verify_point menu_race_bit_721_1_point = VERIFY_POINT("menu_race_bit_721_1", 1, 10);
 
+#if defined(__i386__)
 static int32_t GAMEAPI menu_race_bit_721_1_entry(int32_t a)
 {
     return (int32_t)verify_call2(&menu_race_bit_721_1_point, (verify_fn2)0x44d590, (verify_fn2)(void *)menu_race_bit_721_1, (int32_t)a, 0);
 }
+#else
+#define menu_race_bit_721_1_entry menu_race_bit_721_1 /* nothing to verify against */
+#endif
 
 static struct verify_point menu_race_bit_721_2_point = VERIFY_POINT("menu_race_bit_721_2", 1, 10);
 
+#if defined(__i386__)
 static int32_t GAMEAPI menu_race_bit_721_2_entry(int32_t a)
 {
     return (int32_t)verify_call2(&menu_race_bit_721_2_point, (verify_fn2)0x44d5e0, (verify_fn2)(void *)menu_race_bit_721_2, (int32_t)a, 0);
 }
+#else
+#define menu_race_bit_721_2_entry menu_race_bit_721_2 /* nothing to verify against */
+#endif
 
 static struct verify_point menu_race_bit_721_3_point = VERIFY_POINT("menu_race_bit_721_3", 1, 10);
 
+#if defined(__i386__)
 static int32_t GAMEAPI menu_race_bit_721_3_entry(int32_t a)
 {
     return (int32_t)verify_call2(&menu_race_bit_721_3_point, (verify_fn2)0x44d640, (verify_fn2)(void *)menu_race_bit_721_3, (int32_t)a, 0);
 }
+#else
+#define menu_race_bit_721_3_entry menu_race_bit_721_3 /* nothing to verify against */
+#endif
 
 static struct verify_point menu_race_bit_721_5_point = VERIFY_POINT("menu_race_bit_721_5", 1, 10);
 
+#if defined(__i386__)
 static int32_t GAMEAPI menu_race_bit_721_5_entry(int32_t a)
 {
     return (int32_t)verify_call2(&menu_race_bit_721_5_point, (verify_fn2)0x44d6a0, (verify_fn2)(void *)menu_race_bit_721_5, (int32_t)a, 0);
 }
+#else
+#define menu_race_bit_721_5_entry menu_race_bit_721_5 /* nothing to verify against */
+#endif
 
 static struct verify_point menu_race_bit_721_4_point = VERIFY_POINT("menu_race_bit_721_4", 1, 10);
 
+#if defined(__i386__)
 static int32_t GAMEAPI menu_race_bit_721_4_entry(int32_t a)
 {
     return (int32_t)verify_call2(&menu_race_bit_721_4_point, (verify_fn2)0x44d700, (verify_fn2)(void *)menu_race_bit_721_4, (int32_t)a, 0);
 }
+#else
+#define menu_race_bit_721_4_entry menu_race_bit_721_4 /* nothing to verify against */
+#endif
 
 static struct verify_point menu_race_bit_720_1_point = VERIFY_POINT("menu_race_bit_720_1", 1, 10);
 
+#if defined(__i386__)
 static int32_t GAMEAPI menu_race_bit_720_1_entry(int32_t a)
 {
     return (int32_t)verify_call2(&menu_race_bit_720_1_point, (verify_fn2)0x44d760, (verify_fn2)(void *)menu_race_bit_720_1, (int32_t)a, 0);
 }
+#else
+#define menu_race_bit_720_1_entry menu_race_bit_720_1 /* nothing to verify against */
+#endif
 
 static struct verify_point menu_race_bit_720_2_point = VERIFY_POINT("menu_race_bit_720_2", 1, 10);
 
+#if defined(__i386__)
 static int32_t GAMEAPI menu_race_bit_720_2_entry(int32_t a)
 {
     return (int32_t)verify_call2(&menu_race_bit_720_2_point, (verify_fn2)0x44d7b0, (verify_fn2)(void *)menu_race_bit_720_2, (int32_t)a, 0);
 }
+#else
+#define menu_race_bit_720_2_entry menu_race_bit_720_2 /* nothing to verify against */
+#endif
 
 static struct verify_point menu_race_bit_720_3_point = VERIFY_POINT("menu_race_bit_720_3", 1, 10);
 
+#if defined(__i386__)
 static int32_t GAMEAPI menu_race_bit_720_3_entry(int32_t a)
 {
     return (int32_t)verify_call2(&menu_race_bit_720_3_point, (verify_fn2)0x44d810, (verify_fn2)(void *)menu_race_bit_720_3, (int32_t)a, 0);
 }
+#else
+#define menu_race_bit_720_3_entry menu_race_bit_720_3 /* nothing to verify against */
+#endif
 
 static struct verify_point menu_race_bit_720_4_point = VERIFY_POINT("menu_race_bit_720_4", 1, 10);
 
+#if defined(__i386__)
 static int32_t GAMEAPI menu_race_bit_720_4_entry(int32_t a)
 {
     return (int32_t)verify_call2(&menu_race_bit_720_4_point, (verify_fn2)0x44d870, (verify_fn2)(void *)menu_race_bit_720_4, (int32_t)a, 0);
 }
+#else
+#define menu_race_bit_720_4_entry menu_race_bit_720_4 /* nothing to verify against */
+#endif
 
 static struct verify_point menu_toggle_10_point = VERIFY_POINT("menu_toggle_10", 1, 10);
 
+#if defined(__i386__)
 static int32_t GAMEAPI menu_toggle_10_entry(int32_t a)
 {
     return (int32_t)verify_call2(&menu_toggle_10_point, (verify_fn2)0x44d8d0, (verify_fn2)(void *)menu_toggle_10, (int32_t)a, 0);
 }
+#else
+#define menu_toggle_10_entry menu_toggle_10 /* nothing to verify against */
+#endif
 
 static struct verify_point menu_toggle_11_point = VERIFY_POINT("menu_toggle_11", 1, 10);
 
+#if defined(__i386__)
 static int32_t GAMEAPI menu_toggle_11_entry(int32_t a)
 {
     return (int32_t)verify_call2(&menu_toggle_11_point, (verify_fn2)0x44d910, (verify_fn2)(void *)menu_toggle_11, (int32_t)a, 0);
 }
+#else
+#define menu_toggle_11_entry menu_toggle_11 /* nothing to verify against */
+#endif
 
 /* Group XB (front-end callbacks): fuzz only, no verify wrappers. */
 
@@ -2479,20 +3628,55 @@ static int32_t GAMEAPI menu_toggle_11_entry(int32_t a)
  * locks, CD audio). */
 static struct verify_point name_entry_box_place_point = VERIFY_POINT_VOID("name_entry_box_place", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI name_entry_box_place_entry(void)
 {
     verify_call2(&name_entry_box_place_point, (verify_fn2)0x448880, (verify_fn2)(void *)name_entry_box_place, 0, 0);
 }
+#else
+#define name_entry_box_place_entry name_entry_box_place /* nothing to verify against */
+#endif
 
 static struct verify_point net_sessions_box_place_point = VERIFY_POINT_VOID("net_sessions_box_place", 1, 1);
 
+#if defined(__i386__)
 static void GAMEAPI net_sessions_box_place_entry(void)
 {
     verify_call2(&net_sessions_box_place_point, (verify_fn2)0x452ce0, (verify_fn2)(void *)net_sessions_box_place, 0,
                  0);
 }
+#else
+#define net_sessions_box_place_entry net_sessions_box_place /* nothing to verify against */
+#endif
 
 /* Reimplemented physics: switched off while verify.c runs the original. */
+#if !defined(__i386__)
+/* asm entries (register arguments) exist on i386 only; there the hooks land
+ * on the C bodies, which every caller now calls with C arguments */
+void GAMEAPI car_trail_packets_build_c(uint8_t *car, uint32_t ot, uint32_t caller_esi); /* src/game/orig_po.c */
+int32_t GAMEAPI movie_chunk_read_c(uint8_t *m);    /* src/game/orig_pv.c */
+void GAMEAPI movie_fatal_error_c(uint32_t text);
+void GAMEAPI movie_sound_init_c(uint8_t *m);
+void GAMEAPI movie_sound_release_c(uint8_t *m);
+int32_t GAMEAPI movie_sound_start_c(uint8_t *m);
+#define clip_vertex_add clip_vertex_add_c
+#define vertex_emit_indexed vertex_emit_indexed_c
+#define vertex_emit vertex_emit_c
+#define render_state_select render_state_select_c
+#define movie_sound_start movie_sound_start_c
+#define movie_sound_release movie_sound_release_c
+#define movie_sound_init movie_sound_init_c
+#define movie_fatal_error movie_fatal_error_c
+#define movie_chunk_read movie_chunk_read_c
+#define fmv_row_to_pixels fmv_row_to_pixels_c
+#define fmv_macroblock_decode fmv_macroblock_decode_c
+#define fmv_idct_rows fmv_idct_rows_c
+#define fmv_idct_cols fmv_idct_cols_c
+#define fmv_adpcm_stereo fmv_adpcm_stereo_c
+#define fmv_adpcm_mono fmv_adpcm_mono_c
+#define car_trail_packets_build car_trail_packets_build_c
+#endif
+
 static const struct hook physics_hooks[] = {
     {"physics_world_step", 0x461410, physics_world_step_entry, {0x83, 0xec, 0x0c, 0x53, 0x55, 0x56, 0x57, 0xe8}},
     {"car_controls_read", 0x41b520, car_controls_read_entry, {0x83, 0xec, 0x08, 0x33, 0xc0, 0x55, 0x8b, 0x6c}},
@@ -4887,6 +6071,13 @@ void reroll_restart(void)
     vkgame_restart();
 }
 
+#if !defined(__i386__)
+static const struct hook sound_hooks[] = {
+    {"sound_play", 0x471c90, sound_play_body, {0xa1, 0x9c, 0x45, 0x4d, 0x00, 0x53, 0x8b, 0x5c}},
+    {"sound_moving", 0x471da0, sound_moving_body, {0xa1, 0x9c, 0x45, 0x4d, 0x00, 0x53, 0x55, 0x56}},
+};
+#endif
+
 BOOL WINAPI reroll_install(HANDLE instance, DWORD reason, void *reserved)
 {
     unsigned i, ok = 0, installed = 0;
@@ -4931,6 +6122,13 @@ BOOL WINAPI reroll_install(HANDLE instance, DWORD reason, void *reserved)
         subunit_install(output_aspect > 0.0f);
     }
     log_printf("%u of %u hooks installed", ok, (uint32_t)(COUNT(hooks) + COUNT(physics_hooks) + 1));
+#if !defined(__i386__)
+    /* sound_play and the moving-sound start: their bodies are C (on i386
+     * verify.c installs these, recording them for verification) */
+    for (i = 0; i < COUNT(sound_hooks); i++)
+        if (!hook_install(&sound_hooks[i]))
+            log_printf("hook %s failed", sound_hooks[i].name);
+#endif
     verify_init(installed_physics, (int)installed);
     return 1;
 }

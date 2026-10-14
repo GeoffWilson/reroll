@@ -23,56 +23,46 @@
 #include "../runtime.h"
 #include "physics.h"
 #include "winapi.h"
+#include "gamefn.h"
 
 #define U8(p, off) (*(uint8_t *)((uint8_t *)(p) + (off)))
 #define U16(p, off) (*(uint16_t *)((uint8_t *)(p) + (off)))
 #define S16(p, off) (*(int16_t *)((uint8_t *)(p) + (off)))
 #define I32(p, off) (*(int32_t *)((uint8_t *)(p) + (off)))
 #define U32(p, off) (*(uint32_t *)((uint8_t *)(p) + (off)))
-#define PTR(p, off) (*(uint8_t **)((uint8_t *)(p) + (off)))
+#define PTR(p, off) ((uint8_t *)(uintptr_t)U32(p, off)) /* 32-bit pointers in game memory */
+#define A(p) ((uint32_t)(uintptr_t)(p))
 #define G16(a) (*(uint16_t *)(a))
 #define GS16(a) (*(int16_t *)(a))
 #define G32(a) (*(uint32_t *)(a))
 #define GI32(a) (*(int32_t *)(a))
-#define GPTR(a) (*(uint8_t **)(a))
+#define GPTR(a) GP(a)
 
 /* ------------------------------------------------------------ callees */
 
-typedef void *(GAMEAPI *fopen_fn)(const char *name, const char *mode);
-typedef uint32_t(GAMEAPI *fread_fn)(void *buf, uint32_t size, uint32_t count, void *fp);
-typedef int32_t(GAMEAPI *fseek_fn)(void *fp, int32_t offset, int32_t whence);
-typedef int32_t(GAMEAPI *fclose_fn)(void *fp);
-typedef int32_t(GAMEAPI *fputs_fn)(const char *s, void *fp);
-typedef int32_t(GAMEAPI *fflush_fn)(void *fp);
-typedef int32_t(GAMEAPI *vsnprintf_fn)(char *buf, uint32_t n, const char *fmt, __builtin_va_list ap);
-typedef void *(GAMEAPI *malloc_fn)(uint32_t size);
-typedef void(GAMEAPI *free_fn)(void *p);
-typedef char *(GAMEAPI *strcpy_fn)(char *dst, const char *src);
-typedef void(GAMEAPI *gt20_fn)(const uint8_t *src, uint8_t *dst);
 typedef double(GAMEAPI *sqrt_fn)(double x);
 typedef double(GAMEAPI *except_fn)(int32_t flags, int32_t op, double a, double b, double result, int32_t cw);
 typedef double(GAMEAPI *qnan_fn)(int32_t op, double a, double b, int32_t cw);
-typedef void(GAMEAPI *lock_fn)(int32_t n);
-typedef int32_t(GAMEAPI *lcmap_fn)(uint32_t lcid, uint32_t flags, const char *src, int32_t srclen, char *dst,
-                                   int32_t dstlen, uint32_t codepage, int32_t error);
 
-#define crt_fopen ((fopen_fn)0x499459)
-#define crt_fread ((fread_fn)0x49908e)
-#define crt_fseek ((fseek_fn)0x4991a5)
-#define crt_fclose ((fclose_fn)0x4994f9)
-#define crt_fputs ((fputs_fn)0x4996dc)
-#define crt_fflush ((fflush_fn)0x499576)
-#define crt_vsnprintf ((vsnprintf_fn)0x49972a)
-#define crt_malloc ((malloc_fn)0x4982c2)
-#define crt_free ((free_fn)0x49827a)
-#define crt_strcpy ((strcpy_fn)0x498450)
-#define gt20_decompress_orig ((gt20_fn)0x497860)
+#define crt_fopen GCALL(0x499459, crtc_fopen)
+#define crt_fread GCALL(0x49908e, crtc_fread)
+#define crt_fseek GCALL(0x4991a5, crtc_fseek)
+#define crt_fclose GCALL(0x4994f9, crtc_fclose)
+#define crt_fputs GCALL(0x4996dc, crtc_fputs)
+#define crt_fflush GCALL(0x499576, crtc_fflush)
+#define crt_vsnprintf GCALL(0x49972a, msvc_vsnprintf)
+#define crt_malloc GCALL(0x4982c2, msvc_malloc)
+#define crt_free GCALL(0x49827a, msvc_free)
+#define crt_strcpy GCALL(0x498450, msvc_strcpy)
+#define gt20_decompress_orig GCALL(0x497860, gt20_decompress)
+/* asm entries (crt_cb.c / crt_cc.c): the original's stack arguments, x87
+ * result; i386 only (see crt_hypot) */
 #define crt_sqrt ((sqrt_fn)0x4981d4)
 #define crt_except ((except_fn)0x4a0f1a)
 #define crt_handle_qnan ((qnan_fn)0x4a0eba)
-#define crt_lock ((lock_fn)0x49b161)
-#define crt_unlock ((lock_fn)0x49b1c2)
-#define crt_lcmap ((lcmap_fn)0x49ba3b)
+#define crt_lock GCALL(0x49b161, crtc_lock)
+#define crt_unlock GCALL(0x49b1c2, crtc_unlock)
+#define crt_lcmap GCALL(0x49ba3b, crtc_lcmap_string)
 
 
 /* ------------------------------------------------------------ debug log */
@@ -95,6 +85,7 @@ static void str_append(char *dst, const char *src)
 #define g_log_banner GI32(0x4b4950) /* print the session banner on open */
 #define g_log_append GI32(0x4db1cc) /* open with "at" instead of "wt" */
 #define g_log_file GPTR(0x4db1c8)
+#define g_log_file_set(fp) (G32(0x4db1c8) = A(fp))
 #define LOG_PATH ((char *)0x4b4848) /* 0x104 bytes */
 
 /* 0x496410: close the log file. */
@@ -102,7 +93,7 @@ void GAMEAPI debug_log_close(void)
 {
     if (g_log_file) {
         crt_fclose(g_log_file);
-        g_log_file = 0;
+        g_log_file_set(0);
     }
 }
 
@@ -124,7 +115,7 @@ static void debug_log_open(void)
     if (!g_log_enabled)
         return;
     if (!g_log_file) {
-        g_log_file = crt_fopen(LOG_PATH, (const char *)(g_log_append ? 0x4b4a7c : 0x4b4a78));
+        g_log_file_set(crt_fopen(LOG_PATH, (const char *)(uintptr_t)(g_log_append ? 0x4b4a7c : 0x4b4a78)));
         if (!g_log_file)
             return;
     }
@@ -146,17 +137,89 @@ static void debug_log_write(const char *text)
     crt_fflush(g_log_file);
 }
 
+#if defined(__i386__)
+/* the arguments as the C runtime's printf engine reads them: the stack words */
+#define LOG_ARGS(fmt, ap, words) ((void)(words), (const uint8_t *)(ap))
+#else
+/* x86-64: printf arguments (by the format, as the C runtime reads them) into
+ * 32-bit stack words: integers, characters and pointers one word, doubles
+ * and I64 integers two (orig_pp.c's pp_args_pack). */
+static const uint8_t *log_args_pack(const char *fmt, __builtin_va_list ap, uint32_t *words, uint32_t max)
+{
+    uint32_t n = 0;
+
+    while (*fmt) {
+        int i64 = 0;
+
+        if (*fmt++ != '%')
+            continue;
+        if (*fmt == '%') {
+            fmt++;
+            continue;
+        }
+        for (;; fmt++) {
+            char c = *fmt;
+
+            if (c == '*') {
+                if (n < max)
+                    words[n++] = (uint32_t)__builtin_va_arg(ap, int);
+            } else if (c == 'I' && fmt[1] == '6' && fmt[2] == '4') {
+                i64 = 1;
+                fmt += 2;
+            } else if (!(c == '-' || c == '+' || c == ' ' || c == '#' || c == '.' || (c >= '0' && c <= '9') ||
+                         c == 'h' || c == 'l' || c == 'L' || c == 'w' || c == 'N' || c == 'F')) {
+                break;
+            }
+        }
+        if (!*fmt)
+            break;
+        switch (*fmt++) {
+        case 'e': case 'E': case 'f': case 'g': case 'G': {
+            double d = __builtin_va_arg(ap, double);
+            uint64_t q;
+
+            memcpy(&q, &d, 8);
+            if (n + 1 < max) {
+                words[n++] = (uint32_t)q;
+                words[n++] = (uint32_t)(q >> 32);
+            }
+            break;
+        }
+        case 's': case 'S': case 'p': case 'n': case 'Z':
+            if (n < max)
+                words[n++] = A(__builtin_va_arg(ap, void *));
+            break;
+        default:
+            if (i64) {
+                uint64_t q = __builtin_va_arg(ap, uint64_t);
+
+                if (n + 1 < max) {
+                    words[n++] = (uint32_t)q;
+                    words[n++] = (uint32_t)(q >> 32);
+                }
+            } else if (n < max) {
+                words[n++] = (uint32_t)__builtin_va_arg(ap, int);
+            }
+            break;
+        }
+    }
+    return (const uint8_t *)words;
+}
+#define LOG_ARGS(fmt, ap, words) log_args_pack(fmt, ap, words, 64)
+#endif
+
 /* 0x496340: printf to the log with a newline (0x4b4a80) appended; at most
  * 0x7ce characters of formatted text. */
 void GAMEAPI debug_log_printf(const char *fmt, ...)
 {
     char buf[0x7d0];
     __builtin_va_list ap;
+    uint32_t words[64];
 
     if (!g_log_enabled)
         return;
     __builtin_va_start(ap, fmt);
-    crt_vsnprintf(buf, 0x7ce, fmt, ap);
+    crt_vsnprintf(buf, 0x7ce, fmt, LOG_ARGS(fmt, ap, words));
     __builtin_va_end(ap);
     buf[0x7ce] = 0;
     str_append(buf, (const char *)0x4b4a80);
@@ -168,11 +231,12 @@ void GAMEAPI debug_log_print(const char *fmt, ...)
 {
     char buf[0x7d0];
     __builtin_va_list ap;
+    uint32_t words[64];
 
     if (!g_log_enabled)
         return;
     __builtin_va_start(ap, fmt);
-    crt_vsnprintf(buf, 0x7cf, fmt, ap);
+    crt_vsnprintf(buf, 0x7cf, fmt, LOG_ARGS(fmt, ap, words));
     __builtin_va_end(ap);
     buf[0x7cf] = 0;
     debug_log_write(buf);
@@ -183,11 +247,17 @@ void GAMEAPI debug_log_print(const char *fmt, ...)
 #define ARCHIVE_IMG ((char *)0x6d0ee0) /* the .IMG path */
 #define g_archive_count GS16(0x6d0f04)
 #define g_archive_index GPTR(0x6d0f08) /* records of 16 bytes */
+#define g_archive_index_set(p) (G32(0x6d0f08) = A(p))
 #define g_archive_pos GI32(0x6d0f00)   /* file position after the last read */
 #define g_archive_file GPTR(0x4db1dc)
+#define g_archive_file_set(fp) (G32(0x4db1dc) = A(fp))
 #define g_archive_closed GS16(0x4b4a8c) /* 0: the .IMG is open */
-#define g_alloc (*(malloc_fn *)0x4b4a84)
-#define g_free (*(free_fn *)0x4b4a88)
+/* allocator pointers: msvc_malloc / msvc_free, or kr_malloc / kr_free
+ * (orig_pg.c) */
+typedef uint32_t(GAMEAPI *alloc_fn)(uint32_t size);
+typedef void(GAMEAPI *release_fn)(void *p);
+#define g_alloc(n) ((uint8_t *)(uintptr_t)((alloc_fn)(uintptr_t)G32(0x4b4a84))(n))
+#define g_free ((release_fn)(uintptr_t)G32(0x4b4a88))
 
 /* strrchr (0x499780, only used here). */
 static char *last_char(char *s, char c)
@@ -213,7 +283,7 @@ void GAMEAPI archive_select(int32_t closed)
     if (c == 0) {
         void *fp = crt_fopen(ARCHIVE_IMG, (const char *)0x4b3068);
         g_archive_closed = c;
-        g_archive_file = fp;
+        g_archive_file_set(fp);
         g_archive_pos = 0;
         return;
     }
@@ -241,9 +311,9 @@ void GAMEAPI archive_open(const char *path, int32_t count)
     dot[2] = 'D';
     dot[3] = 'X';
     g_archive_count = (int16_t)count;
-    g_archive_index = g_alloc((uint32_t)((int32_t)(int16_t)count << 4));
+    g_archive_index_set(g_alloc((uint32_t)((int32_t)(int16_t)count << 4)));
     fp = crt_fopen(idx, (const char *)0x4b3068);
-    g_archive_file = fp;
+    g_archive_file_set(fp);
     crt_fread(g_archive_index, 1, (uint32_t)((int32_t)g_archive_count << 4), fp);
     crt_fclose(g_archive_file);
     archive_select(0);
@@ -285,7 +355,7 @@ uint8_t *GAMEAPI archive_entry_load(int32_t index, uint8_t *buf)
         buf = g_alloc((uint32_t)(S16(rec, 0xc) + I32(rec, 8) + 7));
     dst = buf;
     if (U32(rec, 8) != U32(rec, 4))
-        dst = (uint8_t *)(((uint32_t)(S16(rec, 0xc) - I32(rec, 4) + I32(rec, 8)) + (uint32_t)buf + 7) & ~3u);
+        dst = (uint8_t *)(uintptr_t)(((uint32_t)(S16(rec, 0xc) - I32(rec, 4) + I32(rec, 8)) + A(buf) + 7) & ~3u);
     crt_fseek(g_archive_file, I32(rec, 0), 0);
     crt_fread(dst, 1, U32(rec, 4), g_archive_file);
     g_archive_pos = I32(rec, 4) + I32(rec, 0);
@@ -333,11 +403,14 @@ int32_t GAMEAPI archive_state(void)
 #define g_aux_scanned GI32(0x4db268)
 #define g_aux_count GI32(0x4db26c)
 #define g_aux_table GPTR(0x4db270)
+#define g_aux_table_set(p) (G32(0x4db270) = A(p))
 
 /* mixer CD volume controls: list of 0x50-byte nodes (layout in ca_formats.txt). */
 #define g_mixer_inited GI32(0x4db284)
 #define g_mixer_head GPTR(0x4db278)
 #define g_mixer_tail GPTR(0x4db27c)
+#define g_mixer_head_set(p) (G32(0x4db278) = A(p))
+#define g_mixer_tail_set(p) (G32(0x4db27c) = A(p))
 #define g_mixer_count G32(0x4db280)
 #define g_mixer_found GI32(0x4db1f0)
 #define g_mixer_keep GI32(0x4db1ec)  /* keep the controls found (mode 0x271a) */
@@ -648,7 +721,7 @@ void GAMEAPI aux_free(void)
 {
     if (g_aux_table)
         crt_free(g_aux_table);
-    g_aux_table = 0;
+    g_aux_table_set(0);
     g_aux_count = 0;
     g_aux_scanned = 0;
 }
@@ -674,7 +747,7 @@ void GAMEAPI aux_scan(void)
             found++;
     }
     if (found) {
-        g_aux_table = crt_malloc((uint32_t)found * 12);
+        g_aux_table_set(crt_malloc((uint32_t)found * 12));
         if (g_aux_table) {
             for (dev = 0;; dev++) {
                 r = aux_query(dev, caps, &volume);
@@ -745,7 +818,7 @@ int32_t GAMEAPI mixer_add_control(uint32_t dev, uint32_t h, uint32_t dest, uint3
     U32(node, 0x24) = U32(ctl, 4);
     U32(node, 0x2c) = U32(ctl, 0x10);
     U32(node, 0x30) = 4;
-    PTR(node, 0x34) = values;
+    U32(node, 0x34) = A(values);
     if (mixerGetControlDetailsA(GMEM(h), node + 0x20, 0)) {
         crt_free(node);
         crt_free(values);
@@ -779,16 +852,16 @@ int32_t GAMEAPI mixer_add_control(uint32_t dev, uint32_t h, uint32_t dest, uint3
     U32(node, 0x4c) = bytes;
     U32(node, 0x18) = U32(ctl, 0x68);
     U32(node, 0x1c) = range;
-    PTR(node, 0x38) = values;
-    PTR(node, 0x3c) = saved;
+    U32(node, 0x38) = A(values);
+    U32(node, 0x3c) = A(saved);
     U32(node, 0x48) = n;
     memcpy(saved, values, bytes);
     if (!g_mixer_head)
-        g_mixer_head = node;
+        g_mixer_head_set(node);
     else
-        PTR(g_mixer_tail, 0) = node;
+        U32(g_mixer_tail, 0) = A(node);
     g_mixer_count++;
-    g_mixer_tail = node;
+    g_mixer_tail_set(node);
     return g_mixer_query ? -1 : 0;
 }
 
@@ -997,10 +1070,14 @@ void GAMEAPI cdaudio_set_volume(int32_t left, int32_t right)
 
 /* 0x4a1c36: the DirectSoundCreate import thunk (dsound #1, stdcall with
  * three arguments): a jump to DirectSoundCreate (through the import slot in
- * the emulator build, as the original); it reads no arguments itself. */
+ * the emulator build, as the original); it reads no arguments itself.
+ * x86-64 (native only): no C calls 0x4a1c36 (orig_pv.c calls
+ * DirectSoundCreate itself); the tail jump leaves the register arguments as
+ * they are, so it stays a jump (a C body would need physics.h's void(void)
+ * declaration changed to DirectSoundCreate's prototype). */
 __attribute__((naked)) void crt_dsound_create(void)
 {
-#ifdef REROLL_NATIVE
+#if defined(REROLL_NATIVE) || !defined(__i386__)
     __asm__ volatile("jmp %P0" : : "i"(DirectSoundCreate));
 #else
     __asm__ volatile("jmp *0x4a3040");
@@ -1154,6 +1231,41 @@ static double decompose(double x, int32_t *e)
     *e = (int32_t)((hi >> 20) & 0x7ff) - 0x3fe;
     return set_exponent(x, 0);
 }
+
+#if !defined(__i386__)
+/* x86-64: the runtime's asm entries above are i386 only. sqrt 0x4981d4 is
+ * fsqrt at the caller's precision (here extended: _hypot's control word
+ * 0x133f); the error reports (paths the game never takes) restore the
+ * control word and return the masked result: the given value, or the NaN. */
+#undef crt_sqrt
+#undef crt_except
+#undef crt_handle_qnan
+static double crt_sqrt(double v)
+{
+    double r;
+
+    __asm__ volatile("fldl %1\n\tfsqrt\n\tfstpl %0" : "=m"(r) : "m"(v));
+    return r;
+}
+
+static int32_t fpu_control(uint32_t cw, uint32_t mask);
+
+static double crt_except(int32_t flags, int32_t op, double a, double b, double result, int32_t cw)
+{
+    (void)flags, (void)op, (void)a, (void)b;
+    fpu_control((uint32_t)cw, 0xffff);
+    return result;
+}
+
+static double crt_handle_qnan(int32_t op, double a, double b, int32_t cw)
+{
+    volatile double r = (long double)a + (long double)b;
+
+    (void)op;
+    fpu_control((uint32_t)cw, 0xffff);
+    return r;
+}
+#endif
 
 /* 0x4a1ea4: _hypot(x, y) (0x4a1ec1 with op 0x18): at extended precision,
  * m = max(|x|, |y|), sqrt((x/m)^2 + (y/m)^2) * m with the exponents added

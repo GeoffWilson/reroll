@@ -28,6 +28,7 @@
 #include "../runtime.h"
 #include "physics.h"
 #include "winapi.h"
+#include "gamefn.h"
 
 #define U8(p, off) (*(uint8_t *)((uint8_t *)(p) + (off)))
 #define S8(p, off) (*(int8_t *)((uint8_t *)(p) + (off)))
@@ -35,11 +36,11 @@
 #define S16(p, off) (*(int16_t *)((uint8_t *)(p) + (off)))
 #define I32(p, off) (*(int32_t *)((uint8_t *)(p) + (off)))
 #define U32(p, off) (*(uint32_t *)((uint8_t *)(p) + (off)))
-#define PTR(p, off) (*(uint8_t **)((uint8_t *)(p) + (off)))
-#define G8(a) (*(uint8_t *)(a))
-#define G16(a) (*(uint16_t *)(a))
-#define G32(a) (*(uint32_t *)(a))
-#define GI32(a) (*(int32_t *)(a))
+#define PTR(p, off) ((uint8_t *)(uintptr_t)U32(p, off))
+#define G8(a) (*(uint8_t *)(uintptr_t)(a))
+#define G16(a) (*(uint16_t *)(uintptr_t)(a))
+#define G32(a) (*(uint32_t *)(uintptr_t)(a))
+#define GI32(a) (*(int32_t *)(uintptr_t)(a))
 
 #define STDCALL __attribute__((stdcall))
 
@@ -50,52 +51,36 @@
 #define g_lc_ctype GI32(0x4db37c)          /* __lc_handle[LC_CTYPE]: 0 = "C" (no setlocale in the game) */
 #define g_setlc_active GI32(0x6d1248)      /* __setlc_active */
 #define g_unguarded_readlc 0x6d124c         /* __unguarded_readlc_active (address) */
-#define g_pctype (*(const uint16_t **)0x4b4b00) /* _pctype */
+#define g_pctype ((const uint16_t *)GP(0x4b4b00)) /* _pctype */
 #define g_mb_cur_max GI32(0x4b4d0c)        /* __mb_cur_max */
 #define g_decimal_point G8(0x4b4d10)       /* *__decimal_point */
-#define g_null_string (*(const char **)0x4b4da8)      /* "(null)" */
-#define g_null_wstring (*(const uint16_t **)0x4b4dac) /* L"(null)" */
+#define g_null_string ((const char *)GP(0x4b4da8))      /* "(null)" */
+#define g_null_wstring ((const uint16_t *)GP(0x4b4dac)) /* L"(null)" */
 #define g_ismbcodepage GI32(0x6d103c)
 #define g_mbctype ((const uint8_t *)0x6d1141) /* _mbctype + 1 */
 #define g_fastflag GI32(0x4db28c)          /* maths: skip the exception check */
 
 /* Original runtime functions left in place. */
-typedef void(GAMEAPI *void0_fn)(void);
-typedef void(GAMEAPI *void1_fn)(uint32_t a);
-typedef int32_t(GAMEAPI *int0_fn)(void);
-typedef int32_t(GAMEAPI *int1_fn)(uint32_t a);
-typedef uint8_t *(GAMEAPI *ptr0_fn)(void);
-typedef int32_t *(GAMEAPI *errno_fn)(void);
-typedef int32_t(GAMEAPI *string_type_fn)(uint32_t type, const char *s, int32_t n, uint16_t *out, uint32_t cp,
-                                         uint32_t lcid, uint32_t error);
-typedef uint8_t *(GAMEAPI *mbsdec_fn)(const uint8_t *start, const uint8_t *p);
-typedef uint8_t *(GAMEAPI *mbsnbcpy_fn)(uint8_t *dst, const uint8_t *src, uint32_t n);
-typedef void(GAMEAPI *initterm_fn)(uint32_t first, uint32_t last);
-#define crt_getptd ((ptr0_fn)0x49bcf1)
-#define crt_initptd ((void1_fn)0x49bcde)
-#define crt_errno ((errno_fn)0x49d48e)
-#define crt_doserrno ((errno_fn)0x49d497)
-#define crt_dosmaperr ((void1_fn)0x49d41b)
-#define crt_lock ((void1_fn)0x49b161)
-#define crt_unlock ((void1_fn)0x49b1c2)
-#define crt_toupper_lk ((int1_fn)0x4985af)
-#define crt_tolower_lk ((int1_fn)0x4986ea)
-#define crt_get_string_type ((string_type_fn)0x49aee3)
-#define crt_mbsdec ((mbsdec_fn)0x49cea2)
-#define crt_mbsnbcpy ((mbsnbcpy_fn)0x49d303)
-#define crt_mbctoupper ((int1_fn)0x49d4a0)
-#define crt_lockexit ((void0_fn)0x498d50)
-#define crt_unlockexit ((void0_fn)0x498d59)
-#define crt_initterm ((initterm_fn)0x498d62)
+#define crt_getptd GCALL(0x49bcf1, crtc_getptd)
+#define crt_initptd GCALL(0x49bcde, crtc_initptd)
+#define crt_errno GCALL(0x49d48e, crtc_errno)
+#define crt_doserrno GCALL(0x49d497, crtc_doserrno)
+#define crt_dosmaperr GCALL(0x49d41b, crtc_dosmaperr)
+#define crt_lock GCALL(0x49b161, crtc_lock)
+#define crt_unlock GCALL(0x49b1c2, crtc_unlock)
+#define crt_toupper_lk GCALL(0x4985af, crtc_toupper_lk)
+#define crt_tolower_lk GCALL(0x4986ea, crtc_tolower_lk)
+#define crt_get_string_type GCALL(0x49aee3, crtc_get_string_type)
+#define crt_mbsdec GCALL(0x49cea2, crtc_mbsdec)
+#define crt_mbsnbcpy GCALL(0x49d303, crtc_mbsnbcpy)
+#define crt_lockexit GCALL(0x498d50, crtc_lockexit)
 #define crt_threadstart 0x498df3
-#define crt_amsg_exit ((void1_fn)0x498fcd)
 
 /* ---- CD audio helpers (0x497020-0x4977e0 is the game's CD / mixer code) ---- */
 
-typedef int32_t(GAMEAPI *aux_query_fn)(uint32_t device, uint8_t *caps, uint32_t *volume);
 #define cd_enabled GI32(0x4db250)
-#define mixer_scan ((int1_fn)0x497040)        /* group CA's C, not hooked: by address */
-#define aux_query ((aux_query_fn)0x496e50)    /* -1 end, 0 not a CD output, 1 volume read */
+#define mixer_scan GCALL(0x497040, mixer_scan) /* group CA's C, not hooked: by address */
+#define aux_query GCALL(0x496e50, aux_query) /* -1 end, 0 not a CD output, 1 volume read */
 
 /* 0x497740: is there a mixer line for the CD (scanned once: 0x4b4aa0 set
  * means not yet; the result is kept at 0x4db288)? An open mixer
@@ -325,7 +310,7 @@ int32_t GAMEAPI msvc_toupper(int32_t c)
         crt_lock(0x13);
         locked = 1;
     }
-    c = crt_toupper_lk((uint32_t)c);
+    c = crt_toupper_lk(c);
     if (locked)
         crt_unlock(0x13);
     else
@@ -348,7 +333,7 @@ int32_t GAMEAPI msvc_tolower(int32_t c)
         crt_lock(0x13);
         locked = 1;
     }
-    c = crt_tolower_lk((uint32_t)c);
+    c = crt_tolower_lk(c);
     if (locked)
         crt_unlock(0x13);
     else
@@ -409,7 +394,7 @@ static void *heap_block(uint32_t size, uint32_t flags)
 /* _callnewh 0x49ba20: the new handler, if one is set; nonzero to retry. */
 static int32_t call_new_handler(uint32_t size)
 {
-    if (g_new_handler != 0 && ((int1_fn)g_new_handler)(size) != 0)
+    if (g_new_handler != 0 && ((int32_t(GAMEAPI *)(uint32_t))(uintptr_t)g_new_handler)(size) != 0)
         return 1;
     return 0;
 }
@@ -1505,6 +1490,84 @@ static int32_t output(struct sink *s, const char *format, const uint8_t *ap)
     return s->count;
 }
 
+#if !defined(__i386__)
+/* x86-64: the variadic arguments as the 32-bit stack words output() reads,
+ * walking the format with output()'s own grammar: '*' widths and
+ * precisions, %c %C and the integers int-sized (I64: 64 bits, two words),
+ * %s %S %Z %n %p... pointers (game memory or our stack, below 4 GB, one
+ * word), %e %f %g %E %G doubles (two words). */
+uint32_t crt_args_pack(const char *fmt, __builtin_va_list ap, uint32_t *words, uint32_t max); /* crt_cc.c's printf too */
+uint32_t crt_args_pack(const char *fmt, __builtin_va_list ap, uint32_t *words, uint32_t max)
+{
+    uint32_t n = 0;
+    int32_t state = ST_NORMAL, i64 = 0;
+    uint8_t ch;
+
+    while ((ch = (uint8_t)*fmt) != 0 && n + 2 <= max) {
+        fmt++;
+        state = next_state[char_class(ch)][state];
+        switch (state) {
+        case ST_NORMAL:
+            if (g_pctype[ch] & 0x8000)
+                fmt++;
+            break;
+        case ST_PERCENT:
+            i64 = 0;
+            break;
+        case ST_WIDTH:
+        case ST_PRECIS:
+            if (ch == '*')
+                words[n++] = (uint32_t)__builtin_va_arg(ap, int);
+            break;
+        case ST_SIZE:
+            if (ch == 'I') {
+                if (fmt[0] == '6' && fmt[1] == '4') {
+                    fmt += 2;
+                    i64 = 1;
+                } else {
+                    state = ST_NORMAL;
+                    if (g_pctype[ch] & 0x8000)
+                        fmt++;
+                }
+            }
+            break;
+        case ST_TYPE:
+            switch (ch) {
+            case 'Z': case 's': case 'S': case 'n':
+                words[n++] = (uint32_t)(uintptr_t)__builtin_va_arg(ap, const void *);
+                break;
+            case 'e': case 'f': case 'g': case 'E': case 'G': {
+                uint64_t q;
+                double d = __builtin_va_arg(ap, double);
+                __builtin_memcpy(&q, &d, 8);
+                words[n++] = (uint32_t)q;
+                words[n++] = (uint32_t)(q >> 32);
+                break;
+            }
+            case 'c': case 'C':
+                words[n++] = (uint32_t)__builtin_va_arg(ap, int);
+                break;
+            case 'd': case 'i': case 'u': case 'p': case 'X': case 'x': case 'o':
+                if (i64) {
+                    uint64_t q = __builtin_va_arg(ap, uint64_t);
+                    words[n++] = (uint32_t)q;
+                    words[n++] = (uint32_t)(q >> 32);
+                } else if (ch == 'p') {
+                    words[n++] = (uint32_t)(uintptr_t)__builtin_va_arg(ap, const void *);
+                } else {
+                    words[n++] = (uint32_t)__builtin_va_arg(ap, int);
+                }
+                break;
+            default: /* 'B': no argument */
+                break;
+            }
+            break;
+        }
+    }
+    return n;
+}
+#endif
+
 /* 0x4979f0: sprintf. */
 int32_t GAMEAPI msvc_sprintf(char *buf, const char *format, ...)
 {
@@ -1514,7 +1577,16 @@ int32_t GAMEAPI msvc_sprintf(char *buf, const char *format, ...)
     __builtin_va_start(ap, format);
     s.ptr = buf;
     s.cnt = 0x7fffffff;
+#if defined(__i386__)
     n = output(&s, format, (const uint8_t *)ap);
+#else
+    {
+        uint32_t words[128];
+
+        crt_args_pack(format, ap, words, 128);
+        n = output(&s, format, (const uint8_t *)words);
+    }
+#endif
     __builtin_va_end(ap);
     out_end(&s);
     return n;
@@ -1739,7 +1811,7 @@ static void call_table(uint32_t first, uint32_t last)
 {
     for (; first < last; first += 4)
         if (G32(first) != 0)
-            ((void0_fn)G32(first))();
+            ((void(GAMEAPI *)(void))(uintptr_t)G32(first))();
 }
 
 /* 0x498c89: exit (doexit 0x498cab with quick = 0, retcaller = 0): the atexit
@@ -1755,7 +1827,7 @@ void GAMEAPI msvc_exit(int32_t code)
         uint32_t p = G32(0x6d2290) - 4;
         while (p >= G32(0x6d2294)) {
             if (G32(p) != 0)
-                ((void0_fn)G32(p))();
+                ((void(GAMEAPI *)(void))(uintptr_t)G32(p))();
             p -= 4;
         }
     }
@@ -1774,7 +1846,7 @@ uint32_t GAMEAPI msvc_beginthread(uint32_t start, uint32_t stack_size, uint32_t 
     uint8_t *ptd = msvc_calloc(1, 0x74);
     if (ptd != 0) {
         uint32_t h;
-        crt_initptd((uint32_t)ptd);
+        crt_initptd(ptd);
         U32(ptd, 0x48) = start;
         U32(ptd, 0x4c) = arg;
         h = (uint32_t)(uintptr_t)CreateThread(0, stack_size, (void *)(uintptr_t)crt_threadstart, ptd, 4, (DWORD *)ptd);
@@ -1807,6 +1879,7 @@ uint32_t GAMEAPI msvc_beginthread(uint32_t start, uint32_t stack_size, uint32_t 
  * out-of-domain arguments, overflow, underflow) still go to the original
  * _87except (0x49a8e7, pow's 0x49a8d0) and pow's special-argument helper
  * _powhlp (0x49ab37), called by address from the same stack layout. */
+#if defined(__i386__)
 __asm__(".intel_syntax noprefix\n"
         ".text\n"
 
@@ -2381,3 +2454,205 @@ __asm__(".intel_syntax noprefix\n"
         "    mov eax, 1\n"
         "    jmp .Lpow_error\n"
         ".att_syntax prefix\n");
+#else /* x86-64 */
+/* Nothing calls these with the original's register / x87-stack conventions
+ * on x86-64 (every caller is C), so they are C with real prototypes, the
+ * same x87 instructions where the result depends on them. The control word
+ * handling is the original's: cos / sin / atan at 0x27f, sqrt / pow at the
+ * caller's precision with every exception masked. Not reproduced: the
+ * error reports through _87except (errno, _matherr) for NaN / infinite /
+ * out-of-domain arguments and overflow / underflow; the results there are
+ * the masked-exception values (the argument NaN quieted, the indefinite
+ * NaN for a domain error, libm's pow for infinite or NaN pow arguments). */
+
+#define CRT_INDEFINITE 0xfff8000000000000ull /* the "indefinite" NaN 0x4b4db0 as a double */
+
+static double crt_bits_double(uint64_t q)
+{
+    double d;
+    __builtin_memcpy(&d, &q, 8);
+    return d;
+}
+
+static uint64_t crt_double_bits(double d)
+{
+    uint64_t q;
+    __builtin_memcpy(&q, &d, 8);
+    return q;
+}
+
+/* An infinity or NaN argument: a NaN comes back quieted, an infinity
+ * gives `inf_result`. */
+static int crt_special(double x, double *out, double inf_result)
+{
+    uint64_t q = crt_double_bits(x);
+
+    if ((q & 0x7ff0000000000000ull) != 0x7ff0000000000000ull)
+        return 0;
+    *out = (q & 0xfffffffffffffull) ? x + 1.0 : inf_result;
+    return 1;
+}
+
+/* 0x497a80: _ftol: truncation to 64 bits (out of range: 0x8000000000000000,
+ * as fistp's indefinite integer). */
+int64_t msvc_ftol(double x)
+{
+    return (int64_t)x;
+}
+
+/* 0x497a50: _chkstk: C callers need no stack probe. */
+void msvc_chkstk(void)
+{
+}
+
+/* fcos / fsin at control word 0x27f, |x| >= 2^63 reduced by 2 pi (0x4a4daa)
+ * with fprem1 first. */
+#define CRT_TRIG(name, insn)                                                                                   \
+    double name(double x)                                                                                      \
+    {                                                                                                          \
+        double r;                                                                                              \
+        uint16_t old, cw = 0x27f;                                                                              \
+                                                                                                               \
+        if (crt_special(x, &r, crt_bits_double(CRT_INDEFINITE)))                                               \
+            return r;                                                                                          \
+        __asm__ volatile("fnstcw %1\n\t"                                                                       \
+                         "fldcw %2\n\t"                                                                        \
+                         "fldl %3\n\t" insn "\n\t"                                                             \
+                         "fnstsw %%ax\n\t"                                                                     \
+                         "testb $4, %%ah\n\t"                                                                  \
+                         "jz 2f\n\t"                                                                           \
+                         "fldt %4\n\t"                                                                         \
+                         "fxch %%st(1)\n"                                                                      \
+                         "1:\n\t"                                                                              \
+                         "fprem1\n\t"                                                                          \
+                         "fnstsw %%ax\n\t"                                                                     \
+                         "testb $4, %%ah\n\t"                                                                  \
+                         "jnz 1b\n\t"                                                                          \
+                         "fstp %%st(1)\n\t" insn "\n"                                                          \
+                         "2:\n\t"                                                                              \
+                         "fstpl %0\n\t"                                                                        \
+                         "fldcw %1"                                                                            \
+                         : "=m"(r), "=m"(old)                                                                  \
+                         : "m"(cw), "m"(x), "m"(*(const long double *)(uintptr_t)0x4a4daa)                      \
+                         : "eax", "cc", "st", "st(1)");                                                       \
+        return r;                                                                                              \
+    }
+
+/* 0x497ac4 */
+CRT_TRIG(msvc_cos, "fcos")
+/* 0x497b74 */
+CRT_TRIG(msvc_sin, "fsin")
+
+/* 0x497c24: atan: fpatan with 1 at 0x27f; atan(+-infinity) = +-pi / 2. */
+double msvc_atan(double x)
+{
+    double r;
+    uint16_t old, cw = 0x27f;
+    uint64_t q = crt_double_bits(x);
+
+    if ((q & 0x7ff0000000000000ull) == 0x7ff0000000000000ull && (q & 0xfffffffffffffull))
+        return x + 1.0;
+    __asm__ volatile("fnstcw %1\n\tfldcw %2\n\tfldl %3\n\tfld1\n\tfpatan\n\tfstpl %0\n\tfldcw %1"
+                     : "=m"(r), "=m"(old)
+                     : "m"(cw), "m"(x)
+                     : "st", "st(1)");
+    return r;
+}
+
+/* The caller's control word with every exception masked (0x49a755). */
+static uint16_t crt_caller_cw(void)
+{
+    uint16_t cw;
+
+    __asm__ volatile("fnstcw %0" : "=m"(cw));
+    return cw == 0x27f ? cw : (uint16_t)((cw & 0x300) | 0x7f);
+}
+
+/* 0x4981d4: sqrt at the caller's precision; sqrt(-0) = -0, a negative
+ * argument the indefinite NaN. */
+double msvc_sqrt(double x)
+{
+    double r;
+    uint16_t old, cw = crt_caller_cw();
+    uint64_t q = crt_double_bits(x);
+
+    if (crt_special(x, &r, (q >> 63) ? crt_bits_double(CRT_INDEFINITE) : x))
+        return r;
+    if ((q >> 63) && (q << 1) != 0)
+        return crt_bits_double(CRT_INDEFINITE);
+    __asm__ volatile("fnstcw %1\n\tfldcw %2\n\tfldl %3\n\tfsqrt\n\tfstpl %0\n\tfldcw %1"
+                     : "=m"(r), "=m"(old)
+                     : "m"(cw), "m"(x)
+                     : "st");
+    return r;
+}
+
+/* 0x497ea5: 0 if y is not an integer, 1 odd, 2 even. */
+static int crt_int_kind(double y)
+{
+    int64_t i;
+
+    if (__builtin_fabs(y) >= 9007199254740992.0)
+        return 2;
+    i = (int64_t)y;
+    if ((double)i != y)
+        return 0;
+    return (i & 1) ? 1 : 2;
+}
+
+/* 0x497cc9: pow(x, y) at the caller's precision: 2^(y * log2 |x|) (fyl2x,
+ * then 0x49a740's frndint / f2xm1 / fscale), negated for a negative x and
+ * odd integer y; a zero x as the original; infinite or NaN arguments
+ * through libm's pow (the original's _powhlp gives the C99 values). */
+double msvc_pow(double x, double y)
+{
+    extern double pow(double, double);
+    uint64_t qx = crt_double_bits(x), qy = crt_double_bits(y);
+    uint16_t old, cw;
+    double ax, r;
+    int kind = 2;
+
+    if ((qx & 0x7ff0000000000000ull) == 0x7ff0000000000000ull ||
+        (qy & 0x7ff0000000000000ull) == 0x7ff0000000000000ull)
+        return pow(x, y);
+    if ((qx << 1) == 0) { /* x = +-0 */
+        int neg;
+
+        if ((qy & 0x7ff0000000000000ull) == 0) /* y zero or denormal */
+            return (qy << 1) == 0 ? 1.0 : 0.0;
+        neg = (int)(qx >> 63) & (crt_int_kind(y) == 1);
+        if (qy >> 63)
+            return neg ? -__builtin_inf() : __builtin_inf();
+        return neg ? -0.0 : 0.0;
+    }
+    ax = x;
+    if (qx >> 63) {
+        kind = crt_int_kind(y);
+        if (kind == 0)
+            return crt_bits_double(CRT_INDEFINITE);
+        ax = -x;
+    }
+    cw = crt_caller_cw();
+    __asm__ volatile("fnstcw %1\n\t"
+                     "fldcw %2\n\t"
+                     "fldl %3\n\t"
+                     "fldl %4\n\t"
+                     "fyl2x\n\t"
+                     "fld %%st(0)\n\t"
+                     "frndint\n\t"
+                     ".byte 0xdc, 0xe1\n\t" /* fsubr st(1), st: st(1) = st(0) - st(1) */
+                     "fxch %%st(1)\n\t"
+                     "fchs\n\t"
+                     "f2xm1\n\t"
+                     "fld1\n\t"
+                     "faddp\n\t"
+                     "fscale\n\t"
+                     "fstp %%st(1)\n\t"
+                     "fstpl %0\n\t"
+                     "fldcw %1"
+                     : "=m"(r), "=m"(old)
+                     : "m"(cw), "m"(y), "m"(ax)
+                     : "st", "st(1)");
+    return kind == 1 ? -r : r;
+}
+#endif

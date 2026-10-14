@@ -11,31 +11,27 @@
 #include "body.h"
 #include "fixed.h"
 #include "physics.h"
+#include "gamefn.h"
 
-#define g_race (*(uint8_t **)0x4b1960)
-#define g_options (*(uint8_t **)0x4b2198)
+#define g_race GP(0x4b1960)
+#define g_options GP(0x4b2198)
 #define g_race_ticks (*(uint32_t *)0x6c0a50)
 #define g_car_slots ((uint8_t *)0x6bfb80)
 #define CAR_SLOT_SIZE 0x274
-#define SLOT_CAR(i) (*(uint8_t **)(g_car_slots + (i) * CAR_SLOT_SIZE))
+#define SLOT_CAR(i) GP(g_car_slots + (i) * CAR_SLOT_SIZE)
+#define SET_PTR(a, p) (*(uint32_t *)(uintptr_t)(a) = (uint32_t)(uintptr_t)(p)) /* a 32-bit pointer in game memory */
+#define GNONE ((uint8_t *)(uintptr_t)0xffffffffu) /* a game pointer of -1 */
 #define CAR_COUNT (g_race[0x54d])
 #define S16(p, off) (*(int16_t *)((p) + (off)))
 #define U16(p, off) (*(uint16_t *)((p) + (off)))
 
-typedef void(GAMEAPI *void_fn)(void);
-typedef void(GAMEAPI *ptr_fn)(uint8_t *p);
-typedef void(GAMEAPI *sound_fn)(int32_t sound, int32_t channel, int32_t pitch, int32_t volume, int32_t pan);
-typedef void(GAMEAPI *volume_fn)(int32_t channel, int32_t left, int32_t right);
-typedef void(GAMEAPI *flakes_fn)(int32_t outdoors);
-typedef void(GAMEAPI *effect_fn)(int32_t *position, int32_t *velocity, int32_t kind, int32_t colour, int32_t size);
-typedef void(GAMEAPI *fade_fn)(uint8_t *sprite, int32_t life, int32_t white);
-#define sound_play ((sound_fn)0x471c90)
-#define sound_set_volume ((volume_fn)0x471fc0)
-#define weather_flakes ((flakes_fn)0x4857f0) /* x87; left original */
-#define effect_spawn ((effect_fn)0x42aa30)   /* group F */
-#define scenery_break ((ptr_fn)0x4052b0)     /* group F */
-#define sprite_fade ((fade_fn)0x42cd40)      /* group F */
-#define grid_remove ((ptr_fn)0x4612a0)       /* group F */
+#define sound_play(s, a, b, c, pos) GCALL(0x471c90, sound_play_body)(s, a, (uint32_t)(b), (uint32_t)(c), pos)
+#define sound_set_volume GCALL(0x471fc0, voice_set_volume)
+#define weather_flakes GCALL(0x4857f0, screen_flakes_update)
+#define effect_spawn(p, v, k, c, sz) GCALL(0x42aa30, explosion_effects)(p, v, k, (uint32_t)(c), (uint32_t)(sz)) /* group F */
+#define scenery_break GCALL(0x4052b0, blast_object_wreck) /* group F */
+#define sprite_fade GCALL(0x42cd40, particle_fade)      /* group F */
+#define grid_remove GCALL(0x4612a0, object_grid_unlink2) /* group F */
 
 /* ---- Weather ----
  *
@@ -56,7 +52,7 @@ typedef void(GAMEAPI *fade_fn)(uint8_t *sprite, int32_t life, int32_t white);
 #define g_weather_level_last (*(int32_t *)0x4d58e8)
 #define g_weather_level_timer (*(int32_t *)0x4d58ec)
 #define g_weather_trend (*(int32_t *)0x5d6338)
-#define g_weather_emitters ((uint8_t **)0x5d6360)
+#define g_weather_emitters(i) GP(0x5d6360 + (i) * 4)
 #define g_thunder_wait (*(int32_t *)0x4d5900)
 #define g_lightning_wait (*(int32_t *)0x4d5904)
 #define g_lightning (*(int32_t *)0x4d5908)
@@ -67,8 +63,8 @@ typedef void(GAMEAPI *fade_fn)(uint8_t *sprite, int32_t life, int32_t white);
 #define g_view_flags (*(uint8_t *)0x6cce40)
 #define g_player_slot (*(int32_t *)0x6c0a40)
 #define g_chase_view ((uint8_t *)0x5d6260)
-#define g_surfaces (*(uint8_t **)0x6bfb40)
-#define g_section_info (*(uint8_t ***)*(uint8_t **)0x6c1e30)
+#define g_surfaces GP(0x6bfb40)
+#define g_section_info(i) GP(GP(GP(0x6c1e30)) + (i) * 4)
 
 static uint32_t weather_random(void)
 {
@@ -99,13 +95,13 @@ void GAMEAPI weather_level_step(void)
  * forward axis. */
 void GAMEAPI car_view(uint8_t **slot, int32_t *out)
 {
-    uint8_t *car = *slot;
+    uint8_t *car = GP(slot);
     int32_t dir[3], up[3], i;
 
     for (i = 0; i < 0x36; i++)
         out[i] = I32(car, 0x34 + i * 4);
     out[1] -= 0x70000;
-    car = *slot;
+    car = GP(slot);
     dir[0] = -S16(car, 0xc8);
     dir[1] = -S16(car, 0xce);
     dir[2] = -S16(car, 0xd4);
@@ -122,7 +118,7 @@ void GAMEAPI car_view(uint8_t **slot, int32_t *out)
     out[0x2b] = 0;
     out[0x2a] = 0;
     out[0x29] = 0;
-    car = *slot;
+    car = GP(slot);
     out[0xd] = I32(car, 0x68);
     out[0xe] = I32(car, 0x6c);
     out[0xf] = I32(car, 0x70);
@@ -139,7 +135,7 @@ void GAMEAPI car_view(uint8_t **slot, int32_t *out)
  * camera; only the last two unless split screen (0x6cce40 bit 2). */
 void GAMEAPI weather_emitter_place(uint8_t *emitter, int32_t restore, int32_t index)
 {
-    uint8_t *body = *(uint8_t **)(emitter + 0x10), *view;
+    uint8_t *body = GP(emitter + 0x10), *view;
     int32_t i, off_track;
 
     if (!(g_view_flags & 4) && index < g_camera_count - 2)
@@ -180,7 +176,7 @@ void GAMEAPI weather_emitter_place(uint8_t *emitter, int32_t restore, int32_t in
 
 static int32_t section_indoors(const uint8_t *body)
 {
-    return I32(body, 0x11c) >= 0 && (*(g_section_info[body[0x11c]] + 4) & 8);
+    return I32(body, 0x11c) >= 0 && (*(g_section_info(body[0x11c]) + 4) & 8);
 }
 
 /* 0x4850f0: 1 if there is weather and the body is indoors. */
@@ -193,7 +189,7 @@ int32_t GAMEAPI weather_indoors(const uint8_t *body)
  * up and down, pushed ahead along its matrix's third row. */
 void GAMEAPI weather_box(int16_t *min, int16_t *max, const uint8_t *emitter)
 {
-    const uint8_t *body = *(uint8_t *const *)(emitter + 0x10);
+    const uint8_t *body = ((uint8_t *)(uintptr_t)*(const uint32_t *)(emitter + 0x10));
     int16_t dx, dy, dz;
 
     min[0] = (int16_t)((I32(body, 0x34) >> 16) - 0x400);
@@ -233,7 +229,7 @@ void GAMEAPI weather_drops_spawn(const int16_t *min, const int16_t *max, uint8_t
     int32_t x0 = min[0], y0 = min[1], z0 = min[2];
     int32_t dx = max[0] - x0, dy = max[1] - y0, dz = max[2] - z0;
     int32_t volume, count, rest;
-    uint8_t **next = (uint8_t **)(emitter + 0xc94), *drop;
+    uint8_t *next = emitter + 0xc94, *drop; /* holds a 32-bit game pointer */
 
     if ((dx & 0xfffff000) || (dy & 0xfffff000) || (dz & 0xfffff000))
         return;
@@ -242,7 +238,7 @@ void GAMEAPI weather_drops_spawn(const int16_t *min, const int16_t *max, uint8_t
     rest = (volume - (int32_t)((uint32_t)count << 19)) >> (emitter[0xca2] & 31);
     if ((int32_t)(weather_random() >> 15) < rest)
         count++;
-    drop = *next;
+    drop = GP(next);
     for (; count > 0; count--) {
         uint32_t a = weather_random(), b = weather_random(), c = weather_random();
 
@@ -251,10 +247,10 @@ void GAMEAPI weather_drops_spawn(const int16_t *min, const int16_t *max, uint8_t
         S16(drop, -6) = (int16_t)(((b >> 15) * (uint32_t)dy >> 16) + y0);
         S16(drop, -4) = (int16_t)(((c >> 15) * (uint32_t)dz >> 16) + z0);
         S16(drop, -2) = 1;
-        if (drop >= (uint8_t *)next)
+        if (drop >= next)
             drop = emitter + 0x14;
     }
-    *next = drop;
+    SET_PTR(next, drop);
 }
 
 static int16_t *box3(int16_t *b, int16_t x, int16_t y, int16_t z)
@@ -275,7 +271,7 @@ void GAMEAPI weather_emitter_update(uint8_t *emitter)
     int16_t *box = (int16_t *)emitter;
     int32_t min_x = box[0], min_y = box[1], min_z = box[2];
     int32_t max_x = box[4], max_y = box[5], max_z = box[6];
-    uint8_t *body = *(uint8_t **)(emitter + 0x10), *drop, *end = emitter + 0xc94;
+    uint8_t *body = GP(emitter + 0x10), *drop, *end = emitter + 0xc94;
     int32_t indoors = 0;
     int16_t lo[3], hi[3];
 
@@ -448,20 +444,20 @@ void GAMEAPI weather_lightning(int32_t outdoors)
 /* 0x484080: the weather, once a step. */
 void GAMEAPI weather_update(void)
 {
-    uint8_t *emitter = g_weather_emitters[0];
+    uint8_t *emitter = g_weather_emitters(0);
     int32_t outdoors = 1, i;
 
     weather_level_step();
     if (g_race[0x553] && emitter) {
         for (i = 0; i < 6; i++) {
-            if (emitter == (uint8_t *)-1)
+            if (emitter == GNONE)
                 break;
             weather_emitter_place(emitter, 0, i);
             weather_emitter_update(emitter);
-            if (weather_indoors(*(uint8_t **)(emitter + 0x10)) == 1)
+            if (weather_indoors(GP(emitter + 0x10)) == 1)
                 outdoors = 0;
             weather_emitter_place(emitter, 1, i);
-            emitter = g_weather_emitters[i + 1];
+            emitter = g_weather_emitters(i + 1);
         }
         if (g_race[0x553] == 1) {
             weather_thunder();
@@ -505,7 +501,7 @@ void GAMEAPI explosions_update(void)
             effect_spawn(position, velocity, 3, 0x24, 0xa);
         }
         if (!e[9])
-            scenery_break(*(uint8_t **)(e + 0xc));
+            scenery_break(GP(e + 0xc));
         e[6] = 0xff;
         return;
     }
@@ -734,19 +730,19 @@ void GAMEAPI sprite_grow(uint8_t *s, int32_t behaviour, uint32_t life)
 /* 0x42ad00: take a sprite off the in-use list onto the free list. */
 void GAMEAPI sprite_free(uint8_t *s)
 {
-    uint8_t *prev = *(uint8_t **)(s + 0xac), *next = *(uint8_t **)(s + 0xa8);
+    uint8_t *prev = GP(s + 0xac), *next = GP(s + 0xa8);
 
     if (prev)
-        *(uint8_t **)(prev + 0xa8) = next;
+        SET_PTR(prev + 0xa8, next);
     else
-        *(uint8_t **)0x4be130 = next;
+        SET_PTR(0x4be130, next);
     if (next)
-        *(uint8_t **)(next + 0xac) = prev;
+        SET_PTR(next + 0xac, prev);
     else
-        *(uint8_t **)0x4be12c = prev;
-    *(uint8_t **)(s + 0xa8) = 0;
-    *(uint8_t **)(s + 0xac) = *(uint8_t **)0x4be128;
-    *(uint8_t **)0x4be128 = s;
+        SET_PTR(0x4be12c, prev);
+    SET_PTR(s + 0xa8, 0);
+    SET_PTR(s + 0xac, GP(0x4be128));
+    SET_PTR(0x4be128, s);
     s[0x94] = 0;
     grid_remove(s);
 }
@@ -755,9 +751,9 @@ void GAMEAPI sprite_free(uint8_t *s)
  * of its life. */
 void GAMEAPI sprites_move(void)
 {
-    uint8_t *end = *(uint8_t **)0x6ccb84, *s;
+    uint8_t *end = GP(0x6ccb84), *s;
 
-    for (s = *(uint8_t **)0x6ccb5c; s < end; s += 0x100) {
+    for (s = GP(0x6ccb5c); s < end; s += 0x100) {
         uint32_t behaviour;
         int32_t life;
 
@@ -950,7 +946,7 @@ void GAMEAPI shadows_update(void)
 /* 0x47c210 */
 void GAMEAPI debris_update(void)
 {
-    uint8_t *d = *(uint8_t **)0x5d9290;
+    uint8_t *d = GP(0x5d9290);
     uint32_t *index = (uint32_t *)0x5d9288;
 
     for (*index = 0; *index < 0x40; ++*index, d += 0x180) {
@@ -997,7 +993,7 @@ void GAMEAPI tyre_trails_update(void)
         scroll = (uint8_t)(((g_effect_seed >> 16) & 0x1f) + 0xf);
         for (w = 0; w < 2; w++) {
             uint8_t *trail = car + 0x14cc + w * 0x6d4;
-            const uint8_t *wheel = *(uint8_t **)(car + 0x518 + w * 0xc4);
+            const uint8_t *wheel = GP(car + 0x518 + w * 0xc4);
             const int32_t *r = (const int32_t *)0x6cccc8;
             int32_t *point, x, y, z;
 
@@ -1046,8 +1042,8 @@ void GAMEAPI car_texture_frames(int32_t car_index)
 
         I32(base, 0x1080) = frame < 9 ? frame : 0;
     }
-    entry = *(uint8_t **)0x6c1e14 +
-            ((uint32_t)U16(*(uint8_t **)0x6c1eb0, 0x2e) + (uint32_t)I32(base, 0x1080) + 0x86) * 16;
+    entry = GP(0x6c1e14) +
+            ((uint32_t)U16(GP(0x6c1eb0), 0x2e) + (uint32_t)I32(base, 0x1080) + 0x86) * 16;
     w0 = U32(entry, 0);
     w1 = U32(entry, 4);
     w3 = U16(entry, 0xa);
@@ -1089,10 +1085,10 @@ void GAMEAPI car_textures_update(void)
     for (i = 0; i < CAR_COUNT; i++)
         g_car_slots[i * CAR_SLOT_SIZE + 0x265] = 0xff;
     for (i = 0; i < CAR_COUNT; i++) {
-        uint8_t *car = SLOT_CAR(i), *record = *(uint8_t **)(car + 0x6ac);
+        uint8_t *car = SLOT_CAR(i), *record = GP(car + 0x6ac);
         int32_t speed;
 
-        if (record != (uint8_t *)-1 && *record)
+        if (record != GNONE && *record)
             continue;
         speed = (int32_t)((uint32_t)(I32(car, 0x654) - 0x3a0000) << 8) / 0x190000;
         if (speed > 1) {
