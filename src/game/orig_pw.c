@@ -32,11 +32,11 @@
  * on the stack, callee pops) where it used one; 0x495000 / 0x4950a3 keep
  * every register (pushad) and 0x495958 all but eax, so they get asm entries
  * that do the same; 0x49545b / 0x4955be / 0x4956d2 take esi (and ebx, edi)
- * and get asm entries calling *_c bodies. Windows calls go through the
- * import table, COM calls through the object's vtable, everything outside
- * the group by address. */
+ * and get asm entries calling *_c bodies. Windows and COM calls go
+ * through winapi.h and com.h, everything outside the group by address. */
 #include "../runtime.h"
 #include "physics.h"
+#include "com.h"
 
 #define U8(p, off) (*(uint8_t *)((uint8_t *)(uintptr_t)(p) + (off)))
 #define S16(p, off) (*(int16_t *)((uint8_t *)(uintptr_t)(p) + (off)))
@@ -50,7 +50,6 @@
 #define PTR(a) ((uint8_t *)(uintptr_t)(a))
 
 #define FASTCALL __attribute__((fastcall))
-#define STDCALL __attribute__((stdcall))
 
 /* This group's functions (also in build/groups/pw_protos.txt for physics.h). */
 int32_t FASTCALL fmv_audio_close(uint8_t *player); /* 0x493a10 */
@@ -95,27 +94,6 @@ typedef void(FASTCALL *pw_fast1)(uint32_t a);
 #define pw_calloc(n, size) (((pw_fn2)0x49946c)((n), (size)))
 #define pw_fatal(text) (((pw_fast1)0x493340)(text))
 
-/* Windows calls through the import table (stdcall). */
-typedef int32_t(STDCALL *pw_api1)(uint32_t a);
-typedef int32_t(STDCALL *pw_api2)(uint32_t a, uint32_t b);
-#define IAT1(slot, a) ((*(pw_api1 *)(uintptr_t)(slot))(A(a)))
-#define IAT2(slot, a, b) ((*(pw_api2 *)(uintptr_t)(slot))(A(a), A(b)))
-#define pw_Sleep(ms) IAT1(0x4a3110, ms)
-#define pw_InterlockedExchange(p, v) IAT2(0x4a314c, p, v)
-#define pw_timeEndPeriod(p) IAT1(0x4a32b8, p)
-#define pw_timeKillEvent(id) IAT1(0x4a32c4, id)
-
-/* COM calls through the vtable (stdcall, `this` first). */
-typedef int32_t(STDCALL *pw_com1)(uint32_t self);
-typedef int32_t(STDCALL *pw_com2)(uint32_t self, uint32_t a);
-typedef int32_t(STDCALL *pw_com5)(uint32_t self, uint32_t a, uint32_t b, uint32_t c, uint32_t d);
-#define VT(obj, off) (*(uint32_t *)(uintptr_t)(G32(obj) + (off)))
-#define COM1(obj, off) (((pw_com1)(uintptr_t)VT(obj, off))(obj))
-#define COM2(obj, off, a) (((pw_com2)(uintptr_t)VT(obj, off))(obj, A(a)))
-#define COM5(obj, off, a, b, c, d) (((pw_com5)(uintptr_t)VT(obj, off))(obj, A(a), A(b), A(c), A(d)))
-/* IDirectDrawSurface: GetPixelFormat 0x54, GetSurfaceDesc 0x58, Lock 0x64,
- * Unlock 0x80; IUnknown Release 8. */
-
 /* The decoder's tables and state. */
 #define T_Y 0x4daac8 /* luma -> pixel, 128 dwords */
 #define T_CB 0x4dacc8 /* Cb -> pixel */
@@ -155,22 +133,22 @@ int32_t FASTCALL fmv_audio_close(uint8_t *player)
         int32_t tries = 999;
 
         for (;;) {
-            int32_t r = pw_InterlockedExchange(player + 0x32c, 1);
+            int32_t r = InterlockedExchange((LONG *)(player + 0x32c), 1);
 
             if (r != 1)
                 break;
-            pw_Sleep(r);
+            Sleep((DWORD)r);
             if (tries-- <= 0)
                 break;
         }
-        if (pw_timeKillEvent(U32(player, 0x330)) == 0)
+        if (timeKillEvent(U32(player, 0x330)) == 0)
             U32(player, 0x330) = 0;
         else
             pw_fatal(0x4b30b0);
-        pw_timeEndPeriod(U32(player, 0x334));
+        timeEndPeriod(U32(player, 0x334));
     }
     if (U32(player, 0x94) != 0)
-        COM1(U32(player, 0x94), 8);
+        IDirectSoundBuffer_Release(U32(player, 0x94));
     return 0;
 }
 
@@ -326,10 +304,10 @@ static void pw_present(uint8_t *player, pw_blit_fn blit)
 
     memset(desc, 0, sizeof(desc));
     desc[0] = 0x6c;
-    while (COM5(U32(player, 0x90), 0x64, 0, desc, 1, 0) != 0)
+    while (IDirectDrawSurface_Lock(U32(player, 0x90), 0, (uint8_t *)desc, 1, 0) != 0)
         ;
     blit(player, desc[9], desc[4]);
-    while (COM2(U32(player, 0x90), 0x80, 0) != 0)
+    while (IDirectDrawSurface_Unlock(U32(player, 0x90), 0) != 0)
         ;
 }
 
@@ -729,7 +707,7 @@ void FASTCALL fmv_video_init(uint8_t *player)
     U32(player, 0x50) = pw_calloc(1, (uint32_t)(S16(player, 0xc) * S16(player, 0xe)) << 2);
     memset(desc, 0, sizeof(desc));
     desc[0] = 0x6c;
-    if (COM2(U32(player, 0x90), 0x58, desc) == 0) {
+    if (IDirectDrawSurface_GetSurfaceDesc(U32(player, 0x90), (uint8_t *)desc) == 0) {
         G32(SCREEN_W) = desc[3];
         G32(SCREEN_H) = desc[2];
     }
@@ -739,7 +717,7 @@ void FASTCALL fmv_video_init(uint8_t *player)
 
         memset(pf, 0, sizeof(pf));
         pf[0] = 0x20;
-        COM2(surf, 0x54, pf);
+        IDirectDrawSurface_GetPixelFormat(surf, (uint8_t *)pf);
         rb = pw_bits(pf[4]);
         U32(player, 0x6c) = (uint32_t)rb;
         gb = pw_bits(pf[5]);

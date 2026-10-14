@@ -240,7 +240,8 @@ static uint16_t add_class(const char *name, WNDPROC proc)
 }
 
 /* WNDCLASSEXA: size, style, proc +8, ..., class name +0x28 */
-uint16_t WINAPI RegisterClassExA(const uint8_t *c)
+/* an ATOM, zero-extended: the game keeps the whole of eax */
+DWORD WINAPI RegisterClassExA(const uint8_t *c)
 {
     return add_class(*(const char *const *)(c + 0x28), *(WNDPROC const *)(c + 8));
 }

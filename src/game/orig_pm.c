@@ -32,6 +32,7 @@
  * here they are 0. Everything outside the group is called by address. */
 #include "../runtime.h"
 #include "physics.h"
+#include "winapi.h"
 
 #define U8(p, off) (*(uint8_t *)((uint8_t *)(uintptr_t)(p) + (off)))
 #define U16(p, off) (*(uint16_t *)((uint8_t *)(uintptr_t)(p) + (off)))
@@ -44,7 +45,6 @@
 #define A(x) ((uint32_t)(uintptr_t)(x))
 #define PTR(a) ((uint8_t *)(uintptr_t)(a))
 
-#define STDCALL __attribute__((stdcall))
 #define X87 "st", "st(1)", "st(2)", "st(3)", "st(4)", "st(5)", "st(6)", "st(7)"
 
 #define g_race G32(0x4b1960)
@@ -70,9 +70,6 @@ typedef int32_t(GAMEAPI *pm_fn5)(uint32_t a, uint32_t b, uint32_t c, uint32_t d,
 #define CALL3(a, x, y, z) (((pm_fn3)(a))(A(x), A(y), A(z)))
 #define CALL4(a, x, y, z, w) (((pm_fn4)(a))(A(x), A(y), A(z), A(w)))
 #define CALL5(a, x, y, z, w, v) (((pm_fn5)(a))(A(x), A(y), A(z), A(w), A(v)))
-
-typedef uint32_t(STDCALL *pm_api0)(void);
-#define pm_timeGetTime_ptr() (*(pm_api0 *)(uintptr_t)0x4a32b4)
 
 /* Outside the group. */
 #define game_time_at() ((uint32_t)CALL0(0x43692a))
@@ -225,7 +222,7 @@ static inline uint32_t x87_depth(uint32_t v)
  * integer to float, / the float at 0x4a33cc, through __ftol. */
 int32_t GAMEAPI net_time(void)
 {
-    uint64_t q = (uint32_t)(pm_timeGetTime_ptr()() - G32(0x5d5998));
+    uint64_t q = (uint32_t)(timeGetTime() - G32(0x5d5998));
     int32_t r;
 
     __asm__ volatile("fildq %[q]\n\t"
@@ -356,7 +353,6 @@ int32_t GAMEAPI net_controls_wait(void)
 {
     char line[0x80], text[0x80];
     uint32_t start = game_time_at();
-    pm_api0 now;
     uint32_t r, i;
     int32_t waiting;
 
@@ -364,7 +360,6 @@ int32_t GAMEAPI net_controls_wait(void)
         return 1;
     if (U8(g_options, 0x37) == 0 && !(G8(0x4c2458) & 1))
         return 1;
-    now = pm_timeGetTime_ptr();
     while (G8(0x5d622c) & 2) {
         pm_pump();
         waiting = 0;
@@ -375,7 +370,7 @@ int32_t GAMEAPI net_controls_wait(void)
             }
         if (net_race_over())
             waiting = 0;
-        if (now() > G32(0x5d2ccc) + start) {
+        if (timeGetTime() > G32(0x5d2ccc) + start) {
             for (i = 0, r = REC(0); r < REC_END; r += 0x66c, i++) {
                 if (!U32(r, 0) || U32(r, 0x3c) == G32(0x5d59a0) || U32(r, 0x3c) == G32(0x5d59a4))
                     continue;
@@ -442,14 +437,13 @@ void GAMEAPI net_sequence_advance(void)
  * +0 == 1 to set +0x24; those that did not are dropped. 1. */
 int32_t GAMEAPI net_wait_players_ready(void)
 {
-    pm_api0 now = pm_timeGetTime_ptr();
-    uint32_t end = now();
+    uint32_t end = timeGetTime();
     uint32_t r, i;
 
     if (!(G8(0x5d622c) & 0x20))
         return 1;
     end += 10000;
-    if (now() < end) {
+    if (timeGetTime() < end) {
         do {
             for (i = 0, r = REC(0); r < REC(6); r += 0x66c, i++)
                 if (U32(r, 0) == 1 && U32(r, 0x24) == 0)
@@ -457,7 +451,7 @@ int32_t GAMEAPI net_wait_players_ready(void)
             if (i == 6)
                 return 1;
             pm_pump();
-        } while (now() < end);
+        } while (timeGetTime() < end);
     }
     for (i = 0, r = REC(0); r < REC(6); r += 0x66c, i++)
         if (U32(r, 0) == 1 && U32(r, 0x24) == 0)
@@ -476,8 +470,7 @@ int32_t GAMEAPI net_race_started(void)
  * connected, else 1. */
 int32_t GAMEAPI net_wait_race_start(void)
 {
-    pm_api0 now = pm_timeGetTime_ptr();
-    uint32_t end = now();
+    uint32_t end = timeGetTime();
     int32_t r;
 
     if (!(G8(0x5d622c) & 1) || !(G8(0x5d622c) & 2))
@@ -488,12 +481,12 @@ int32_t GAMEAPI net_wait_race_start(void)
             return 0;
     }
     end += 10000;
-    if (now() < end)
+    if (timeGetTime() < end)
         do {
             if (net_race_started())
                 break;
             pm_pump();
-        } while (now() < end);
+        } while (timeGetTime() < end);
     return 1;
 }
 
@@ -511,8 +504,7 @@ int32_t GAMEAPI net_settings_sent(void)
  * 1 (0 when the send fails); 1 when not the host. */
 int32_t GAMEAPI net_cars_collect(void)
 {
-    pm_api0 now = pm_timeGetTime_ptr();
-    uint32_t end = now();
+    uint32_t end = timeGetTime();
     uint8_t msg[8];
     uint32_t r, i, c, e;
     int32_t sent;
@@ -528,7 +520,7 @@ int32_t GAMEAPI net_cars_collect(void)
     if (sent == 0)
         return 0;
     end += 10000;
-    if (now() < end)
+    if (timeGetTime() < end)
         do {
             for (i = 0, r = REC(0); r < REC(6); r += 0x66c, i++)
                 if (U32(r, 0) == 1 && U32(r, 0x1c) == 0xffffffff)
@@ -536,7 +528,7 @@ int32_t GAMEAPI net_cars_collect(void)
             if (i == 6)
                 break;
             pm_pump();
-        } while (now() < end);
+        } while (timeGetTime() < end);
     net_players_compact();
     for (i = 0, r = REC(0); r < REC(6); r += 0x66c, i++) {
         if (U32(r, 0) == 1 && U32(r, 0x1c) != 0xffffffff)

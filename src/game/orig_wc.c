@@ -20,12 +20,11 @@
  *    as data by _FPmtinit / _FPmtterm (0x4b4ab0 / 0x4b4ab4): a C no-op
  *    and the patch that points those two slots at it.
  *
- * Windows calls go through the original's import table, COM calls through
- * the object's vtable. Everything outside the group is called by address. */
+ * Windows and COM calls go through winapi.h and com.h. Everything outside
+ * the group is called by address. */
 #include "../runtime.h"
 #include "physics.h"
-
-#define STDCALL __attribute__((stdcall))
+#include "com.h"
 
 #define A(p) ((uint32_t)(uintptr_t)(p))
 #define PTR(a) ((uint8_t *)(uintptr_t)(a))
@@ -56,31 +55,6 @@ typedef uint32_t(GAMEAPI *wc_fn13)(uint32_t a, uint32_t b, uint32_t c, uint32_t 
 #define CALL4(f, a, b, c, d) ((wc_fn4)(f))(A(a), A(b), A(c), A(d))
 #define CALL5(f, a, b, c, d, e) ((wc_fn5)(f))(A(a), A(b), A(c), A(d), A(e))
 #define CALL6(f, a, b, c, d, e, g) ((wc_fn6)(f))(A(a), A(b), A(c), A(d), A(e), A(g))
-
-typedef uint32_t(STDCALL *wc_std1)(uint32_t a);
-typedef uint32_t(STDCALL *wc_std2)(uint32_t a, uint32_t b);
-typedef uint32_t(STDCALL *wc_std3)(uint32_t a, uint32_t b, uint32_t c);
-typedef uint32_t(STDCALL *wc_std4)(uint32_t a, uint32_t b, uint32_t c, uint32_t d);
-typedef uint32_t(STDCALL *wc_std5)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e);
-typedef uint32_t(STDCALL *wc_std12)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f, uint32_t g,
-                                    uint32_t h, uint32_t i, uint32_t j, uint32_t k, uint32_t l);
-
-/* imports */
-#define IAT(slot, type) (*(type *)(uintptr_t)(slot))
-#define wc_SetRect(r, a, b, c, d) IAT(0x4a3254, wc_std5)(A(r), A(a), A(b), A(c), A(d))
-#define wc_GetSystemMetrics(i) IAT(0x4a3264, wc_std1)(A(i))
-#define wc_AdjustWindowRectEx(r, s, m, x) IAT(0x4a3268, wc_std4)(A(r), A(s), A(m), A(x))
-#define wc_ShowWindow(w, c) IAT(0x4a329c, wc_std2)(A(w), A(c))
-#define wc_CreateWindowExA(x, c, n, s, px, py, w, h, p, m, i, l)                                                      \
-    IAT(0x4a326c, wc_std12)(A(x), A(c), A(n), A(s), A(px), A(py), A(w), A(h), A(p), A(m), A(i), A(l))
-
-/* COM: the method at byte offset `off` of the object's vtable. */
-#define COM_FN(obj, off, type) ((type)(uintptr_t)U32(G32(obj), off))
-#define COM1(obj, off) COM_FN(obj, off, wc_std1)(A(obj))
-#define COM2(obj, off, a) COM_FN(obj, off, wc_std2)(A(obj), A(a))
-#define COM3(obj, off, a, b) COM_FN(obj, off, wc_std3)(A(obj), A(a), A(b))
-#define COM4(obj, off, a, b, c) COM_FN(obj, off, wc_std4)(A(obj), A(a), A(b), A(c))
-#define COM5(obj, off, a, b, c, d) COM_FN(obj, off, wc_std5)(A(obj), A(a), A(b), A(c), A(d))
 
 #define g_config G32(0x4b2198)
 #define g_race G32(0x4b1960)
@@ -179,7 +153,7 @@ int32_t GAMEAPI texture_upload_body(int32_t page, int32_t w, int32_t h, uint32_t
     U32(desc, 4) = 0x21007;
     U32(desc, 0x68) = 0x401808;
     U32(desc, 0x18) = 1;
-    g_dd_result = COM4(g_ddraw, 0x18, desc, rec, 0); /* CreateSurface */
+    g_dd_result = IDirectDraw_CreateSurface(g_ddraw, desc, (void **)GMEM(rec), 0);
     if (g_dd_result)
         return 0;
     if (!conv) {
@@ -225,11 +199,12 @@ int32_t GAMEAPI texture_upload_body(int32_t page, int32_t w, int32_t h, uint32_t
     }
     CALL1(0x487610, G32(rec)); /* unlock */
     if (!conv && G32(0x4bcd54)) {
-        g_dd_result = COM5(g_ddraw, 0x14, 0x4c, pal, &pal_obj, 0); /* CreatePalette */
-        g_dd_result = COM2(G32(rec), 0x7c, pal_obj);               /* SetPalette */
-        COM1(pal_obj, 8);                                          /* Release */
+        g_dd_result = IDirectDraw_CreatePalette(g_ddraw, 0x4c, pal, (void **)&pal_obj, 0);
+        g_dd_result = IDirectDrawSurface_SetPalette(G32(rec), pal_obj);
+        IDirectDrawPalette_Release(pal_obj);
     }
-    g_dd_result = COM3(G32(rec), 0, 0x4a3920, &tex); /* QueryInterface(IID_IDirect3DTexture2) */
+    /* IID_IDirect3DTexture2 */
+    g_dd_result = IDirectDrawSurface_QueryInterface(G32(rec), GMEM(0x4a3920), (void **)&tex);
     if (g_dd_result)
         return 0;
     if (!CALL2(0x487660, desc, G32(rec)))
@@ -240,23 +215,23 @@ int32_t GAMEAPI texture_upload_body(int32_t page, int32_t w, int32_t h, uint32_t
         return 0;
     ck[0] = 0;
     ck[1] = 0;
-    COM3(U32(rec, 4), 0x74, 8, ck); /* SetColorKey(DDCKEY_SRCBLT) */
+    IDirectDrawSurface_SetColorKey(U32(rec, 4), 8, ck); /* DDCKEY_SRCBLT */
     if (!conv && G32(0x4bcd54)) {
         memset(pal, 0, sizeof pal);
-        g_dd_result = COM5(g_ddraw, 0x14, 0x44, pal, &pal_obj, 0);
+        g_dd_result = IDirectDraw_CreatePalette(g_ddraw, 0x44, pal, (void **)&pal_obj, 0);
         if (g_dd_result)
             return 0;
-        g_dd_result = COM2(U32(rec, 4), 0x7c, pal_obj); /* not released (sic) */
+        g_dd_result = IDirectDrawSurface_SetPalette(U32(rec, 4), pal_obj); /* not released (sic) */
         if (g_dd_result)
             return 0;
     }
-    g_dd_result = COM3(U32(rec, 4), 0, 0x4a3920, rec + 8);
+    g_dd_result = IDirectDrawSurface_QueryInterface(U32(rec, 4), GMEM(0x4a3920), (void **)GMEM(rec + 8));
     if (g_dd_result)
         return 0;
-    g_dd_result = COM2(U32(rec, 8), 0x14, tex); /* IDirect3DTexture2::Load */
+    g_dd_result = IDirect3DTexture2_Load(U32(rec, 8), GMEM(tex));
     if (g_dd_result)
         return 0;
-    COM1(tex, 8);
+    IDirect3DTexture2_Release(tex);
     if (!CALL2(0x487660, desc, U32(rec, 4)))
         return 0;
     G32(0x4ba6f8)++;
@@ -305,8 +280,8 @@ void GAMEAPI vk_probe_body(void)
         CALL1(0x41f3f0, U8(g_config, 0x9a));
         G32(0x6cce60) = U8(g_config, 0x9b) == 0;
         if (G32(0x6cce7c) && U8(g_config, 0x99) && G32(0x4d5fa0)) {
-            COM3(g_back, 0x20, 0, G32(0x4d5fa0)); /* DeleteAttachedSurface */
-            COM1(G32(0x4d5fa0), 8);
+            IDirectDrawSurface_DeleteAttachedSurface(g_back, 0, G32(0x4d5fa0));
+            IDirectDrawSurface_Release(G32(0x4d5fa0));
             G32(0x4d5fa0) = 0;
             G32(0x4d5f98) = 0;
             G32(0x6cce7c) = 0;
@@ -317,7 +292,7 @@ void GAMEAPI vk_probe_body(void)
     U8(g_config, 0x99) = 0;
     U8(g_config, 0x9a) = 0;
     U8(g_config, 0x9b) = 0;
-    COM3(G32(0x4b8384), 0x5c, 0x29, 0); /* IDirect3DDevice2::SetRenderState */
+    IDirect3DDevice2_SetRenderState(G32(0x4b8384), 0x29, 0);
     CALL3(0x41ec40, 0, 0, 0x20);
     CALL4(0x41f2d0, 0, 0, G32(0x4acc38), G32(0x4acc3c));
     CALL0(0x41ddd0);
@@ -367,8 +342,8 @@ void GAMEAPI vk_probe_body(void)
         if (a == b) {
             U8(g_config, 0x99) = 1;
             if (G32(0x4d5fa0)) {
-                COM3(g_back, 0x20, 0, G32(0x4d5fa0));
-                COM1(G32(0x4d5fa0), 8);
+                IDirectDrawSurface_DeleteAttachedSurface(g_back, 0, G32(0x4d5fa0));
+                IDirectDrawSurface_Release(G32(0x4d5fa0));
                 G32(0x4d5fa0) = 0;
                 G32(0x4d5f98) = 0;
                 G32(0x6cce7c) = 0;
@@ -405,25 +380,27 @@ uint32_t GAMEAPI create_window_body(uint32_t unused, int32_t x, int32_t y, int32
     if (!y)
         y = (int32_t)0x80000000;
     if (!w)
-        w = (int32_t)wc_GetSystemMetrics(0) / 4 * 3;
+        w = GetSystemMetrics(0) / 4 * 3;
     if (!h)
-        h = (int32_t)wc_GetSystemMetrics(1) / 4 * 3;
+        h = GetSystemMetrics(1) / 4 * 3;
     if (fullscreen) {
-        uint32_t sh = wc_GetSystemMetrics(1);
-        uint32_t sw = wc_GetSystemMetrics(0);
-        window = wc_CreateWindowExA(8, 0x4acc18, 0x4acc24, 0x80000000, 0, 0, sw, sh, 0, 0, G32(0x6c7ffc), 0);
+        uint32_t sh = (uint32_t)GetSystemMetrics(1);
+        uint32_t sw = (uint32_t)GetSystemMetrics(0);
+        window = (uint32_t)(uintptr_t)CreateWindowExA(8, GMEM(0x4acc18), GMEM(0x4acc24), 0x80000000, 0, 0, (int32_t)sw,
+                                                       (int32_t)sh, 0, 0, GMEM(G32(0x6c7ffc)), 0);
     } else {
         rect[0] = 0;
         rect[1] = 0;
         rect[2] = w;
         rect[3] = h;
-        wc_AdjustWindowRectEx(rect, 0xcf0000, 0, 0x300);
-        window = wc_CreateWindowExA(0x300, 0x4acc18, 0x4acc24, 0xcf0000, x, y, rect[2] - rect[0], rect[3] - rect[1],
-                                    0, 0, G32(0x6c7ffc), 0);
+        AdjustWindowRectEx(rect, 0xcf0000, 0, 0x300);
+        window = (uint32_t)(uintptr_t)CreateWindowExA(0x300, GMEM(0x4acc18), GMEM(0x4acc24), 0xcf0000, x, y,
+                                                      rect[2] - rect[0], rect[3] - rect[1], 0, 0,
+                                                      GMEM(G32(0x6c7ffc)), 0);
     }
     if (!window)
         return 0;
-    wc_ShowWindow(window, 0);
+    ShowWindow(GMEM(window), 0);
     return window;
 }
 
@@ -441,17 +418,17 @@ int32_t GAMEAPI flip_body(void)
     int32_t rect[4];
 
     if (!G32(0x4d5f80)) {
-        wc_SetRect(rect, 0, 0, G32(0x4d5f88), G32(0x4d5f8c));
+        SetRect(rect, 0, 0, (int32_t)G32(0x4d5f88), (int32_t)G32(0x4d5f8c));
         ((wc_fn8)0x4878d0)(g_back, g_front, (uint32_t)rect[0], (uint32_t)rect[1], (uint32_t)rect[2],
                            (uint32_t)rect[3], 0, 0);
         return 1;
     }
-    hr = COM3(g_front, 0x2c, 0, 1);
+    hr = IDirectDrawSurface_Flip(g_front, 0, 1);
     g_dd_result = hr;
     if (hr == DDERR_SURFACELOST) {
-        COM1(g_front, 0x6c); /* Restore */
-        COM1(g_back, 0x6c);
-        hr = COM3(g_front, 0x2c, 0, 1);
+        IDirectDrawSurface_Restore(g_front);
+        IDirectDrawSurface_Restore(g_back);
+        hr = IDirectDrawSurface_Flip(g_front, 0, 1);
         g_dd_result = hr;
     }
     if (!hr)

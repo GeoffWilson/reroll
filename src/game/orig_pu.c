@@ -23,13 +23,13 @@
  *    (0x48cc30, 0x48ca00, 0x48cae0, 0x48c9f0) and the acknowledgement table
  *    (0x5d5368, 64 x 0x18: 0x48c530, 0x48c790, 0x48c830, 0x48c900).
  *
- * Windows calls go through the original's import table, COM calls through
- * the object's vtable. The callbacks the original passes as immediates
+ * Windows and COM calls go through winapi.h and com.h. The callbacks the original passes as immediates
  * (0x48b3e0, 0x48b320, 0x48ce90) are ours here; 0x48ac40 (another group's)
  * is passed by address. Everything outside the group is called by
  * address. */
 #include "../runtime.h"
 #include "physics.h"
+#include "com.h"
 
 #define U8(p, off) (*(uint8_t *)((uint8_t *)(uintptr_t)(p) + (off)))
 #define U16(p, off) (*(uint16_t *)((uint8_t *)(uintptr_t)(p) + (off)))
@@ -57,72 +57,7 @@ typedef int32_t(GAMEAPI *pu_fn4)(uint32_t a, uint32_t b, uint32_t c, uint32_t d)
 #define CALL3(a, x, y, z) (((pu_fn3)(a))(A(x), A(y), A(z)))
 #define CALL4(a, x, y, z, w) (((pu_fn4)(a))(A(x), A(y), A(z), A(w)))
 
-/* stdcall: imports and COM methods. */
-#define PU_STD __attribute__((stdcall))
-typedef int32_t(PU_STD *pu_std0)(void);
-typedef int32_t(PU_STD *pu_std1)(uint32_t a);
-typedef int32_t(PU_STD *pu_std2)(uint32_t a, uint32_t b);
-typedef int32_t(PU_STD *pu_std3)(uint32_t a, uint32_t b, uint32_t c);
-typedef int32_t(PU_STD *pu_std4)(uint32_t a, uint32_t b, uint32_t c, uint32_t d);
-typedef int32_t(PU_STD *pu_std5)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e);
-typedef int32_t(PU_STD *pu_std6)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f);
-typedef int32_t(PU_STD *pu_std7)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f,
-                                 uint32_t g);
-typedef int32_t(PU_STD *pu_std10)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f,
-                                  uint32_t g, uint32_t h, uint32_t i, uint32_t j);
-
-#define IAT(slot, type) (*(type *)(uintptr_t)(slot))
-#define pu_DirectPlayLobbyCreateA(g, out, u, d, n) IAT(0x4a3038, pu_std5)(A(g), A(out), A(u), A(d), A(n))
-#define pu_WaitForSingleObject(h, t) IAT(0x4a3064, pu_std2)(A(h), A(t))
-#define pu_ReleaseMutex(h) IAT(0x4a3080, pu_std1)(A(h))
-#define pu_OpenMutexA(a, i, n) IAT(0x4a3084, pu_std3)(A(a), A(i), A(n))
-#define pu_WaitForMultipleObjects(n, h, all, t) IAT(0x4a3088, pu_std4)(A(n), A(h), A(all), A(t))
-#define pu_SetEvent(h) IAT(0x4a30a8, pu_std1)(A(h))
-#define pu_CreateEventA(sa, m, s, n) IAT(0x4a30ac, pu_std4)(A(sa), A(m), A(s), A(n))
-#define pu_CreateMutexA(sa, o, n) IAT(0x4a30fc, pu_std3)(A(sa), A(o), A(n))
-#define pu_CloseHandle(h) IAT(0x4a3100, pu_std1)(A(h))
-#define pu_EndDialog(w, r) IAT(0x4a3288, pu_std2)(A(w), A(r))
-#define pu_DialogBoxParamA(i, t, w, p, l) IAT(0x4a328c, pu_std5)(A(i), A(t), A(w), A(p), A(l))
-#define pu_SendDlgItemMessageA(w, id, m, wp, lp) IAT(0x4a3290, pu_std5)(A(w), A(id), A(m), A(wp), A(lp))
-#define pu_timeGetTime() ((uint32_t)IAT(0x4a32b4, pu_std0)())
-#define pu_CoCreateInstance(c, o, x, i, out) IAT(0x4a3304, pu_std5)(A(c), A(o), A(x), A(i), A(out))
-
-/* A COM method: slot off of obj's vtable. */
-#define VT(obj, off) (*(uint32_t *)(uintptr_t)(*(uint32_t *)(uintptr_t)(obj) + (off)))
-#define COM1(o, off) (((pu_std1)VT(o, off))(A(o)))
-#define COM2(o, off, a) (((pu_std2)VT(o, off))(A(o), A(a)))
-#define COM3(o, off, a, b) (((pu_std3)VT(o, off))(A(o), A(a), A(b)))
-#define COM4(o, off, a, b, c) (((pu_std4)VT(o, off))(A(o), A(a), A(b), A(c)))
-#define COM5(o, off, a, b, c, d) (((pu_std5)VT(o, off))(A(o), A(a), A(b), A(c), A(d)))
-#define COM6(o, off, a, b, c, d, e) (((pu_std6)VT(o, off))(A(o), A(a), A(b), A(c), A(d), A(e)))
-#define COM7(o, off, a, b, c, d, e, f) (((pu_std7)VT(o, off))(A(o), A(a), A(b), A(c), A(d), A(e), A(f)))
-#define COM10(o, off, a, b, c, d, e, f, g, h, i)                                                                      \
-    (((pu_std10)VT(o, off))(A(o), A(a), A(b), A(c), A(d), A(e), A(f), A(g), A(h), A(i)))
-
-/* IDirectPlay4A methods (vtable offsets). */
-#define DP_RELEASE 0x08
-#define DP_CLOSE 0x10
-#define DP_CREATE_PLAYER 0x18
-#define DP_DESTROY_PLAYER 0x24
-#define DP_GET_CAPS 0x38
-#define DP_GET_PLAYER_ADDRESS 0x48
-#define DP_OPEN 0x60
-#define DP_RECEIVE 0x64
-#define DP_ENUM_CONNECTIONS 0x8c
-#define DP_INITIALIZE_CONNECTION 0x98
-#define DP_GET_PLAYER_FLAGS 0xb8
-#define DP_SEND_EX 0xc4
-#define DP_CANCEL_MESSAGE 0xcc
-/* IDirectPlayLobby2A */
-#define LB_QUERY_INTERFACE 0x00
-#define LB_ENUM_ADDRESS 0x14
-#define LB_CREATE_COMPOUND_ADDRESS 0x38
-/* IDirectInputEffect */
-#define FX_SET_PARAMETERS 0x18
-#define FX_START 0x1c
-#define FX_STOP 0x20
-#define FX_GET_EFFECT_STATUS 0x24
-
+/* IDirectPlayLobbyA / IDirectPlayLobby2A methods (com.h has none). */
 #define DPERR_ALREADYINITIALIZED 0x88770005u
 #define DPERR_BUFFERTOOSMALL 0x8877001eu
 #define DPERR_NOMESSAGES 0x887700beu
@@ -299,7 +234,7 @@ void GAMEAPI ff_effect_a_stop(int32_t dev)
     uint32_t fx = G32(DEV_RECORD(dev) + 0xd8);
 
     if (fx)
-        g_dinput_hr = COM1(fx, FX_STOP);
+        g_dinput_hr = IDirectInputEffect_Stop(fx);
 }
 
 /* 0x489e10: the periodic effect (+0xdc): unless the same kick (period
@@ -323,7 +258,7 @@ void GAMEAPI ff_periodic_play(int32_t dev, int32_t period, int32_t magnitude, in
         d2 = d2 < 0 ? -d2 : d2;
         d3 = d3 < 0 ? -d3 : d3;
         if (d1 < 12000 && d2 < 1000 && d3 < 10000) {
-            COM2(fx, FX_GET_EFFECT_STATUS, &dev);
+            IDirectInputEffect_GetEffectStatus(fx, (DWORD *)&dev);
             if (dev & 1)
                 return;
         }
@@ -341,10 +276,10 @@ void GAMEAPI ff_periodic_play(int32_t dev, int32_t period, int32_t magnitude, in
         effect[12] = A(periodic);
         effect[11] = 0x10;
         effect[2] = (uint32_t)duration;
-        g_dinput_hr = COM3(G32(slot), FX_SET_PARAMETERS, effect, 0x101);
+        g_dinput_hr = IDirectInputEffect_SetParameters(G32(slot), (const uint8_t *)effect, 0x101);
     }
-    COM2(G32(slot), FX_GET_EFFECT_STATUS, &dev);
-    g_dinput_hr = COM3(G32(slot), FX_START, 1, 0);
+    IDirectInputEffect_GetEffectStatus(G32(slot), (DWORD *)&dev);
+    g_dinput_hr = IDirectInputEffect_Start(G32(slot), 1, 0);
 }
 
 /* 0x489f40: stops the periodic effect (+0xdc), if any. */
@@ -353,7 +288,7 @@ void GAMEAPI ff_effect_b_stop(int32_t dev)
     uint32_t fx = G32(DEV_RECORD(dev) + 0xdc);
 
     if (fx)
-        g_dinput_hr = COM1(fx, FX_STOP);
+        g_dinput_hr = IDirectInputEffect_Stop(fx);
 }
 
 /* 0x489f70: every effect of the device stopped. */
@@ -388,7 +323,7 @@ int32_t GAMEAPI dplay_init(void)
 {
     mem_fill_at(0x5d2060, 0, 0x41d0);
     dplay_connections_probe();
-    g_dplay_hr = pu_CoCreateInstance(0x4a40e0, 0, 1, 0x4a40d0, 0x5d2060);
+    g_dplay_hr = CoCreateInstance(GMEM(0x4a40e0), 0, 1, GMEM(0x4a40d0), (void **)GMEM(0x5d2060));
     if (g_dplay_hr)
         return 0;
     g_recv_buffer = arena_alloc_at(0x1000);
@@ -407,7 +342,7 @@ void GAMEAPI dplay_pending_cancel(void)
         uint32_t r = ACK(i);
 
         if (U32(r, 0) == 1 && !(U8(r, 0x12) & 1))
-            COM3(g_dplay, DP_CANCEL_MESSAGE, U32(r, 0xc), 0);
+            IDirectPlay4A_CancelMessage(g_dplay, U32(r, 0xc), 0);
     }
 }
 
@@ -418,21 +353,21 @@ static void pu_thread_stop(void)
     if (g_thread) {
         uint32_t t, end;
 
-        pu_SetEvent(g_quit_event);
-        t = pu_timeGetTime();
+        SetEvent(GMEM(g_quit_event));
+        t = timeGetTime();
         if (!(g_net_flags & 0x40)) {
             end = t + 5000;
-            while (pu_timeGetTime() < end && !(g_net_flags & 0x40))
+            while (timeGetTime() < end && !(g_net_flags & 0x40))
                 ;
         }
-        pu_CloseHandle(g_quit_event);
-        pu_CloseHandle(g_recv_event);
+        CloseHandle(GMEM(g_quit_event));
+        CloseHandle(GMEM(g_recv_event));
         g_thread = 0;
         g_quit_event = 0;
         g_recv_event = 0;
     }
     if (g_mutex) {
-        pu_CloseHandle(g_mutex);
+        CloseHandle(GMEM(g_mutex));
         g_mutex = 0;
     }
 }
@@ -462,18 +397,18 @@ void GAMEAPI dplay_close(void)
         pu_thread_stop();
         if (g_dplay) {
             dplay_pending_cancel();
-            COM1(g_dplay, DP_CLOSE);
+            IDirectPlay4A_Close(g_dplay);
         }
         pu_connections_free();
     }
     g_net_flags &= ~1u;
     if (g_dplay)
-        COM1(g_dplay, DP_RELEASE);
+        IDirectPlay4A_Release(g_dplay);
     g_dplay = 0;
     for (i = 0; i < 6; i++)
         mem_fill_at(PLAYER(i), 0, 0x66c);
     g_player_count = 0;
-    hr = pu_CoCreateInstance(0x4a40e0, 0, 1, 0x4a40d0, 0x5d2060);
+    hr = CoCreateInstance(GMEM(0x4a40e0), 0, 1, GMEM(0x4a40d0), (void **)GMEM(0x5d2060));
     g_dplay_hr = hr;
     if (!hr)
         net_flag9_set_at(0);
@@ -492,12 +427,12 @@ void GAMEAPI dplay_shutdown(void)
         g_recv_buffer = 0;
         if (g_dplay) {
             dplay_pending_cancel();
-            COM1(g_dplay, DP_CLOSE);
+            IDirectPlay4A_Close(g_dplay);
         }
         pu_connections_free();
     }
     if (g_dplay)
-        COM1(g_dplay, DP_RELEASE);
+        IDirectPlay4A_Release(g_dplay);
     g_dplay = 0;
     g_net_flags &= ~1u;
 }
@@ -515,22 +450,22 @@ int32_t GAMEAPI dplay_connections_probe(void)
     uint32_t hr;
 
     G32(0x5d5cd4) = 0;
-    hr = pu_CoCreateInstance(0x4a40e0, 0, 1, 0x4a40d0, &dp);
+    hr = CoCreateInstance(GMEM(0x4a40e0), 0, 1, GMEM(0x4a40d0), (void **)&dp);
     g_dplay_hr = hr;
     if (hr)
         return 0;
-    hr = pu_CoCreateInstance(0x4a41a0, 0, 1, 0x4a4190, &lobby);
+    hr = CoCreateInstance(GMEM(0x4a41a0), 0, 1, GMEM(0x4a4190), (void **)&lobby);
     g_dplay_hr = hr;
     if (hr)
         return 0;
     g_conn_count = 0;
-    hr = COM5(dp, DP_ENUM_CONNECTIONS, 0, dplay_connection_enum_cb, G32(0x6c8000), 1);
+    hr = IDirectPlay4A_EnumConnections(dp, 0, (void *)dplay_connection_enum_cb, GMEM(G32(0x6c8000)), 1);
     g_dplay_hr = hr;
     if (hr) {
         if (dp)
-            COM1(dp, DP_RELEASE);
+            IDirectPlay4A_Release(dp);
         if (lobby)
-            COM1(lobby, DP_RELEASE);
+            IDirectPlayLobby2A_Release(lobby);
         return 0;
     }
     pu_guid_copy(A(elem), 0x4a4200);
@@ -539,40 +474,40 @@ int32_t GAMEAPI dplay_connections_probe(void)
     {
         uint32_t asize = 0x100;
 
-        hr = COM5(lobby, LB_CREATE_COMPOUND_ADDRESS, elem, 1, address, &asize);
+        hr = IDirectPlayLobby2A_CreateCompoundAddress(lobby, elem, 1, address, &asize);
         g_dplay_hr = hr;
         if (!hr) {
-            hr = COM3(dp, DP_INITIALIZE_CONNECTION, address, 0);
+            hr = IDirectPlay4A_InitializeConnection(dp, A(address), 0);
             g_dplay_hr = hr;
         }
     }
     if (hr) {
         if (dp)
-            COM1(dp, DP_RELEASE);
+            IDirectPlay4A_Release(dp);
         if (lobby)
-            COM1(lobby, DP_RELEASE);
+            IDirectPlayLobby2A_Release(lobby);
         return 0;
     }
-    hr = COM4(dp, DP_GET_PLAYER_ADDRESS, 0, 0, &size);
+    hr = IDirectPlay4A_GetPlayerAddress(dp, 0, 0, A(&size));
     g_dplay_hr = hr;
     if (hr && hr != DPERR_BUFFERTOOSMALL)
         return 0;
     buf = (uint32_t)block_alloc_at(size, 0);
     if (buf) {
-        hr = COM4(dp, DP_GET_PLAYER_ADDRESS, 0, buf, &size);
+        hr = IDirectPlay4A_GetPlayerAddress(dp, 0, buf, A(&size));
         g_dplay_hr = hr;
         if (hr)
             return 0;
-        hr = COM5(lobby, LB_ENUM_ADDRESS, 0x48ac40, buf, size, 0);
+        hr = IDirectPlayLobby2A_EnumAddress(lobby, (void *)(uintptr_t)0x48ac40, GMEM(buf), size, 0);
         g_dplay_hr = hr;
         if (hr)
             return 0;
         block_free_at(buf);
     }
     if (lobby)
-        COM1(lobby, DP_RELEASE);
+        IDirectPlayLobby2A_Release(lobby);
     if (dp)
-        COM1(dp, DP_RELEASE);
+        IDirectPlay4A_Release(dp);
     return 1;
 }
 
@@ -599,7 +534,7 @@ int32_t GAMEAPI dplay_connection_init(uint32_t address, uint32_t phone, uint32_t
 
     g_conn_count = 0;
     g_conn_chosen = 0;
-    hr = COM5(g_dplay, DP_ENUM_CONNECTIONS, 0, dplay_connection_enum_cb, G32(0x6c8000), 1);
+    hr = IDirectPlay4A_EnumConnections(g_dplay, 0, (void *)dplay_connection_enum_cb, GMEM(G32(0x6c8000)), 1);
     g_dplay_hr = hr;
     if (hr)
         return 0;
@@ -647,7 +582,8 @@ int32_t GAMEAPI dplay_connection_init(uint32_t address, uint32_t phone, uint32_t
         break;
     default:
         G32(0x4d9ae8) = 1;
-        g_conn_chosen = pu_DialogBoxParamA(G32(0x6c7ffc), 0x68, G32(0x6c8000), dplay_provider_dialog_proc, 0);
+        g_conn_chosen = DialogBoxParamA(GMEM(G32(0x6c7ffc)), GMEM(0x68), GMEM(G32(0x6c8000)),
+                                        (void *)dplay_provider_dialog_proc, 0);
         if (g_conn_chosen == -1)
             return 0;
         if (G32(0x4d9ae8))
@@ -655,11 +591,11 @@ int32_t GAMEAPI dplay_connection_init(uint32_t address, uint32_t phone, uint32_t
         break;
     }
     if (!use_stored) {
-        hr = pu_DirectPlayLobbyCreateA(0, &lobby1, 0, 0, 0);
+        hr = DirectPlayLobbyCreateA(0, (void **)&lobby1, 0, 0, 0);
         g_dplay_hr = hr;
         if (hr)
             return 0;
-        hr = COM3(lobby1, LB_QUERY_INTERFACE, 0x4a4170, &lobby2);
+        hr = IDirectPlayLobbyA_QueryInterface(lobby1, GMEM(0x4a4170), (void **)&lobby2);
         g_dplay_hr = hr;
         if (hr)
             return 0;
@@ -704,26 +640,26 @@ int32_t GAMEAPI dplay_connection_init(uint32_t address, uint32_t phone, uint32_t
         }
         if (count) {
             size = 0x100;
-            hr = COM5(lobby2, LB_CREATE_COMPOUND_ADDRESS, elem, count, buf, &size);
+            hr = IDirectPlayLobby2A_CreateCompoundAddress(lobby2, elem, count, buf, &size);
             g_dplay_hr = hr;
             if (hr)
                 return 0;
             if (size > 0x100)
                 return 0;
-            hr = COM3(g_dplay, DP_INITIALIZE_CONNECTION, buf, 0);
+            hr = IDirectPlay4A_InitializeConnection(g_dplay, A(buf), 0);
         } else {
             use_stored = 1;
         }
     }
     if (use_stored)
-        hr = COM3(g_dplay, DP_INITIALIZE_CONNECTION, U32(CONN(g_conn_chosen), 0x10), 0);
+        hr = IDirectPlay4A_InitializeConnection(g_dplay, U32(CONN(g_conn_chosen), 0x10), 0);
     g_dplay_hr = hr;
     if (hr && hr != DPERR_ALREADYINITIALIZED)
         return 0;
     if (lobby2)
-        COM1(lobby2, DP_RELEASE);
+        IDirectPlayLobby2A_Release(lobby2);
     if (lobby1)
-        COM1(lobby1, DP_RELEASE);
+        IDirectPlayLobbyA_Release(lobby1);
     return 1;
 }
 
@@ -739,18 +675,18 @@ int32_t __attribute__((stdcall)) dplay_provider_dialog_proc(uint32_t hwnd, uint3
     (void)lparam;
     if (msg == 0x110) {
         for (i = 0; i < g_conn_count; i++)
-            pu_SendDlgItemMessageA(hwnd, 0x3e9, 0x143, 0, CONN(i) + 0x20);
-        pu_SendDlgItemMessageA(hwnd, 0x3e9, 0x14e, 0, 0);
+            SendDlgItemMessageA(GMEM(hwnd), 0x3e9, 0x143, 0, (LPARAM)(CONN(i) + 0x20));
+        SendDlgItemMessageA(GMEM(hwnd), 0x3e9, 0x14e, 0, 0);
         return 1;
     }
     if (msg != 0x111)
         return 0;
     if ((uint16_t)wparam == 1) {
-        pu_EndDialog(hwnd, pu_SendDlgItemMessageA(hwnd, 0x3e9, 0x147, 0, 0));
+        EndDialog(GMEM(hwnd), SendDlgItemMessageA(GMEM(hwnd), 0x3e9, 0x147, 0, 0));
         return 1;
     }
     if ((uint16_t)wparam == 2)
-        pu_EndDialog(hwnd, -1);
+        EndDialog(GMEM(hwnd), -1);
     return 1;
 }
 
@@ -778,12 +714,12 @@ int32_t __attribute__((stdcall)) dplay_connection_enum_cb(uint32_t guid, uint32_
         return 1;
     mem_copy_at(U32(CONN(g_conn_count), 0x10), conn, size);
     G32(0x5d5cd4) = 0;
-    g_dplay_hr = pu_CoCreateInstance(0x4a40e0, 0, 1, 0x4a40d0, &dp);
+    g_dplay_hr = CoCreateInstance(GMEM(0x4a40e0), 0, 1, GMEM(0x4a40d0), (void **)&dp);
     if (!g_dplay_hr) {
-        g_dplay_hr = COM3(dp, DP_INITIALIZE_CONNECTION, conn, 0);
+        g_dplay_hr = IDirectPlay4A_InitializeConnection(dp, conn, 0);
         if (!g_dplay_hr)
             U32(CONN(g_conn_count), 0x1c) = 1;
-        COM1(dp, DP_RELEASE);
+        IDirectPlay4A_Release(dp);
     }
     if (pu_guid_eq(guid, GUID_SP_TCPIP))
         U32(CONN(g_conn_count), 0x18) = 0;
@@ -809,7 +745,7 @@ static int32_t pu_session_caps(void)
     uint32_t hr, t;
 
     caps[0] = 0x28;
-    hr = COM3(g_dplay, DP_GET_CAPS, caps, 0);
+    hr = IDirectPlay4A_GetCaps(g_dplay, A(caps), 0);
     g_dplay_hr = hr;
     if (hr)
         return 0;
@@ -832,7 +768,7 @@ int32_t GAMEAPI dplay_session_join(int32_t index, uint32_t name)
 
     if (g_dplay) {
         dplay_pending_cancel();
-        COM1(g_dplay, DP_CLOSE);
+        IDirectPlay4A_Close(g_dplay);
     }
     if (index >= g_session_count)
         return 0;
@@ -842,7 +778,7 @@ int32_t GAMEAPI dplay_session_join(int32_t index, uint32_t name)
         desc[0] = 0x50;
         pu_guid_copy(A(desc + 2), SESSION(g_session_chosen) + 8);
         do {
-            hr = COM3(g_dplay, DP_OPEN, desc, 0x81);
+            hr = IDirectPlay4A_Open(g_dplay, A(desc), 0x81);
             g_dplay_hr = hr;
         } while (hr == DPERR_CONNECTING);
         if (hr)
@@ -864,7 +800,7 @@ int32_t GAMEAPI dplay_session_host(uint32_t name, uint32_t session_name)
 
     if (g_dplay) {
         dplay_pending_cancel();
-        COM1(g_dplay, DP_CLOSE);
+        IDirectPlay4A_Close(g_dplay);
     }
     g_session_chosen = 0;
     g_session_count = 1;
@@ -878,7 +814,7 @@ int32_t GAMEAPI dplay_session_host(uint32_t name, uint32_t session_name)
     desc[10] = 6;
     desc[12] = SESSION(g_session_chosen) + 0x1c;
     do {
-        hr = COM3(g_dplay, DP_OPEN, desc, 0x82);
+        hr = IDirectPlay4A_Open(g_dplay, A(desc), 0x82);
         g_dplay_hr = hr;
     } while (hr == DPERR_CONNECTING);
     if (hr)
@@ -896,17 +832,17 @@ int32_t GAMEAPI dplay_session_host(uint32_t name, uint32_t session_name)
 int32_t GAMEAPI dplay_thread_start(void)
 {
     if (!g_mutex)
-        g_mutex = pu_CreateMutexA(0, 0, 0x4b2ce4);
+        g_mutex = (uint32_t)(uintptr_t)CreateMutexA(0, 0, GMEM(0x4b2ce4));
     if (!g_mutex)
         return 0;
     if (U8(g_config, 0x34))
         return 1;
     if (!g_recv_event)
-        g_recv_event = pu_CreateEventA(0, 0, 0, 0x4b2cd4);
+        g_recv_event = (uint32_t)(uintptr_t)CreateEventA(0, 0, 0, GMEM(0x4b2cd4));
     if (!g_recv_event)
         return 0;
     if (!g_quit_event) {
-        g_quit_event = pu_CreateEventA(0, 0, 0, 0x4b2cc0);
+        g_quit_event = (uint32_t)(uintptr_t)CreateEventA(0, 0, 0, GMEM(0x4b2cc0));
         if (!g_quit_event)
             return 0;
     }
@@ -958,7 +894,8 @@ int32_t GAMEAPI dplay_player_create(uint32_t name, int32_t host)
     mem_fill_at(dpname, 0, 0x10);
     dpname[0] = 0x10;
     dpname[2] = PLAYER(0) + 8;
-    hr = COM7(g_dplay, DP_CREATE_PLAYER, 0x5d5360, dpname, g_recv_event, 0, 0, host ? 0x100 : 0);
+    hr = IDirectPlay4A_CreatePlayer(g_dplay, (DWORD *)GMEM(0x5d5360), dpname, GMEM(g_recv_event), 0, 0,
+                                    host ? 0x100 : 0);
     g_dplay_hr = hr;
     g_local_player = 0;
     U32(PLAYER(0), 4) = g_local_id;
@@ -980,7 +917,7 @@ int32_t GAMEAPI net_player_remove(int32_t slot)
     p = PLAYER(slot);
     if (U32(p, 0)) {
         if (net_state_bit5_at() && U32(p, 4))
-            COM2(g_dplay, DP_DESTROY_PLAYER, U32(p, 4));
+            IDirectPlay4A_DestroyPlayer(g_dplay, U32(p, 4));
         mem_fill_at(p, 0, 0x66c);
         g_player_count = g_player_count - 1;
         if (g_player_count < 0)
@@ -1128,13 +1065,13 @@ int32_t GAMEAPI net_inbox_pop(uint32_t *from, uint32_t *to, uint32_t buf, uint32
  * released and closed, sic). */
 uint32_t GAMEAPI net_lock(int32_t wait)
 {
-    uint32_t h = (uint32_t)pu_OpenMutexA(0x1f0001, 0, 0x4b2ce4);
+    uint32_t h = (uint32_t)(uintptr_t)OpenMutexA(0x1f0001, 0, GMEM(0x4b2ce4));
 
     if (!h)
         return 0;
-    if (pu_WaitForSingleObject(h, wait ? 0xffffffff : 0)) {
-        pu_ReleaseMutex(h);
-        pu_CloseHandle(h);
+    if (WaitForSingleObject(GMEM(h), wait ? 0xffffffff : 0)) {
+        ReleaseMutex(GMEM(h));
+        CloseHandle(GMEM(h));
         return 0;
     }
     return h;
@@ -1143,8 +1080,8 @@ uint32_t GAMEAPI net_lock(int32_t wait)
 /* 0x48c440: the mutex released and its handle closed. */
 int32_t GAMEAPI net_unlock(uint32_t h)
 {
-    pu_ReleaseMutex(h);
-    return pu_CloseHandle(h);
+    ReleaseMutex(GMEM(h));
+    return CloseHandle(GMEM(h));
 }
 
 /* 0x48c460: when connected (flags 1 and 2), under the mutex, every inbox
@@ -1189,7 +1126,7 @@ int32_t GAMEAPI net_ack_track(uint32_t seq, uint32_t msgid, uint32_t to, uint32_
     if (i == 0x40)
         return 0;
     r = ACK(i);
-    U32(r, 8) = pu_timeGetTime();
+    U32(r, 8) = timeGetTime();
     U32(r, 4) = to;
     U16(r, 0x10) = (uint16_t)seq;
     U32(r, 0xc) = msgid;
@@ -1208,7 +1145,7 @@ int32_t GAMEAPI net_player_check(uint32_t id)
 
     if (net_player_slot_of(who) != -1)
         return 1;
-    if (COM3(g_dplay, DP_GET_PLAYER_FLAGS, who, &id))
+    if (IDirectPlay4A_GetPlayerFlags(g_dplay, who, A(&id)))
         return 0;
     return (id & 0x100) ? 1 : 0;
 }
@@ -1244,7 +1181,7 @@ int32_t GAMEAPI dplay_receive_all(void)
         size = 0x1000;
         to = 0;
         from = 0;
-        hr = COM6(g_dplay, DP_RECEIVE, &from, &to, 1, g_recv_buffer, &size);
+        hr = IDirectPlay4A_Receive(g_dplay, &from, &to, 1, GMEM(g_recv_buffer), &size);
         if (hr) {
             if (hr == DPERR_NOMESSAGES)
                 break;
@@ -1272,7 +1209,7 @@ static int pu_ack_resend_due(uint32_t r)
 {
     if (U32(r, 0x14) >= 2)
         return 0;
-    return pu_timeGetTime() > U32(r, 8) + (U32(r, 0x14) + 1) * 250;
+    return timeGetTime() > U32(r, 8) + (U32(r, 0x14) + 1) * 250;
 }
 
 /* 0x48c790: waits for the acknowledgement of message `seq` (word): 1 when
@@ -1299,7 +1236,7 @@ int32_t GAMEAPI net_ack_wait(uint32_t seq)
             U32(r, 0) = 0;
             return 0;
         }
-        if (pu_timeGetTime() >= U32(r, 8) + 2000)
+        if (timeGetTime() >= U32(r, 8) + 2000)
             return 0;
         if (U8(r, 0x12) & 1)
             return 1;
@@ -1343,7 +1280,7 @@ int32_t GAMEAPI net_acks_wait_first(void)
             U32(r, 0) = 0;
             return 0;
         }
-        if (pu_timeGetTime() >= U32(r, 8) + 2000)
+        if (timeGetTime() >= U32(r, 8) + 2000)
             return 0;
     }
 }
@@ -1365,7 +1302,7 @@ int32_t GAMEAPI net_player_lost_check(uint32_t id)
     uint32_t who = id;
     int32_t i;
 
-    if (!COM3(g_dplay, DP_GET_PLAYER_FLAGS, who, &id))
+    if (!IDirectPlay4A_GetPlayerFlags(g_dplay, who, A(&id)))
         return 0;
     for (i = 0; i < 6; i++)
         if (U32(PLAYER(i), 4) == who) {
@@ -1425,18 +1362,19 @@ int32_t GAMEAPI net_resend(uint32_t to, uint32_t seq)
     }
     if (i == 0x20)
         return 0;
-    t = pu_timeGetTime();
-    hr = COM10(g_dplay, DP_SEND_EX, U32(r, 8), U32(r, 0xc), U32(r, 0x10), U32(r, 0), U32(r, 4), 0, 0, 0, &seq);
+    t = timeGetTime();
+    hr = IDirectPlay4A_SendEx(g_dplay, U32(r, 8), U32(r, 0xc), U32(r, 0x10), GMEM(U32(r, 0)), U32(r, 4), 0, 0, 0,
+                              &seq);
     g_dplay_hr = hr;
     if (hr == DPERR_PENDING_SEND) {
         t += 1000;
         do {
-            if (pu_timeGetTime() > t) {
+            if (timeGetTime() > t) {
                 hr = g_dplay_hr;
                 break;
             }
-            hr = COM10(g_dplay, DP_SEND_EX, U32(r, 8), U32(r, 0xc), U32(r, 0x10), U32(r, 0), U32(r, 4), 0, 0, 0,
-                       &seq);
+            hr = IDirectPlay4A_SendEx(g_dplay, U32(r, 8), U32(r, 0xc), U32(r, 0x10), GMEM(U32(r, 0)), U32(r, 4), 0,
+                                      0, 0, &seq);
             g_dplay_hr = hr;
         } while (hr == DPERR_PENDING_SEND);
     }
@@ -1472,7 +1410,7 @@ int32_t GAMEAPI net_message_send(uint32_t to, uint32_t msg, uint32_t size, uint3
         if (!(dpflags & 1))
             dpflags |= 0x400;
     }
-    t0 = pu_timeGetTime();
+    t0 = timeGetTime();
     if (dpflags & 1)
         U16(msg, 2) = (uint16_t)net_sequence_next_at();
     else
@@ -1481,17 +1419,17 @@ int32_t GAMEAPI net_message_send(uint32_t to, uint32_t msg, uint32_t size, uint3
     G8(0x4d9aec) = (uint8_t)(G8(0x4d9aec) + 1);
     U32(msg, 4) = net_checksum_at(msg, size);
     net_send_log(g_local_id, to, dpflags, msg, size, 0);
-    hr = COM10(g_dplay, DP_SEND_EX, g_local_id, to, dpflags, msg, size, 0, 0, 0, &msgid);
+    hr = IDirectPlay4A_SendEx(g_dplay, g_local_id, to, dpflags, GMEM(msg), size, 0, 0, 0, &msgid);
     g_dplay_hr = hr;
     if (hr == DPERR_PENDING_SEND) {
         uint32_t end = t0 + 1000; /* kept in the second argument's slot in the original */
 
         do {
-            if (pu_timeGetTime() > end) {
+            if (timeGetTime() > end) {
                 hr = g_dplay_hr;
                 break;
             }
-            hr = COM10(g_dplay, DP_SEND_EX, g_local_id, to, dpflags, msg, size, 0, 0, 0, &msgid);
+            hr = IDirectPlay4A_SendEx(g_dplay, g_local_id, to, dpflags, GMEM(msg), size, 0, 0, 0, &msgid);
             g_dplay_hr = hr;
         } while (hr == DPERR_PENDING_SEND);
     }
@@ -1513,12 +1451,12 @@ int32_t GAMEAPI net_message_send(uint32_t to, uint32_t msg, uint32_t size, uint3
  * event is the one set; flag 0x40 when it ends. */
 void GAMEAPI dplay_receive_thread(uint32_t arg)
 {
-    uint32_t handles[2];
+    HANDLE handles[2];
 
     (void)arg;
-    handles[0] = g_recv_event;
-    handles[1] = g_quit_event;
-    while (!pu_WaitForMultipleObjects(2, handles, 0, 0xffffffff))
+    handles[0] = GMEM(g_recv_event);
+    handles[1] = GMEM(g_quit_event);
+    while (!WaitForMultipleObjects(2, handles, 0, 0xffffffff))
         dplay_receive_all();
     g_net_flags |= 0x40;
 }

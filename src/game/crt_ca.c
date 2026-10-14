@@ -19,9 +19,10 @@
  * 0x498450, sqrt 0x4981d4, gt20_decompress 0x497860, and in paths the game
  * never takes: the locale lock / LCMapString (strlwr / strupr with a locale
  * set) and _hypot's error reporting (_except 0x4a0f1a, 0x4a0eba).
- * Windows calls go through the import table. */
+ * Windows calls by name (winapi.h). */
 #include "../runtime.h"
 #include "physics.h"
+#include "winapi.h"
 
 #define U8(p, off) (*(uint8_t *)((uint8_t *)(p) + (off)))
 #define U16(p, off) (*(uint16_t *)((uint8_t *)(p) + (off)))
@@ -34,9 +35,6 @@
 #define G32(a) (*(uint32_t *)(a))
 #define GI32(a) (*(int32_t *)(a))
 #define GPTR(a) (*(uint8_t **)(a))
-#define IMPORT(a) (*(void **)(a))
-
-#define STDCALL __attribute__((stdcall))
 
 /* ------------------------------------------------------------ callees */
 
@@ -76,31 +74,6 @@ typedef int32_t(GAMEAPI *lcmap_fn)(uint32_t lcid, uint32_t flags, const char *sr
 #define crt_unlock ((lock_fn)0x49b1c2)
 #define crt_lcmap ((lcmap_fn)0x49ba3b)
 
-/* Windows imports (the import table slots). */
-typedef uint32_t(STDCALL *mci_fn)(uint32_t dev, uint32_t msg, uint32_t flags, void *params);
-typedef uint32_t(STDCALL *time_fn)(void);
-typedef uint32_t(STDCALL *u32_1_fn)(uint32_t a);
-typedef uint32_t(STDCALL *u32_2_fn)(uint32_t a, uint32_t b);
-typedef uint32_t(STDCALL *u32_3_fn)(uint32_t a, void *b, uint32_t c);
-typedef uint32_t(STDCALL *mixer_open_fn)(uint32_t *h, uint32_t id, uint32_t cb, uint32_t inst, uint32_t flags);
-typedef int32_t(STDCALL *interlocked_fn)(int32_t *p);
-
-#define mciSendCommandA_ ((mci_fn)IMPORT(0x4a32d0))
-#define timeGetTime_ ((time_fn)IMPORT(0x4a32b4))
-#define mixerSetControlDetails_ ((u32_3_fn)IMPORT(0x4a32c8))
-#define mixerOpen_ ((mixer_open_fn)IMPORT(0x4a32cc))
-#define auxSetVolume_ ((u32_2_fn)IMPORT(0x4a32d4))
-#define auxGetVolume_ ((uint32_t(STDCALL *)(uint32_t, uint32_t *))IMPORT(0x4a32d8))
-#define auxGetDevCapsA_ ((u32_3_fn)IMPORT(0x4a32dc))
-#define auxGetNumDevs_ ((time_fn)IMPORT(0x4a32e0))
-#define mixerClose_ ((u32_1_fn)IMPORT(0x4a32e4))
-#define mixerGetLineInfoA_ ((u32_3_fn)IMPORT(0x4a32e8))
-#define mixerGetNumDevs_ ((time_fn)IMPORT(0x4a32ec))
-#define mixerGetDevCapsA_ ((u32_3_fn)IMPORT(0x4a32f0))
-#define mixerGetLineControlsA_ ((u32_3_fn)IMPORT(0x4a32f4))
-#define mixerGetControlDetailsA_ ((u32_3_fn)IMPORT(0x4a32f8))
-#define InterlockedIncrement_ ((interlocked_fn)IMPORT(0x4a31ac))
-#define InterlockedDecrement_ ((interlocked_fn)IMPORT(0x4a31c8))
 
 /* ------------------------------------------------------------ debug log */
 
@@ -371,7 +344,7 @@ int32_t GAMEAPI archive_state(void)
 #define g_mixer_query GI32(0x4db208) /* stop at the first control (modes 0x2724 / 0x272e) */
 #define g_mixer_volume G32(0x4db204) /* first control's volume scaled to 0..0xffff */
 
-#define mci(cmd, flags, params) mciSendCommandA_(g_cd_device, (cmd), (flags), (void *)(params))
+#define mci(cmd, flags, params) mciSendCommandA(g_cd_device, (cmd), (flags), (DWORD)(uintptr_t)(params))
 
 /* 0x4966b0: open the CD audio device (MCI_OPEN, type id 0x204): 0 or -1. */
 int32_t GAMEAPI cdaudio_device_open(void)
@@ -380,7 +353,7 @@ int32_t GAMEAPI cdaudio_device_open(void)
 
     g_cd_busy = 1;
     U32(MCI_OPEN_PARMS, 8) = 0x204;
-    r = mciSendCommandA_(0, 0x803, 0x3100, MCI_OPEN_PARMS);
+    r = mciSendCommandA(0, 0x803, 0x3100, (DWORD)(uintptr_t)MCI_OPEN_PARMS);
     g_cd_busy = 0;
     return r ? -1 : 0;
 }
@@ -412,7 +385,7 @@ int32_t GAMEAPI cdaudio_random(int32_t n)
 
     if (g_cd_seed_time) {
         g_cd_seed_time = 0;
-        seed = (int32_t)(timeGetTime_() & 0x7fffffff);
+        seed = (int32_t)(timeGetTime() & 0x7fffffff);
     } else {
         seed = g_cd_seed;
     }
@@ -564,7 +537,7 @@ void GAMEAPI cdaudio_stop(void)
         uint32_t dev = g_cd_device;
 
         g_cd_busy = 1;
-        mciSendCommandA_(dev, 0x808, 0, MCI_GENERIC_PARMS);
+        mciSendCommandA(dev, 0x808, 0, (DWORD)(uintptr_t)MCI_GENERIC_PARMS);
         g_cd_state = 1;
         g_cd_busy = 0;
     }
@@ -656,15 +629,15 @@ void GAMEAPI cdaudio_set_skip_first(int32_t skip)
  * (*volume = 0). volume 0: just 1 / 2 by the volume capability. */
 int32_t GAMEAPI aux_query(uint32_t dev, uint8_t *caps, uint32_t *volume)
 {
-    if (dev >= auxGetNumDevs_())
+    if (dev >= auxGetNumDevs())
         return -1;
-    if (auxGetDevCapsA_(dev, caps, 0x30))
+    if (auxGetDevCapsA(dev, caps, 0x30))
         return 0;
     if (U16(caps, 0x28) != 1)
         return 0;
     if (!volume)
         return (U8(caps, 0x2c) & 1) ? 1 : 2;
-    if ((U8(caps, 0x2c) & 1) && auxGetVolume_(dev, volume) == 0)
+    if ((U8(caps, 0x2c) & 1) && auxGetVolume(dev, volume) == 0)
         return 1;
     *volume = 0;
     return 2;
@@ -738,7 +711,7 @@ void GAMEAPI aux_set_volume(int32_t left, int32_t right)
             v = (uint32_t)right << 16 | (uint32_t)left;
         else
             v = (uint32_t)((left + right) / 2);
-        auxSetVolume_(U32(e, 4), v);
+        auxSetVolume(U32(e, 4), v);
     }
 }
 
@@ -773,7 +746,7 @@ int32_t GAMEAPI mixer_add_control(uint32_t dev, uint32_t h, uint32_t dest, uint3
     U32(node, 0x2c) = U32(ctl, 0x10);
     U32(node, 0x30) = 4;
     PTR(node, 0x34) = values;
-    if (mixerGetControlDetailsA_(h, node + 0x20, 0)) {
+    if (mixerGetControlDetailsA(GMEM(h), node + 0x20, 0)) {
         crt_free(node);
         crt_free(values);
         crt_free(saved);
@@ -838,7 +811,7 @@ int32_t GAMEAPI mixer_check_control(uint32_t dev, uint32_t h, uint32_t dest, uin
     lc[3] = 0; /* cControls: not set by the original (stack) */
     lc[4] = 0x94;
     lc[5] = (uint32_t)(uintptr_t)one;
-    if (mixerGetLineControlsA_(h, lc, 1))
+    if (mixerGetLineControlsA(GMEM(h), lc, 1))
         return 0;
     if ((U32(one, 8) & 0xf0000000u) != 0x50000000u)
         return 0;
@@ -861,7 +834,7 @@ int32_t GAMEAPI mixer_scan_source(uint32_t dev, uint32_t h, uint32_t dest, uint3
     U32(line, 0) = 0xa8;
     U32(line, 4) = dest;
     U32(line, 8) = src;
-    if (mixerGetLineInfoA_(h, line, 1))
+    if (mixerGetLineInfoA(GMEM(h), line, 1))
         return 0;
     if (U32(line, 0x18) != 0x1005)
         return 0;
@@ -876,7 +849,7 @@ int32_t GAMEAPI mixer_scan_source(uint32_t dev, uint32_t h, uint32_t dest, uint3
     lc[3] = U32(line, 0x24);
     lc[4] = 0x94;
     lc[5] = (uint32_t)(uintptr_t)controls;
-    if (!mixerGetLineControlsA_(h, lc, 0) && U32(line, 0x24)) {
+    if (!mixerGetLineControlsA(GMEM(h), lc, 0) && U32(line, 0x24)) {
         for (i = 0, c = controls; i < U32(line, 0x24); i++, c += 0x94)
             if (mixer_check_control(dev, h, dest, src, c, i, U32(line, 0x1c)) == -1)
                 break;
@@ -894,7 +867,7 @@ int32_t GAMEAPI mixer_scan_destination(uint32_t dev, uint32_t h, uint32_t dest)
 
     U32(line, 0) = 0xa8;
     U32(line, 4) = dest;
-    if (mixerGetLineInfoA_(h, line, 0))
+    if (mixerGetLineInfoA(GMEM(h), line, 0))
         return 0;
     if (U32(line, 0x18) < 4 || U32(line, 0x18) > 5)
         return 0;
@@ -911,9 +884,9 @@ int32_t GAMEAPI mixer_scan_device(uint32_t dev)
     uint32_t h, i;
     int32_t result = 0;
 
-    if (mixerGetDevCapsA_(dev, caps, 0x30))
+    if (mixerGetDevCapsA(dev, caps, 0x30))
         return 0;
-    if (mixerOpen_(&h, dev, 0, 0, 0))
+    if (mixerOpen(&h, dev, 0, 0, 0))
         return 0;
     for (i = 0; i < U32(caps, 0x2c); i++) {
         if (mixer_scan_destination(dev, h, i) == -1) {
@@ -921,7 +894,7 @@ int32_t GAMEAPI mixer_scan_device(uint32_t dev)
             break;
         }
     }
-    mixerClose_(h);
+    mixerClose(GMEM(h));
     return result;
 }
 
@@ -943,7 +916,7 @@ int32_t GAMEAPI mixer_scan(int32_t mode)
     } else {
         return -1;
     }
-    n = mixerGetNumDevs_();
+    n = mixerGetNumDevs();
     for (i = 0; i < n; i++)
         if (mixer_scan_device(i) == -1)
             return -1;
@@ -968,7 +941,7 @@ void GAMEAPI mixer_set_volume(int32_t restore, int32_t left, int32_t right)
     for (i = 0; i < g_mixer_count; i++) {
         if (!node)
             return;
-        if (mixerOpen_(&h, U32(node, 4), 0, 0, 0))
+        if (mixerOpen(&h, U32(node, 4), 0, 0, 0))
             continue;
         if (restore) {
             memcpy(PTR(node, 0x38), PTR(node, 0x3c), U32(node, 0x4c));
@@ -980,8 +953,8 @@ void GAMEAPI mixer_set_volume(int32_t restore, int32_t left, int32_t right)
             for (k = 0; k < U32(node, 0x48); k++)
                 U32(PTR(node, 0x38), k * 4) = v;
         }
-        mixerSetControlDetails_(h, node + 0x20, 0);
-        mixerClose_(h);
+        mixerSetControlDetails(GMEM(h), node + 0x20, 0);
+        mixerClose(GMEM(h));
         node = PTR(node, 0);
     }
 }
@@ -993,11 +966,10 @@ static void cdaudio_volume_restore(void)
     mixer_set_volume(1, 0, 0);
     if (g_aux_scanned) {
         if (g_aux_table && g_aux_count > 0) {
-            u32_2_fn set = auxSetVolume_;
             int32_t i;
 
             for (i = 0; i < g_aux_count; i++)
-                set(U32(g_aux_table, i * 12 + 4), U32(g_aux_table, i * 12));
+                auxSetVolume(U32(g_aux_table, i * 12 + 4), U32(g_aux_table, i * 12));
         }
         aux_free();
     }
@@ -1024,11 +996,15 @@ void GAMEAPI cdaudio_set_volume(int32_t left, int32_t right)
 /* ------------------------------------------------------------ runtime */
 
 /* 0x4a1c36: the DirectSoundCreate import thunk (dsound #1, stdcall with
- * three arguments): a jump through the import slot, as the original (it
- * reads no arguments itself). */
+ * three arguments): a jump to DirectSoundCreate (through the import slot in
+ * the emulator build, as the original); it reads no arguments itself. */
 __attribute__((naked)) void crt_dsound_create(void)
 {
+#ifdef REROLL_NATIVE
+    __asm__ volatile("jmp %P0" : : "i"(DirectSoundCreate));
+#else
     __asm__ volatile("jmp *0x4a3040");
+#endif
 }
 
 #define g_lc_ctype G32(0x4db37c)          /* locale handle (0: "C"; setlocale is never called) */
@@ -1044,9 +1020,9 @@ static char *str_case(char *s, uint32_t map, int upper)
     int32_t locked, n;
 
     if (g_lc_ctype) {
-        InterlockedIncrement_(g_unguarded_readlc);
+        InterlockedIncrement(g_unguarded_readlc);
         if (g_setlc_active) {
-            InterlockedDecrement_(g_unguarded_readlc);
+            InterlockedDecrement(g_unguarded_readlc);
             crt_lock(0x13);
             locked = 1;
         } else {
@@ -1062,14 +1038,14 @@ static char *str_case(char *s, uint32_t map, int upper)
             if (locked)
                 crt_unlock(0x13);
             else
-                InterlockedDecrement_(g_unguarded_readlc);
+                InterlockedDecrement(g_unguarded_readlc);
             crt_free(buf);
             return s;
         }
         if (locked)
             crt_unlock(0x13);
         else
-            InterlockedDecrement_(g_unguarded_readlc);
+            InterlockedDecrement(g_unguarded_readlc);
     }
     for (p = s; *p; p++) {
         if (upper) {

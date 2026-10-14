@@ -85,8 +85,6 @@ void nt_profile_flush(void);
 extern int nt_no_exe;
 int nt_data_extract(const char *exe, const char *out_path);
 void nt_data_trap_install(void);
-/* native/exe_coverage.c: REROLL_EXE_COVERAGE=<list> */
-void nt_exe_coverage_start(void);
 
 /* paths (native/paths.c): Windows path -> host path, resolving each part
  * case-insensitively. Returns 0 if the drive is unknown. `must_exist`: the

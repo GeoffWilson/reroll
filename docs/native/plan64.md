@@ -68,10 +68,9 @@ Measure: `tools/remaining.py` after each batch, plus a run-time check
   fills the code range with int3 except our hooks' jumps, and stops at the
   first original code still needed, naming it in native.log. First stop
   (2026-10-12): the C runtime start-up 0x498ec5.
-- `REROLL_EXE_COVERAGE=build/remaining.txt` (native/exe_coverage.c) breaks
-  on the first run of each listed function and logs it to native.log and
-  exe_coverage.txt. Menus and the attract demo ran 571 of 1031 (build/
-  exe_ran_demo.txt, 2026-10-11).
+- `REROLL_EXE_COVERAGE` (native/exe_coverage.c, removed 2026-10-14 once
+  no-exe mode's traps did its job) logged the first run of each unported
+  function. Menus and the attract demo ran 571 of 1031 (2026-10-11).
 - The import table, fake COM objects and Win32 layer stay only as long as
   C still calls them; ported code calls our SDL / Vulkan / file layers
   directly, and native/ shrinks to what is used.
@@ -90,9 +89,18 @@ Every one is fuzzed against the original in the emulator.
 Phase 2, first step done: no original code is the default. The loader maps
 reroll_data.bin (made from Rollcage.exe on the first run, after checking it
 is the expected version); `REROLL_NO_EXE=0` or `REROLL_VERIFY` map the
-original instead. Menus, the attract demo and races run that way. Left for
-phase 2: the import table, fake COM objects and Win32 layer shrink to what
-the C still calls.
+original instead. Menus, the attract demo and races run that way.
+
+Phase 2 done (2026-10-14): the game's C calls Windows functions by name
+(src/game/winapi.h, generated from native/'s definitions) and COM methods
+through typed wrappers (src/game/com.h: the method at its vtable index,
+read at pointer width). Natively the import table is not used: in no-exe
+mode every slot is a trap naming its import, and menus and races run
+without one firing. The emulator build still goes through the slots, so
+the tests are unchanged. Without the exe nothing uses fs:, so there is no
+thread block either. Found on the way: QSWaveMixStopProfile takes the
+statistics buffer and size (the game reads five counters back), and
+RegisterClassExA's result is used whole.
 
 ## Phase 3: 64-bit
 
@@ -111,6 +119,28 @@ and game allocations stay in the low arena, so structures keep their
 - libraries (SDL3, Vulkan) and our own state live anywhere: only game
   memory is compressed.
 
+Known work, from the Phase 2 conversion:
+
+- out-parameters that receive our objects or memory (`void **` in com.h /
+  winapi.h: CreateSurface, CreateDevice, QueryInterface, HeapAlloc's
+  callers storing results, DirectSound Lock) are 32-bit slots in game
+  memory: native/ must write uint32_t there, and the headers say so;
+- methods native/ answers with a generic stub take DWORDs where the real
+  argument is a pointer (SetClipper, Viewport Clear's rects,
+  GetSessionDesc, SendChatMessage...): type them when they matter;
+- callbacks passed by original address (EnumDisplayModes 0x487190,
+  DirectDrawEnumerate 0x487a80, DirectInput EnumDevices 0x488e80 and
+  EnumObjects 0x4890b0, D3D EnumDevices 0x41d280, EnumTextureFormats
+  0x41d790, DirectPlay EnumSessions 0x48bb30, lobby EnumAddress 0x48ac40,
+  dialog procs 0x437171 and 0x4375c7) become their C symbols;
+- function pointers the C runtime keeps in game memory from
+  GetProcAddress (MessageBoxA, GetActiveWindow, GetLastActivePopup at
+  0x4db50c..14; IsProcessorFeaturePresent) and the timer callback at
+  0x4d48c8;
+- the naked jmp thunks (orig_pv's PV_IMPORT_JMP, crt_ca's
+  DirectSoundCreate, crt_cc's RaiseException call) and the other asm
+  entries become C.
+
 Then 64-bit SDL3 and Vulkan, and no 32-bit libraries are needed.
 
 ## After the 64-bit build
@@ -125,3 +155,7 @@ Then 64-bit SDL3 and Vulkan, and no 32-bit libraries are needed.
   to), so it doesn't depend on that layer being built in. CD music stays
   on SDL.
 - Far objects drawn by the renderer (REROLL_FAR_OBJECTS is off).
+- Gamepad hot-plug (asked for 2026-10-14): native/dinput.c only finds pads
+  at start-up, so a pad switched on later is never seen. Watch SDL's
+  gamepad added/removed events and attach the pad to the game's joystick
+  device (and its force-feedback effects) while it runs.

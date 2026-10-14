@@ -29,10 +29,11 @@
  *
  * Float steps are the original's x87 instructions (inline asm); the GTE
  * transform / projection pair *0x6ccd78 / *0x6ccd80 hands st(0) from one to
- * the other, so it is called from asm. Windows calls go through the import
- * table. Everything outside the group is called by address. */
+ * the other, so it is called from asm. Windows calls go through winapi.h.
+ * Everything outside the group is called by address. */
 #include "../runtime.h"
 #include "physics.h"
+#include "winapi.h"
 
 #include <stdarg.h>
 
@@ -63,45 +64,8 @@ typedef int32_t(GAMEAPI *pp_fn3)(uint32_t a, uint32_t b, uint32_t c);
 #define CALL2(a, x, y) (((pp_fn2)(a))(A(x), A(y)))
 #define CALL3(a, x, y, z) (((pp_fn3)(a))(A(x), A(y), A(z)))
 
-/* Windows calls through the import table (stdcall). */
-typedef int32_t(STDCALL *pp_api0)(void);
-typedef int32_t(STDCALL *pp_api1)(uint32_t a);
-typedef int32_t(STDCALL *pp_api2)(uint32_t a, uint32_t b);
-typedef int32_t(STDCALL *pp_api4)(uint32_t a, uint32_t b, uint32_t c, uint32_t d);
-typedef int32_t(STDCALL *pp_api5)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e);
-typedef int32_t(STDCALL *pp_api7)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f,
-                                  uint32_t g);
-#define IAT0(slot) ((*(pp_api0 *)(uintptr_t)(slot))())
-#define IAT1(slot, a) ((*(pp_api1 *)(uintptr_t)(slot))(A(a)))
-#define IAT2(slot, a, b) ((*(pp_api2 *)(uintptr_t)(slot))(A(a), A(b)))
-#define IAT4(slot, a, b, c, d) ((*(pp_api4 *)(uintptr_t)(slot))(A(a), A(b), A(c), A(d)))
-#define IAT5(slot, a, b, c, d, e) ((*(pp_api5 *)(uintptr_t)(slot))(A(a), A(b), A(c), A(d), A(e)))
-#define IAT7(slot, a, b, c, d, e, f, g) \
-    ((*(pp_api7 *)(uintptr_t)(slot))(A(a), A(b), A(c), A(d), A(e), A(f), A(g)))
-
-#define pp_CreatePalette(p) IAT1(0x4a3050, p)
-#define pp_GlobalFree(p) IAT1(0x4a3068, p)
-#define pp_ReadFile(h, b, n, r, o) IAT5(0x4a3070, h, b, n, r, o)
-#define pp_WriteFile(h, b, n, r, o) IAT5(0x4a3074, h, b, n, r, o)
-#define pp_GetFileSize(h, hi) IAT2(0x4a3078, h, hi)
-#define pp_GetTempFileNameA(p, s, u, o) IAT4(0x4a307c, p, s, u, o)
-#define pp_FindClose(h) IAT1(0x4a3098, h)
-#define pp_FindFirstFileA(p, d) IAT2(0x4a30a0, p, d)
-#define pp_CloseHandle(h) IAT1(0x4a3100, h)
-#define pp_SetFilePointer(h, d, hi, m) IAT4(0x4a3104, h, d, hi, m)
-#define pp_CreateFileA(n, a, s, sa, c, f, t) IAT7(0x4a3108, n, a, s, sa, c, f, t)
-#define pp_GetLastError() IAT0(0x4a310c)
-#define pp_Sleep(ms) IAT1(0x4a3110, ms)
-#define pp_GlobalAlloc(f, n) IAT2(0x4a3114, f, n)
-#define pp_CreateDirectoryA(p, sa) IAT2(0x4a3140, p, sa)
-#define pp_LoadIconA(i, n) IAT2(0x4a3270, i, n)
-#define pp_RegisterClassExA(c) IAT1(0x4a3274, c)
-#define pp_LoadCursorA(i, n) IAT2(0x4a3278, i, n)
-#define pp_timeGetDevCaps(c, n) IAT2(0x4a32b0, c, n)
-#define pp_timeEndPeriod(p) IAT1(0x4a32b8, p)
-#define pp_timeSetEvent(d, r, cb, u, f) IAT5(0x4a32bc, d, r, cb, u, f)
-#define pp_timeBeginPeriod(p) IAT1(0x4a32c0, p)
-#define pp_timeKillEvent(id) IAT1(0x4a32c4, id)
+/* The game's timer callback (stdcall), as stored at 0x4d48c8. */
+typedef void(STDCALL *pp_timer_fn)(uint32_t id, uint32_t msg, uint32_t user, uint32_t r1, uint32_t r2);
 
 /* Outside the group. */
 #define mem_copy_at(d, s, n) CALL3(0x476f30, d, s, n)
@@ -563,7 +527,7 @@ int32_t GAMEAPI arena_shutdown(void)
  * grows by size; the block or 0. ===== */
 uint32_t GAMEAPI global_block_alloc(uint32_t size, int32_t track)
 {
-    uint32_t p = (uint32_t)pp_GlobalAlloc(0x40, size);
+    uint32_t p = (uint32_t)(uintptr_t)GlobalAlloc(0x40, size);
     int i;
 
     if (!p)
@@ -586,7 +550,7 @@ int32_t GAMEAPI global_block_free(uint32_t block)
 
     if (!block)
         return 0;
-    pp_GlobalFree(block);
+    GlobalFree(GMEM(block));
     for (i = 0; i < 32; i++)
         if (G32(0x4d4acc + 4 * i) == block) {
             G32(0x4d4acc + 4 * i) = 0;
@@ -638,13 +602,13 @@ uint32_t GAMEAPI arena_free_high(uint32_t size)
 static uint32_t pp_create_retry(const char *name, uint32_t access, uint32_t share, uint32_t disposition,
                                 uint32_t attributes)
 {
-    uint32_t h = (uint32_t)pp_CreateFileA(name, access, share, 0, disposition, attributes, 0);
+    uint32_t h = (uint32_t)(uintptr_t)CreateFileA(name, access, share, 0, disposition, attributes, 0);
 
     while (h == 0xffffffff) {
-        if (pp_GetLastError() != 0x21)
+        if (GetLastError() != 0x21)
             break;
-        pp_Sleep(500);
-        h = (uint32_t)pp_CreateFileA(name, access, share, 0, disposition, attributes, 0);
+        Sleep(500);
+        h = (uint32_t)(uintptr_t)CreateFileA(name, access, share, 0, disposition, attributes, 0);
     }
     return h;
 }
@@ -689,13 +653,13 @@ int32_t GAMEAPI os_handle_close(uint32_t h)
 {
     if (!h)
         return 0;
-    return pp_CloseHandle(h);
+    return CloseHandle(GMEM(h));
 }
 
 /* ===== 0x476e20: ReadFile; whether it succeeded. ===== */
 int32_t GAMEAPI os_handle_read(uint32_t h, void *buf, uint32_t n)
 {
-    return pp_ReadFile(h, buf, n, &n, 0) != 0;
+    return ReadFile(GMEM(h), buf, n, &n, 0) != 0;
 }
 
 /* ===== 0x476e50: WriteFile; whether all n bytes went. ===== */
@@ -703,7 +667,7 @@ int32_t GAMEAPI os_handle_write(uint32_t h, const void *buf, uint32_t n)
 {
     uint32_t written;
 
-    if (!pp_WriteFile(h, buf, n, &written, 0))
+    if (!WriteFile(GMEM(h), buf, n, &written, 0))
         return 0;
     return written == n;
 }
@@ -711,7 +675,7 @@ int32_t GAMEAPI os_handle_write(uint32_t h, const void *buf, uint32_t n)
 /* ===== 0x476e80: GetFileSize, 0 for an error. ===== */
 uint32_t GAMEAPI os_handle_size(uint32_t h)
 {
-    uint32_t n = (uint32_t)pp_GetFileSize(h, 0);
+    uint32_t n = (uint32_t)GetFileSize(GMEM(h), 0);
 
     return n == 0xffffffff ? 0 : n;
 }
@@ -719,7 +683,7 @@ uint32_t GAMEAPI os_handle_size(uint32_t h)
 /* ===== 0x476ea0: SetFilePointer(h, 0, 0, FILE_END). ===== */
 uint32_t GAMEAPI os_handle_seek_end(uint32_t h)
 {
-    return (uint32_t)pp_SetFilePointer(h, 0, 0, 2);
+    return (uint32_t)SetFilePointer(GMEM(h), 0, 0, 2);
 }
 
 /* ===== 0x476ec0: printf to the debug log: vsprintf (0x498c0b) into 0x104
@@ -739,9 +703,9 @@ int32_t GAMEAPI dbg_vlog_printf(const char *fmt, ...)
 int32_t GAMEAPI path_find_exists(const char *path)
 {
     uint8_t data[0x140];
-    uint32_t h = (uint32_t)pp_FindFirstFileA(path, data);
+    uint32_t h = (uint32_t)(uintptr_t)FindFirstFileA(path, data);
 
-    pp_FindClose(h);
+    FindClose(GMEM(h));
     return h != 0xffffffff;
 }
 
@@ -770,23 +734,23 @@ int32_t GAMEAPI mm_timer_start(uint32_t *period, uint32_t delay, uint32_t callba
     uint32_t caps[2], p, r;
 
     G32(0x4d48c8) = callback ? callback : A(mm_timer_tick_none);
-    if (pp_timeGetDevCaps(caps, 8))
+    if (timeGetDevCaps(caps, 8))
         return 0;
     p = caps[0] > 5 ? caps[0] : 5;
     if (p >= caps[1])
         p = caps[1];
     *period = p;
-    if (pp_timeBeginPeriod(p)) {
+    if (timeBeginPeriod(p)) {
         *period = 0;
         return 0;
     }
     if (!own && callback)
-        r = (uint32_t)pp_timeSetEvent(delay, *period, callback, 0, 1);
+        r = (uint32_t)timeSetEvent(delay, *period, (void *)(uintptr_t)callback, 0, 1);
     else
-        r = (uint32_t)pp_timeSetEvent(delay, *period, A(mm_timer_tick), 0, 1);
+        r = (uint32_t)timeSetEvent(delay, *period, (void *)mm_timer_tick, 0, 1);
     *id = r;
     if (!r) {
-        pp_timeEndPeriod(*period);
+        timeEndPeriod(*period);
         return 0;
     }
     return 1;
@@ -805,11 +769,11 @@ int32_t GAMEAPI mm_timer_stop(uint32_t *period, uint32_t *id)
     int32_t r = 0;
 
     if (*id) {
-        pp_timeKillEvent(*id);
+        timeKillEvent(*id);
         *id = 0;
     }
     if (*period) {
-        r = pp_timeEndPeriod(*period);
+        r = (int32_t)timeEndPeriod(*period);
         *period = 0;
     }
     return r;
@@ -820,7 +784,7 @@ int32_t GAMEAPI mm_timer_stop(uint32_t *period, uint32_t *id)
 void STDCALL mm_timer_tick(uint32_t id, uint32_t msg, uint32_t user, uint32_t r1, uint32_t r2)
 {
     G32(0x5f72a8)++;
-    (*(pp_api5 *)(uintptr_t)0x4d48c8)(id, msg, user, r1, r2);
+    (*(pp_timer_fn *)(uintptr_t)0x4d48c8)(id, msg, user, r1, r2);
 }
 
 /* ===== 0x477120: the empty timer callback. ===== */
@@ -848,13 +812,13 @@ uint32_t GAMEAPI window_class_register(uint32_t wndproc, uint32_t icon, uint32_t
     wc[3] = 0;
     wc[4] = 0;
     wc[5] = inst;
-    wc[6] = (uint32_t)pp_LoadIconA(inst, icon & 0xffff);
-    wc[7] = (uint32_t)pp_LoadCursorA(0, 0x7f00);
+    wc[6] = (uint32_t)(uintptr_t)LoadIconA(GMEM(inst), GMEM(icon & 0xffff));
+    wc[7] = (uint32_t)(uintptr_t)LoadCursorA(0, GMEM(0x7f00));
     wc[8] = brush;
     wc[9] = 0;
     wc[10] = 0x4acc18;
     wc[11] = 0;
-    return (uint32_t)pp_RegisterClassExA(wc);
+    return RegisterClassExA((const uint8_t *)wc);
 }
 
 /* ===== 0x4772e0: a debug log line: tag (default 0x4acc24 when null or
@@ -1050,7 +1014,7 @@ int32_t GAMEAPI image_bmp_load(const char *name, uint8_t *img, uint32_t flags)
                 U8(pal, 6 + 4 * i) = U8(U32(img, 0x10), 4 * i);
                 U8(pal, 7 + 4 * i) = 0;
             }
-            U32(img, 0x1c) = (uint32_t)pp_CreatePalette(pal);
+            U32(img, 0x1c) = (uint32_t)(uintptr_t)CreatePalette(GMEM(pal));
             global_block_free(pal);
         }
     }
@@ -1105,13 +1069,13 @@ void GAMEAPI pixels_blit_convert(const uint8_t *src, uint8_t *dst, int32_t src_s
 /* ===== 0x477910: GetTempFileNameA(path, prefix, 0, out). ===== */
 int32_t GAMEAPI temp_file_name_get(const char *path, const char *prefix, char *out)
 {
-    return pp_GetTempFileNameA(path, prefix, 0, out);
+    return (int32_t)GetTempFileNameA(path, prefix, 0, out);
 }
 
 /* ===== 0x477930: CreateDirectoryA(path, 0). ===== */
 int32_t GAMEAPI directory_create(const char *path)
 {
-    return pp_CreateDirectoryA(path, 0);
+    return CreateDirectoryA(path, 0);
 }
 
 /* ===== 0x477940: the visible track pieces: list = {count, then 8-byte

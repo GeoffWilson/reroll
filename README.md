@@ -115,7 +115,7 @@ Besides the additions above:
 
 ## Layout
 
-    native/         the loader (maps reroll_data.bin, fills its imports) and the
+    native/         the loader (maps reroll_data.bin) and the
                     Windows layer: KERNEL32, USER32 (SDL3 window), DirectDraw /
                     Direct3D stand-ins, DirectInput, QMixer and CD audio
     src/            hook installer, verifier, log, capture, the Vulkan renderer's

@@ -29,7 +29,7 @@
 #ifdef REROLL_WIN32_API
 typedef void *HANDLE;
 typedef int BOOL;
-typedef unsigned long DWORD;
+typedef uint32_t DWORD;
 
 #define GENERIC_WRITE 0x40000000
 #define GENERIC_READ 0x80000000

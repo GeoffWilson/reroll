@@ -15,10 +15,11 @@
  *    0x488ad0 and clearing 0x488cc0;
  *  - the CD player's replay of the requested track 0x496c60.
  *
- * Everything outside the group is called by address. Windows and COM calls
- * go through the import table / the object's vtable (stdcall). */
+ * Everything outside the group is called by address; Windows and COM calls
+ * by name (winapi.h, com.h). */
 #include "../runtime.h"
 #include "physics.h"
+#include "com.h"
 
 #define U8(p, off) (*(uint8_t *)((uint8_t *)(uintptr_t)(p) + (off)))
 #define U16(p, off) (*(uint16_t *)((uint8_t *)(uintptr_t)(p) + (off)))
@@ -31,8 +32,6 @@
 #define A(x) ((uint32_t)(uintptr_t)(x))
 #define PTR(a) ((uint8_t *)(uintptr_t)(a))
 
-#define STDCALL __attribute__((stdcall))
-
 typedef int32_t(GAMEAPI *xd_fn0)(void);
 typedef int32_t(GAMEAPI *xd_fn1)(uint32_t a);
 typedef int32_t(GAMEAPI *xd_fn2)(uint32_t a, uint32_t b);
@@ -40,8 +39,6 @@ typedef int32_t(GAMEAPI *xd_fn3)(uint32_t a, uint32_t b, uint32_t c);
 typedef int32_t(GAMEAPI *xd_fn5)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e);
 typedef int32_t(GAMEAPI *xd_fn7)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f,
                                  uint32_t g);
-typedef int16_t(STDCALL *xd_api_short1)(int32_t a);
-typedef int32_t(STDCALL *xd_com6)(uint32_t self, uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e);
 
 #define CALL0(a) (((xd_fn0)(a))())
 #define CALL1(a, x) (((xd_fn1)(a))(A(x)))
@@ -99,7 +96,7 @@ int32_t GAMEAPI d3d_render_states_thunk(void)
 /* 0x43d260: GetKeyState(VK_CAPITAL), sign-extended. */
 int32_t GAMEAPI capslock_state(void)
 {
-    return ((xd_api_short1) * (void **)0x4a3240)(0x14);
+    return GetKeyState(0x14);
 }
 
 /* 0x45f4f0: the network player count (signed byte 0x5d5cc8). */
@@ -171,7 +168,7 @@ static int32_t xd_enum_sessions(void)
     U32(desc, 0x20) = G32(0x4a3508);
     U32(desc, 0x24) = G32(0x4a350c);
     obj = G32(0x5d2060);
-    hr = (uint32_t)((xd_com6)U32(U32(obj, 0), 0x34))(obj, A(desc), 0, 0x48bb30, G32(0x6c8000), 0x92);
+    hr = (uint32_t)IDirectPlay4A_EnumSessions(obj, desc, 0, (void *)(uintptr_t)0x48bb30, GMEM(G32(0x6c8000)), 0x92);
     G32(0x5d6230) = hr;
     if (hr != 0)
         return hr == 0x8877015e;

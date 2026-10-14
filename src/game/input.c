@@ -12,7 +12,7 @@
 /* Joystick records filled by the enumeration callback (0x488e80). */
 struct joystick {
     uint8_t instance[0x244];   /* DIDEVICEINSTANCEA; product name at +0x12c */
-    di_device *device;         /* +0x244 (0x4d75b8 for joystick 0) */
+    uint32_t device;           /* +0x244 (0x4d75b8 for joystick 0) */
     struct di_devcaps caps;    /* +0x248 */
     uint8_t unknown[0xb8];     /* +0x274: effect objects and copies of caps */
     struct di_joystate2 state; /* +0x32c */
@@ -20,11 +20,11 @@ struct joystick {
 _Static_assert(sizeof(struct joystick) == 0x43c, "joystick record is 0x43c bytes");
 
 #define g_dinput_result (*(int32_t *)0x4d6f2c)
-#define g_keyboard (*(di_device **)0x4d6f34)
+#define g_keyboard (*(uint32_t *)0x4d6f34)
 #define g_joysticks ((struct joystick *)0x4d7374)
 #define g_joystick_count (*(int32_t *)0x4d9554)
 #define g_keyboard_state ((uint8_t *)0x4d9558)
-#define g_main_window (*(HANDLE *)0x6c8000)
+#define g_main_window (*(uint32_t *)0x6c8000)
 
 /* Record the joysticks the game found, once, for troubleshooting. */
 static void log_joysticks_once(void)
@@ -47,7 +47,7 @@ void GAMEAPI input_poll(void)
     int32_t i;
 
     memset(g_keyboard_state, 0, 0x100);
-    if (GetActiveWindow() != g_main_window)
+    if (GetActiveWindow() != GMEM(g_main_window))
         return;
     log_joysticks_once();
 

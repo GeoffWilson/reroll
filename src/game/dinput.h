@@ -3,45 +3,32 @@
 #define REROLL_DINPUT_H
 
 #include "../runtime.h"
+#include "com.h"
 
 #define DI_OK 0
 #define DI_NOEFFECT 1 /* success: e.g. Poll on a device that needs no polling */
 #define DIDC_ATTACHED 0x1
 
-/* IDirectInputDevice2A vtable slots used by the game */
-enum {
-    DIDEV_GET_CAPABILITIES = 3,
-    DIDEV_ACQUIRE = 7,
-    DIDEV_GET_DEVICE_STATE = 9,
-    DIDEV_POLL = 25,
-};
-
-typedef struct di_device {
-    void **vtbl;
-} di_device;
-
-typedef int32_t(WINAPI *di_call0)(di_device *self);
-typedef int32_t(WINAPI *di_call_ptr)(di_device *self, void *arg);
-typedef int32_t(WINAPI *di_call_state)(di_device *self, uint32_t size, void *data);
-
-static inline int32_t di_acquire(di_device *d)
+/* The IDirectInputDevice2A methods the game uses; a device is the game
+ * memory address of the object, as the game stores it. */
+static inline int32_t di_acquire(uint32_t d)
 {
-    return ((di_call0)d->vtbl[DIDEV_ACQUIRE])(d);
+    return IDirectInputDevice2A_Acquire(d);
 }
 
-static inline int32_t di_poll(di_device *d)
+static inline int32_t di_poll(uint32_t d)
 {
-    return ((di_call0)d->vtbl[DIDEV_POLL])(d);
+    return IDirectInputDevice2A_Poll(d);
 }
 
-static inline int32_t di_get_capabilities(di_device *d, void *caps)
+static inline int32_t di_get_capabilities(uint32_t d, void *caps)
 {
-    return ((di_call_ptr)d->vtbl[DIDEV_GET_CAPABILITIES])(d, caps);
+    return IDirectInputDevice2A_GetCapabilities(d, caps);
 }
 
-static inline int32_t di_get_device_state(di_device *d, uint32_t size, void *data)
+static inline int32_t di_get_device_state(uint32_t d, uint32_t size, void *data)
 {
-    return ((di_call_state)d->vtbl[DIDEV_GET_DEVICE_STATE])(d, size, data);
+    return IDirectInputDevice2A_GetDeviceState(d, size, data);
 }
 
 /* DIDEVCAPS (DirectX 5) */

@@ -1,7 +1,8 @@
 /* A Windows thread block (TEB) for each thread, reached through fs: as the
  * exe's code expects (its C runtime's structured exception frames use
  * fs:[0]). Linux leaves fs alone on i386 (glibc's thread data is gs), so
- * each thread gets an LDT entry based at its own block, as Wine does. */
+ * each thread gets an LDT entry based at its own block, as Wine does.
+ * Without the exe's code (nt_no_exe) nothing uses fs: and there is none. */
 #include "nt.h"
 
 #include <asm/ldt.h>
@@ -23,6 +24,8 @@ void nt_teb_init_thread(void)
     uint16_t selector;
     uint32_t stack_top;
 
+    if (nt_no_exe)
+        return;
     teb = calloc(1, TEB_SIZE);
     if (!teb)
         nt_fatal("no memory for a thread block");

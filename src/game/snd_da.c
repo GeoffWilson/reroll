@@ -4,9 +4,9 @@
  * volume / frequency / position wrappers, the sound options and speaker
  * placement, and the profile statistics.
  *
- * The engine talks to QMIXER.DLL (a proxy) through the original's import
- * address table (0x4a31d0 + 4 * n): every call below reads the slot and calls
- * it stdcall, exactly as the original does. Voices, play / stop and the mixer
+ * The engine talks to QMIXER.DLL (a proxy) by name (winapi.h; through the
+ * original's import address table 0x4a31d0 + 4 * n in the emulator build),
+ * exactly as the original does. Voices, play / stop and the mixer
  * (0x471000 and up, group DB), the C runtime, file loading and the x87
  * direction / profile / refresh code (0x46f230, 0x470160, 0x470790,
  * 0x470ef0) stay original and are called by address.
@@ -23,8 +23,8 @@
  * Rolloff, 21 GetDirectSound, 22 Activate, 23 CloseSession, 24 FreeWave. */
 #include "../runtime.h"
 #include "physics.h"
+#include "winapi.h"
 
-#define STDCALL __attribute__((stdcall))
 #define U8(p, off) (*(uint8_t *)((uint8_t *)(p) + (off)))
 #define U16(p, off) (*(uint16_t *)((uint8_t *)(p) + (off)))
 #define S16(p, off) (*(int16_t *)((uint8_t *)(p) + (off)))
@@ -51,36 +51,6 @@
 #define g_last_channel GI32(0x4b1c6c)
 #define g_channel_limit GI32(0x4b1c74)
 #define g_speaker_mode GI32(0x4d454c)
-
-typedef int32_t(STDCALL *qm1_fn)(uint32_t);
-typedef int32_t(STDCALL *qm2_fn)(uint32_t, uint32_t);
-typedef int32_t(STDCALL *qm3_fn)(uint32_t, uint32_t, uint32_t);
-typedef int32_t(STDCALL *qm4_fn)(uint32_t, uint32_t, uint32_t, uint32_t);
-typedef int32_t(STDCALL *qm6_fn)(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
-
-#define QM_START_PROFILE ((qm1_fn)G32(0x4a31d4))
-#define QM_SET_SPEAKERS ((qm2_fn)G32(0x4a31d8))
-#define QM_ENABLE_CHANNEL ((qm4_fn)G32(0x4a31dc))
-#define QM_SET_OPTIONS ((qm3_fn)G32(0x4a31e0))
-#define QM_SET_DISTANCE ((qm4_fn)G32(0x4a31e4))
-#define QM_SET_POSITION ((qm4_fn)G32(0x4a31ec))
-#define QM_SET_VOLUME ((qm4_fn)G32(0x4a31f0))
-#define QM_SET_FREQUENCY ((qm4_fn)G32(0x4a31f4))
-#define QM_IS_DONE ((qm2_fn)G32(0x4a31f8))
-#define QM_PAUSE ((qm3_fn)G32(0x4a31fc))
-#define QM_FLUSH ((qm3_fn)G32(0x4a3200))
-#define QM_PLAY ((qm6_fn)G32(0x4a3204))
-#define QM_RESTART ((qm3_fn)G32(0x4a3208))
-#define QM_INIT ((qm1_fn)G32(0x4a320c))
-#define QM_OPEN_WAVE ((qm3_fn)G32(0x4a3210))
-#define QM_OPEN_CHANNEL ((qm3_fn)G32(0x4a3214))
-#define QM_GET_BUFFER ((qm3_fn)G32(0x4a3218))
-#define QM_GET_PARAMS ((qm3_fn)G32(0x4a321c))
-#define QM_SET_ROLLOFF ((qm3_fn)G32(0x4a3220))
-#define QM_GET_DSOUND ((qm2_fn)G32(0x4a3224))
-#define QM_ACTIVATE ((qm2_fn)G32(0x4a3228))
-#define QM_CLOSE ((qm1_fn)G32(0x4a322c))
-#define QM_FREE_WAVE ((qm2_fn)G32(0x4a3230))
 
 /* Original functions called by address (other groups, the x87 code, the
  * runtime). */
@@ -188,7 +158,7 @@ int32_t GAMEAPI snd_activate(int32_t on)
     if (!g_open)
         return -1;
     flag = on != 0;
-    if (QM_ACTIVATE(g_session, flag) != 0)
+    if (QSWaveMixActivate(g_session, flag) != 0)
         return 0;
     g_active = flag;
     for (i = 0; i < CHANNELS; i++) {
@@ -218,7 +188,7 @@ uint32_t GAMEAPI snd_dsound(void)
         return 0;
     if (!g_active)
         return 0;
-    return QM_GET_DSOUND(g_session, (uint32_t)&object) == 0 ? object : 0;
+    return QSWaveMixGetDirectSound(g_session, (void **)&object) == 0 ? object : 0;
 }
 
 /* 0x46f760: set the listener rolloff (a float passed as its bits). 0 / -1. */
@@ -228,7 +198,7 @@ int32_t GAMEAPI snd_set_rolloff(uint32_t rolloff)
         return -1;
     if (!g_active)
         return -1;
-    return QM_SET_ROLLOFF(g_session, rolloff, 0) != 0 ? -1 : 0;
+    return QSWaveMixSetListenerRolloff(g_session, rolloff, 0) != 0 ? -1 : 0;
 }
 
 /* 0x46f7a0: channel `channel`'s QMixer parameters into `params` (0xdc bytes,
@@ -246,7 +216,7 @@ int32_t GAMEAPI snd_channel_params(uint32_t *params, int32_t channel)
         return -1;
     if (channel < 0 || channel >= CHANNELS)
         return -1;
-    return QM_GET_PARAMS(g_session, (uint32_t)channel, (uint32_t)params) != 0 ? -1 : 0;
+    return QSWaveMixGetChannelParams(g_session, (uint32_t)channel, params) != 0 ? -1 : 0;
 }
 
 /* 0x46f7f0: a channel's kind code from its QMixer flags (params +4): group
@@ -298,7 +268,7 @@ uint32_t GAMEAPI snd_channel_buffer(int32_t channel)
         return 0;
     if (channel < 0 || channel >= CHANNELS)
         return 0;
-    return QM_GET_BUFFER(g_session, (uint32_t)channel, (uint32_t)&buffer) == 0 ? buffer : 0;
+    return QSWaveMixGetDirectSoundBuffer(g_session, (uint32_t)channel, (void **)&buffer) == 0 ? buffer : 0;
 }
 
 /* 0x46f940: open the session's channels (OpenChannel 0, 1). 0 / -1. */
@@ -308,7 +278,7 @@ int32_t GAMEAPI snd_open_channels(void)
         return -1;
     if (!g_active)
         return -1;
-    return QM_OPEN_CHANNEL(g_session, 0, 1) != 0 ? -1 : 0;
+    return QSWaveMixOpenChannel(g_session, 0, 1) != 0 ? -1 : 0;
 }
 
 /* 0x470040: channel volume (|v| up to 0x7fff, cached at +0xc); QMixer
@@ -331,7 +301,7 @@ int32_t GAMEAPI snd_chan_volume(int32_t channel, int32_t volume)
     if (I32(ch, 0xc) == volume)
         return 0;
     I32(ch, 0xc) = volume;
-    return QM_SET_VOLUME(g_session, (uint32_t)channel, 0, (uint32_t)volume) != 0 ? -1 : 0;
+    return QSWaveMixSetVolume(g_session, (uint32_t)channel, 0, (uint32_t)volume) != 0 ? -1 : 0;
 }
 
 /* 0x46ffd0: channel frequency (|v| up to 0xffff, cached at +8); QMixer
@@ -354,7 +324,7 @@ int32_t GAMEAPI snd_chan_frequency(int32_t channel, int32_t frequency)
     if (I32(ch, 8) == frequency)
         return 0;
     I32(ch, 8) = frequency;
-    return QM_SET_FREQUENCY(g_session, (uint32_t)channel, 0, (uint32_t)frequency) != 0 ? -1 : 0;
+    return QSWaveMixSetFrequency(g_session, (uint32_t)channel, 0, (uint32_t)frequency) != 0 ? -1 : 0;
 }
 
 /* The x87 compare of two floats (fcomp, C3 clear = ordered and different),
@@ -387,7 +357,7 @@ int32_t GAMEAPI snd_chan_position(int32_t channel, uint32_t x, uint32_t y, uint3
     U32(ch, 0x10) = x;
     U32(ch, 0x14) = y;
     U32(ch, 0x18) = z;
-    return QM_SET_POSITION(g_session, (uint32_t)channel, 0, (uint32_t)(ch + 0x10)) != 0 ? -1 : 0;
+    return QSWaveMixSetPolarPosition(g_session, (uint32_t)channel, 0, (const float *)(ch + 0x10)) != 0 ? -1 : 0;
 }
 
 /* 0x46f970: every channel back to its defaults: frequency / volume cache -10,
@@ -454,7 +424,7 @@ uint32_t GAMEAPI snd_wave_open(uint32_t data, uint32_t size, uint32_t format, ui
     desc[2] = size;
     desc[3] = 0;
     desc[4] = index;
-    return (uint32_t)QM_OPEN_WAVE(g_session, (uint32_t)desc, 8);
+    return (uint32_t)(uintptr_t)QSWaveMixOpenWaveEx(g_session, desc, 8);
 }
 
 /* 0x46fad0: free a wave handle (FreeWave). 0 / -1; 0 for a null handle. */
@@ -464,7 +434,7 @@ int32_t GAMEAPI snd_wave_free(uint32_t wave)
         return 0;
     if (!wave)
         return 0;
-    return QM_FREE_WAVE(g_session, wave) != 0 ? -1 : 0;
+    return QSWaveMixFreeWave(g_session, GMEM(wave)) != 0 ? -1 : 0;
 }
 
 /* 0x46fb00: free every loaded wave (0x40-byte records from g_wave_table, handle
@@ -530,7 +500,7 @@ int32_t GAMEAPI snd_chan_stop(int32_t channel)
 
     if (!g_open || !g_active || channel < 0 || channel >= CHANNELS)
         return 0;
-    if (QM_FLUSH(g_session, (uint32_t)channel, 0) != 0)
+    if (QSWaveMixFlushChannel(g_session, (uint32_t)channel, 0) != 0)
         return -1;
     ch = CHANNEL(channel);
     U8(ch, 0) &= 0xfe;
@@ -560,9 +530,9 @@ int32_t GAMEAPI snd_chan_play(int32_t wave, int32_t channel, uint32_t loop)
     looped = 1;
     if (U8(rec, 0x16) == 0)
         looped = loop;
-    if (QM_PLAY(g_session, (uint32_t)channel, 1, handle, looped ? 0xffffffffu : 0, 0) != 0)
+    if (QSWaveMixPlayEx(g_session, (uint32_t)channel, 1, GMEM(handle), looped ? 0xffffffffu : 0, 0) != 0)
         return -1;
-    QM_RESTART(g_session, (uint32_t)channel, 0);
+    QSWaveMixRestartChannel(g_session, (uint32_t)channel, 0);
     ch = CHANNEL(channel);
     U8(ch, 0) = (uint8_t)(((looped & 1) << 1) | (U8(ch, 0) & 0xfd) | 1);
     U8(ch, 2) = 0xa;
@@ -580,7 +550,7 @@ int32_t GAMEAPI snd_chan_pause(int32_t channel)
         return 0;
     ch = CHANNEL(channel);
     if (!(U8(ch, 0) & 8)) {
-        if (QM_PAUSE(g_session, (uint32_t)channel, 0) != 0)
+        if (QSWaveMixPauseChannel(g_session, (uint32_t)channel, 0) != 0)
             return -1;
     }
     U8(ch, 0) |= 4;
@@ -596,7 +566,7 @@ int32_t GAMEAPI snd_chan_resume(int32_t channel)
         return 0;
     ch = CHANNEL(channel);
     if (!(U8(ch, 0) & 8)) {
-        if (QM_RESTART(g_session, (uint32_t)channel, 0) != 0)
+        if (QSWaveMixRestartChannel(g_session, (uint32_t)channel, 0) != 0)
             return -1;
     }
     U8(ch, 0) &= 0xfb;
@@ -636,7 +606,7 @@ int32_t GAMEAPI snd_chan_busy(int32_t channel)
         return 0;
     if (U8(ch, 2) != 0)
         return 1;
-    if (!QM_IS_DONE(g_session, (uint32_t)channel))
+    if (!QSWaveMixIsChannelDone(g_session, (uint32_t)channel))
         return 1;
     U8(ch, 0) &= 0xfe;
     return 0;
@@ -694,7 +664,7 @@ int32_t GAMEAPI snd_distance_map(void)
     G32(0x4d44c8) = 0x10;
     G32(0x4d44cc) = near_d;
     G32(0x4d44d0) = far_d;
-    return QM_SET_DISTANCE(g_session, 0, 1, 0x4d44c8) != 0 ? -1 : 0;
+    return QSWaveMixSetDistanceMapping(g_session, 0, 1, GMEM(0x4d44c8)) != 0 ? -1 : 0;
 }
 
 /* 0x470300: session options: 4 when 0x4d4548, |3 when 0x4b1c78 (mask 7). 0 / -1. */
@@ -710,7 +680,7 @@ int32_t GAMEAPI snd_options_apply(void)
         return -1;
     if (!g_active)
         return -1;
-    return QM_SET_OPTIONS(g_session, options, 7) != 0 ? -1 : 0;
+    return QSWaveMixSetOptions(g_session, options, 7) != 0 ? -1 : 0;
 }
 
 /* 0x470350: enable flags for every channel in use: from the settings
@@ -743,10 +713,10 @@ int32_t GAMEAPI snd_channels_enable(void)
         for (j = 0; j < 0x37; j++)
             params[j] = 0;
         params[0] = 0xdc;
-        if (QM_GET_PARAMS(g_session, (uint32_t)i, (uint32_t)params) == 0) {
+        if (QSWaveMixGetChannelParams(g_session, (uint32_t)i, params) == 0) {
             uint32_t value = (~G32(0x4b1cac) & params[0x17]) | flags;
 
-            if (QM_ENABLE_CHANNEL(g_session, (uint32_t)i, 0, value) == 0)
+            if (QSWaveMixEnableChannel(g_session, (uint32_t)i, 0, value) == 0)
                 continue;
         }
         result = -1;
@@ -840,7 +810,7 @@ int32_t GAMEAPI snd_speakers(void)
         placement = 0;
         break;
     }
-    return QM_SET_SPEAKERS(g_session, placement) != 0 ? -1 : 0;
+    return QSWaveMixSetSpeakerPlacement(g_session, placement) != 0 ? -1 : 0;
 }
 
 /* 0x4705d0: apply all the sound settings: channel limit, voice flags,
@@ -965,7 +935,7 @@ int32_t GAMEAPI snd_profile_start(void)
             snd_stats_clear();
             G32(0x4b1cb0) = 0;
         }
-        QM_START_PROFILE(g_session);
+        QSWaveMixStartProfile(g_session);
     }
     return 0;
 }
@@ -1002,7 +972,7 @@ int32_t GAMEAPI snd_shutdown(void)
     if (g_open) {
         voices_exit_orig();
         snd_activate(0);
-        result = QM_CLOSE(g_session);
+        result = (int32_t)QSWaveMixCloseSession(g_session);
     }
     g_inited = 0;
     g_open = 0;
@@ -1049,7 +1019,7 @@ int32_t GAMEAPI snd_init(void)
     G32(0x4d4508) = 0x20;
     G32(0x4d450c) = 0x20;
     G32(0x4d451c) = 0x20;
-    result = QM_INIT(0x4d44e0);
+    result = (int32_t)(uintptr_t)QSWaveMixInitEx(GMEM(0x4d44e0));
     G32(0x4d453c) = (uint32_t)result;
     if (result == 0) {
         g_open = 0;

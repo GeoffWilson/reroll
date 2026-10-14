@@ -14,8 +14,8 @@
  *  - the platform file's registry, mutex, event and environment wrappers
  *    (0x46b200..0x46b9e0; 0x46b510 / 0x46b7b0 are gl_gd.c's).
  *
- * Windows calls go through the original's import table (the same slots
- * the original calls). Float steps are the original's x87 instructions
+ * Windows calls go through winapi.h (in the emulator build, the same
+ * import slots the original calls). Float steps are the original's x87 instructions
  * (inline asm, memory operands). Everything outside the group is called by
  * address. Leftovers: 0x465390 hands debug_printf an uninitialised 0x104-
  * byte stack buffer (its sprintf was compiled out): here an empty string.
@@ -25,6 +25,7 @@
  * the callers' dead stack and are not reproduced. */
 #include "../runtime.h"
 #include "physics.h"
+#include "winapi.h"
 
 #define U8(p, off) (*(uint8_t *)((uint8_t *)(uintptr_t)(p) + (off)))
 #define U16(p, off) (*(uint16_t *)((uint8_t *)(uintptr_t)(p) + (off)))
@@ -39,7 +40,6 @@
 #define A(x) ((uint32_t)(uintptr_t)(x))
 #define SAR(v, n) ((int32_t)(v) >> (n))
 
-#define STDCALL __attribute__((stdcall))
 #define X87 "st", "st(1)", "st(2)", "st(3)", "st(4)", "st(5)", "st(6)", "st(7)"
 
 typedef int32_t(GAMEAPI *pn_fn0)(void);
@@ -55,39 +55,6 @@ typedef int32_t(GAMEAPI *pn_fn7)(uint32_t a, uint32_t b, uint32_t c, uint32_t d,
 #define CALL3(a, x, y, z) (((pn_fn3)(a))(A(x), A(y), A(z)))
 #define CALL6(a, x, y, z, w, v, u) (((pn_fn6)(a))(A(x), A(y), A(z), A(w), A(v), A(u)))
 #define CALL7(a, x, y, z, w, v, u, t) (((pn_fn7)(a))(A(x), A(y), A(z), A(w), A(v), A(u), A(t)))
-
-/* Imports, through the original's import table. */
-typedef int32_t(STDCALL *pn_api0)(void);
-typedef int32_t(STDCALL *pn_api1)(uint32_t a);
-typedef int32_t(STDCALL *pn_api2)(uint32_t a, uint32_t b);
-typedef int32_t(STDCALL *pn_api3)(uint32_t a, uint32_t b, uint32_t c);
-typedef int32_t(STDCALL *pn_api4)(uint32_t a, uint32_t b, uint32_t c, uint32_t d);
-typedef int32_t(STDCALL *pn_api5)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e);
-typedef int32_t(STDCALL *pn_api6)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f);
-typedef int32_t(STDCALL *pn_api7)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f,
-                                  uint32_t g);
-typedef int32_t(STDCALL *pn_api9)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f,
-                                  uint32_t g, uint32_t h, uint32_t i);
-#define API(slot, type) (*(type *)(uintptr_t)(slot))
-#define RegDeleteValueA_(k, n) API(0x4a3000, pn_api2)(A(k), A(n))
-#define RegCreateKeyExA_(k, s, r, c, o, sam, sa, out, disp)                                                       \
-    API(0x4a3008, pn_api9)(A(k), A(s), (r), A(c), (o), (sam), A(sa), A(out), A(disp))
-#define RegCloseKey_(k) API(0x4a300c, pn_api1)(A(k))
-#define RegOpenKeyExA_(k, s, o, sam, out) API(0x4a3010, pn_api5)(A(k), A(s), (o), (sam), A(out))
-#define RegQueryValueExA_(k, n, r, t, d, s) API(0x4a3014, pn_api6)(A(k), A(n), A(r), A(t), A(d), A(s))
-#define RegSetValueExA_(k, n, r, t, d, s) API(0x4a3018, pn_api6)(A(k), A(n), (r), (t), A(d), (s))
-#define RegUnLoadKeyA_(k, n) API(0x4a301c, pn_api2)(A(k), A(n))
-#define GetEnvironmentVariableA_(n, b, s) API(0x4a308c, pn_api3)(A(n), A(b), (s))
-#define ResetEvent_(h) API(0x4a3090, pn_api1)(A(h))
-#define SetEvent_(h) API(0x4a30a8, pn_api1)(A(h))
-#define CreateEventA_(sa, m, i, n) API(0x4a30ac, pn_api4)(A(sa), (m), (i), A(n))
-#define OpenEventA_(acc, inh, n) API(0x4a30b8, pn_api3)((acc), (inh), A(n))
-#define CreateMutexA_(sa, own, n) API(0x4a30fc, pn_api3)(A(sa), (own), A(n))
-#define CloseHandle_(h) API(0x4a3100, pn_api1)(A(h))
-#define SetFilePointer_(h, d, hi, m) API(0x4a3104, pn_api4)(A(h), (d), A(hi), (m))
-#define CreateFileA_(n, a, s, sa, c, f, t) API(0x4a3108, pn_api7)(A(n), (a), (s), A(sa), (c), (f), (t))
-#define GetLastError_() ((uint32_t)API(0x4a310c, pn_api0)())
-#define Sleep_(ms) API(0x4a3110, pn_api1)(ms)
 
 /* Outside the group. */
 #define draw_prim_at(p) CALL1(0x428460, p)
@@ -443,9 +410,9 @@ uint32_t GAMEAPI file_open_retry(uint32_t path, uint32_t access)
     uint8_t msg[0x104];
     uint32_t h;
     access |= 0x80000000u;
-    h = (uint32_t)CreateFileA_(path, access, 0, 0, 3, 0x80, 0);
+    h = (uint32_t)(uintptr_t)CreateFileA(GMEM(path), access, 0, 0, 3, 0x80, 0);
     while (h == 0xffffffffu) {
-        if (GetLastError_() != 0x21) {
+        if (GetLastError() != 0x21) {
             uint32_t s = path, t = 0x4a7ffc;
             while (G8(s) == G8(t) && G8(s) != 0) {
                 s++;
@@ -457,8 +424,8 @@ uint32_t GAMEAPI file_open_retry(uint32_t path, uint32_t access)
             }
             return 0;
         }
-        Sleep_(500);
-        h = (uint32_t)CreateFileA_(path, access, 0, 0, 3, 0x80, 0);
+        Sleep(500);
+        h = (uint32_t)(uintptr_t)CreateFileA(GMEM(path), access, 0, 0, 3, 0x80, 0);
     }
     return h;
 }
@@ -478,7 +445,7 @@ int32_t GAMEAPI file_close_handle(uint32_t h)
 /* 0x4654d0: SetFilePointer(h, off, NULL, whence). */
 int32_t GAMEAPI file_seek_set(uint32_t h, uint32_t off, uint32_t whence)
 {
-    return SetFilePointer_(h, off, 0, whence);
+    return (int32_t)SetFilePointer(GMEM(h), (LONG)off, 0, whence);
 }
 
 /* 0x465490: the file's size (seek to the end and back). */
@@ -811,7 +778,7 @@ int32_t GAMEAPI reg_key_close(void)
     int32_t r = 0, e;
     if (!g_reg_open)
         return 0;
-    e = RegCloseKey_(g_reg_key);
+    e = RegCloseKey(g_reg_key);
     if (e) {
         g_reg_error = (uint32_t)e;
         r = -1;
@@ -826,7 +793,7 @@ int32_t GAMEAPI reg_key_open(uint32_t sub)
     int32_t e;
     if (reg_key_close() == -1)
         return -1;
-    e = RegOpenKeyExA_(g_reg_root, sub, 0, 0xf003f, 0x4d3db4);
+    e = RegOpenKeyExA(g_reg_root, GMEM(sub), 0, 0xf003f, (DWORD *)GMEM(0x4d3db4));
     if (e) {
         g_reg_error = (uint32_t)e;
         return -1;
@@ -842,7 +809,7 @@ int32_t GAMEAPI reg_key_create(uint32_t sub)
     int32_t e;
     if (reg_key_close() == -1)
         return -1;
-    e = RegCreateKeyExA_(g_reg_root, sub, 0, 0, 0, 0xf003f, 0, 0x4d3db4, &disposition);
+    e = RegCreateKeyExA(g_reg_root, GMEM(sub), 0, 0, 0, 0xf003f, 0, (DWORD *)GMEM(0x4d3db4), &disposition);
     if (e) {
         g_reg_error = (uint32_t)e;
         return -1;
@@ -857,7 +824,7 @@ int32_t GAMEAPI reg_key_unload(uint32_t name)
     int32_t e;
     if (!name || G8(name) == 0 || reg_key_close() == -1)
         return -1;
-    e = RegUnLoadKeyA_(g_reg_root, name);
+    e = RegUnLoadKeyA(g_reg_root, GMEM(name));
     if (e) {
         g_reg_error = (uint32_t)e;
         return -1;
@@ -871,7 +838,7 @@ int32_t GAMEAPI reg_value_type_query(uint32_t name)
 {
     int32_t e;
     if (g_reg_open) {
-        e = RegQueryValueExA_(g_reg_key, name, 0, 0x4d3dbc, 0, 0x4d3dc0);
+        e = RegQueryValueExA(g_reg_key, GMEM(name), 0, (DWORD *)GMEM(0x4d3dbc), 0, (DWORD *)GMEM(0x4d3dc0));
         if (!e) {
             switch (g_reg_type) {
             case 1: /* REG_SZ */
@@ -916,7 +883,7 @@ int32_t GAMEAPI reg_value_read(uint32_t name, uint32_t buf, int32_t size)
         pn_zero(buf, size);
     if (g_reg_open && (!buf || size > 0)) {
         uint32_t got = (uint32_t)size;
-        int32_t e = RegQueryValueExA_(g_reg_key, name, 0, 0, buf, &got);
+        int32_t e = RegQueryValueExA(g_reg_key, GMEM(name), 0, 0, GMEM(buf), &got);
         if (e) {
             g_reg_error = (uint32_t)e;
         } else {
@@ -936,7 +903,7 @@ int32_t GAMEAPI reg_value_write(uint32_t name, uint32_t data, int32_t size, uint
     int32_t e;
     if (!g_reg_open || !data || size < 0)
         return -1;
-    e = RegSetValueExA_(g_reg_key, name, 0, type, data, (uint32_t)size);
+    e = RegSetValueExA(g_reg_key, GMEM(name), 0, type, GMEM(data), (uint32_t)size);
     if (e) {
         g_reg_error = (uint32_t)e;
         return -1;
@@ -950,7 +917,7 @@ int32_t GAMEAPI reg_value_delete(uint32_t name)
     int32_t e;
     if (!g_reg_open)
         return -1;
-    e = RegDeleteValueA_(g_reg_key, name);
+    e = RegDeleteValueA(g_reg_key, GMEM(name));
     if (e) {
         g_reg_error = (uint32_t)e;
         return -1;
@@ -1058,8 +1025,8 @@ int32_t GAMEAPI reg_value_remove(uint32_t key, uint32_t name)
 /* 0x46b7d0: CloseHandle(h) (if h), error into 0x4d3dcc; 0 or -1. */
 int32_t GAMEAPI win_handle_close(uint32_t h)
 {
-    if (h && !CloseHandle_(h)) {
-        G32(0x4d3dcc) = GetLastError_();
+    if (h && !CloseHandle(GMEM(h))) {
+        G32(0x4d3dcc) = GetLastError();
         return -1;
     }
     G32(0x4d3dcc) = 0;
@@ -1070,8 +1037,8 @@ int32_t GAMEAPI win_handle_close(uint32_t h)
  * already existed (ERROR_ALREADY_EXISTS), else 0. */
 int32_t GAMEAPI win_mutex_create(uint32_t out, uint32_t name)
 {
-    uint32_t h = (uint32_t)CreateMutexA_(0, 0, name);
-    G32(0x4d3dcc) = GetLastError_();
+    uint32_t h = (uint32_t)(uintptr_t)CreateMutexA(0, 0, GMEM(name));
+    G32(0x4d3dcc) = GetLastError();
     if (out)
         G32(out) = h;
     if (!h)
@@ -1097,7 +1064,7 @@ int32_t GAMEAPI app_mutex_create(uint32_t name)
 /* 0x46b890: CloseHandle(h) (if h); 0 or -1. */
 int32_t GAMEAPI win_handle_close_quiet(uint32_t h)
 {
-    if (h && !CloseHandle_(h))
+    if (h && !CloseHandle(GMEM(h)))
         return -1;
     return 0;
 }
@@ -1106,8 +1073,8 @@ int32_t GAMEAPI win_handle_close_quiet(uint32_t h)
  * error into 0x4d3dd0; -1 failed, 1 already existed, else 0. */
 int32_t GAMEAPI win_event_create(uint32_t out, uint32_t name)
 {
-    uint32_t h = (uint32_t)CreateEventA_(0, 1, 0, name);
-    G32(0x4d3dd0) = GetLastError_();
+    uint32_t h = (uint32_t)(uintptr_t)CreateEventA(0, 1, 0, GMEM(name));
+    G32(0x4d3dd0) = GetLastError();
     if (out)
         G32(out) = h;
     if (!h)
@@ -1118,8 +1085,8 @@ int32_t GAMEAPI win_event_create(uint32_t out, uint32_t name)
 /* 0x46b900: *out = OpenEventA(EVENT_ALL_ACCESS, FALSE, name); 0 or -1. */
 int32_t GAMEAPI win_event_open(uint32_t out, uint32_t name)
 {
-    uint32_t h = (uint32_t)OpenEventA_(0x1f0003, 0, name);
-    G32(0x4d3dd0) = GetLastError_();
+    uint32_t h = (uint32_t)(uintptr_t)OpenEventA(0x1f0003, 0, GMEM(name));
+    G32(0x4d3dd0) = GetLastError();
     if (out)
         G32(out) = h;
     return h ? 0 : -1;
@@ -1128,12 +1095,12 @@ int32_t GAMEAPI win_event_open(uint32_t out, uint32_t name)
 /* 0x46b940 / 0x46b950: SetEvent / ResetEvent. */
 int32_t GAMEAPI win_event_set(uint32_t h)
 {
-    return SetEvent_(h);
+    return SetEvent(GMEM(h));
 }
 
 int32_t GAMEAPI win_event_reset(uint32_t h)
 {
-    return ResetEvent_(h);
+    return ResetEvent(GMEM(h));
 }
 
 /* 0x46b960: environment variable `name` into buf (cleared first; at most
@@ -1147,7 +1114,7 @@ int32_t GAMEAPI env_var_get(uint32_t name, uint32_t buf, int32_t size)
         G8(buf) = 0;
     if (!name)
         return -1;
-    n = GetEnvironmentVariableA_(name, &probe, 1);
+    n = (int32_t)GetEnvironmentVariableA(GMEM(name), (char *)&probe, 1);
     if (!n)
         return -1;
     len = (uint32_t)n <= 1 ? n + 1 : n;
@@ -1157,7 +1124,7 @@ int32_t GAMEAPI env_var_get(uint32_t name, uint32_t buf, int32_t size)
     if (n == -1 || n > len)
         n = len;
     if (n)
-        GetEnvironmentVariableA_(name, buf, (uint32_t)n);
+        GetEnvironmentVariableA(GMEM(name), GMEM(buf), (uint32_t)n);
     return len;
 }
 

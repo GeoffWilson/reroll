@@ -434,9 +434,12 @@ DWORD WINAPI QSWaveMixStartProfile(DWORD session)
     return 0;
 }
 
-DWORD WINAPI QSWaveMixStopProfile(DWORD session)
+/* the game reads five counters back (Rollcage passes 0x14 bytes): none */
+DWORD WINAPI QSWaveMixStopProfile(DWORD session, DWORD *stats, DWORD size)
 {
     (void)session;
+    if (stats)
+        memset(stats, 0, size);
     return 0;
 }
 

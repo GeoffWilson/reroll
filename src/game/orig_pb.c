@@ -14,8 +14,8 @@
  *    ordering table), the water reflections 0x422c80..0x422eb0 and the
  *    shadow 0x422f50.
  *
- * Calls outside the group go by address; COM calls through the object's
- * vtable (stdcall). The back end's register-argument helpers (0x420a30 ebx;
+ * Calls outside the group go by address; COM calls are the typed methods
+ * of com.h. The back end's register-argument helpers (0x420a30 ebx;
  * 0x420a90 eax / edx / ebx; 0x4180c0 eax / ecx / edx / ebx) are called with
  * inline asm. The GTE helpers behind the pointers 0x6ccd78 (transform) and
  * 0x6ccd80 (projection) pass a value on the x87 stack from one to the other;
@@ -23,9 +23,8 @@
  * original's x87 instruction sequence in inline asm (memory operands), so
  * results match under any precision control word. */
 #include "../runtime.h"
+#include "com.h"
 #include "physics.h"
-
-#define STDCALL __attribute__((stdcall))
 
 #define A(p) ((uint32_t)(uintptr_t)(p))
 #define U8(a, off) (*(uint8_t *)(uintptr_t)((uint32_t)(a) + (uint32_t)(off)))
@@ -42,15 +41,11 @@ typedef int32_t(GAMEAPI *pb_fn1)(uint32_t a);
 typedef int32_t(GAMEAPI *pb_fn2)(uint32_t a, uint32_t b);
 typedef int32_t(GAMEAPI *pb_fn3)(uint32_t a, uint32_t b, uint32_t c);
 typedef float(GAMEAPI *pb_float3_fn)(uint32_t a, uint32_t b, uint32_t c);
-typedef int32_t(STDCALL *pb_com1)(uint32_t self);
 
 #define CALL0(a) ((pb_fn0)(a))()
 #define CALL1(a, x) ((pb_fn1)(a))((uint32_t)(x))
 #define CALL2(a, x, y) ((pb_fn2)(a))((uint32_t)(x), (uint32_t)(y))
 #define CALL3(a, x, y, z) ((pb_fn3)(a))((uint32_t)(x), (uint32_t)(y), (uint32_t)(z))
-
-/* COM: method at byte offset `off` of the object's vtable. */
-#define COM1(obj, off) ((pb_com1)(uintptr_t)U32(G32(obj), off))(obj)
 
 /* The GTE helpers through their pointers: transform V0 (0x6ccc64 / 0x6ccc68)
  * into a 0x18-byte record (leaves a value on the x87 stack), project the
@@ -470,8 +465,8 @@ int32_t GAMEAPI d3d_surfaces_restore(void)
 
     if (G32(0x4d5f4c)) {
         failed = 0;
-        if ((uint32_t)COM1(G32(0x4d5f4c), 0x60) == 0x887601c2u) {
-            hr = COM1(G32(0x4d5f4c), 0x6c);
+        if ((uint32_t)IDirectDrawSurface_IsLost(G32(0x4d5f4c)) == 0x887601c2u) {
+            hr = IDirectDrawSurface_Restore(G32(0x4d5f4c));
             GI32(0x4d6f18) = hr;
             if (hr)
                 failed = 1;
@@ -479,8 +474,8 @@ int32_t GAMEAPI d3d_surfaces_restore(void)
     }
     if (G32(0x4d5f98) && G32(0x4d5fa0)) {
         failed = 0;
-        if ((uint32_t)COM1(G32(0x4d5fa0), 0x60) == 0x887601c2u) {
-            hr = COM1(G32(0x4d5fa0), 0x6c);
+        if ((uint32_t)IDirectDrawSurface_IsLost(G32(0x4d5fa0)) == 0x887601c2u) {
+            hr = IDirectDrawSurface_Restore(G32(0x4d5fa0));
             GI32(0x4d6f18) = hr;
             if (hr)
                 failed = 1;
@@ -492,9 +487,9 @@ int32_t GAMEAPI d3d_surfaces_restore(void)
             continue;
         if (U32(slot, 8)) {
             failed = 0;
-            if ((uint32_t)COM1(U32(slot, 8), 0x60) != 0x887601c2u)
+            if ((uint32_t)IDirectDrawSurface_IsLost(U32(slot, 8)) != 0x887601c2u)
                 continue;
-            hr = COM1(U32(slot, 8), 0x6c);
+            hr = IDirectDrawSurface_Restore(U32(slot, 8));
             GI32(0x4d6f18) = hr;
             if (!hr)
                 continue;

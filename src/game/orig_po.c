@@ -24,11 +24,11 @@
  * operands, so the results follow the control word as the original's do);
  * the transform / projection pointers *0x6ccd78 / *0x6ccd80, which hand a
  * value over on the x87 stack, are called back to back in one asm block.
- * Windows and QMixer calls go through the original's import table, COM
- * calls through the object's vtable. Everything outside the group is
- * called by address. */
+ * Windows, QMixer and COM calls go through winapi.h and com.h. Everything
+ * outside the group is called by address. */
 #include "../runtime.h"
 #include "physics.h"
+#include "com.h"
 
 #define U8(p, off) (*(uint8_t *)((uint8_t *)(uintptr_t)(p) + (off)))
 #define S16(p, off) (*(int16_t *)((uint8_t *)(uintptr_t)(p) + (off)))
@@ -60,34 +60,6 @@ typedef int32_t(GAMEAPI *po_fn6)(uint32_t a, uint32_t b, uint32_t c, uint32_t d,
 #define CALL4(a, x, y, z, w) (((po_fn4)(a))(A(x), A(y), A(z), A(w)))
 #define CALL5(a, x, y, z, w, v) (((po_fn5)(a))(A(x), A(y), A(z), A(w), A(v)))
 #define CALL6(a, x, y, z, w, v, u) (((po_fn6)(a))(A(x), A(y), A(z), A(w), A(v), A(u)))
-
-/* stdcall: imports and COM methods. */
-#define PO_STD __attribute__((stdcall))
-typedef int32_t(PO_STD *po_std1)(uint32_t a);
-typedef int32_t(PO_STD *po_std2)(uint32_t a, uint32_t b);
-typedef int32_t(PO_STD *po_std3)(uint32_t a, uint32_t b, uint32_t c);
-typedef int32_t(PO_STD *po_std4)(uint32_t a, uint32_t b, uint32_t c, uint32_t d);
-typedef int32_t(PO_STD *po_std7)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f, uint32_t g);
-typedef int32_t(PO_STD *po_std8)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f, uint32_t g,
-                                 uint32_t h);
-typedef int32_t(PO_STD *po_std10)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f, uint32_t g,
-                                  uint32_t h, uint32_t i, uint32_t j);
-
-#define po_DeleteFileA(p) ((*(po_std1 *)0x4a30e8)(A(p)))
-#define po_FindFirstFileA(p, fd) ((*(po_std2 *)0x4a30a0)(A(p), A(fd)))
-#define po_FindNextFileA(h, fd) ((*(po_std2 *)0x4a309c)(h, A(fd)))
-#define po_FindClose(h) ((*(po_std1 *)0x4a3098)(h))
-#define po_GetDriveTypeA(p) ((*(po_std1 *)0x4a306c)(A(p)))
-#define po_MessageBoxA(w, t, c, k) ((*(po_std4 *)0x4a3280)(w, A(t), A(c), k))
-#define po_CreateProcessA(a, b, c, d, e, f, g, h, i, j)                                                              \
-    ((*(po_std10 *)0x4a3060)(A(a), A(b), c, d, e, f, g, A(h), A(i), A(j)))
-#define po_timeGetTime() ((*(po_fn0 *)0x4a32b4)())
-#define po_WaitForSingleObject(h, t) ((*(po_std2 *)0x4a3064)(h, t))
-#define po_QSWaveMixSetSourceVelocity(s, c, f, v) ((*(po_std4 *)0x4a31e8)(s, c, f, A(v)))
-#define po_QSWaveMixStopProfile(s, p, n) ((*(po_std3 *)0x4a31d0)(s, A(p), n))
-
-/* A COM method: slot off of obj's vtable. */
-#define PO_VT(obj, off) (*(uint32_t *)(uintptr_t)(*(uint32_t *)(uintptr_t)(obj) + (off)))
 
 /* Outside the group, by address. */
 #define gte_rtps_float_at() __asm__ volatile("movl $0x4266d0, %%eax\n\tcall *%%eax" ::: "eax", "ecx", "edx", "cc", "memory", X87)
@@ -944,7 +916,7 @@ int32_t GAMEAPI snd_chan_velocity(int32_t chan, uint32_t x, uint32_t y, uint32_t
     G32(cache) = x;
     G32(cache + 4) = y;
     G32(cache + 8) = z;
-    return po_QSWaveMixSetSourceVelocity(G32(0x4d453c), (uint32_t)chan, 0, cache) != 0 ? -1 : 0;
+    return QSWaveMixSetSourceVelocity(G32(0x4d453c), (uint32_t)chan, 0, (const float *)GMEM(cache)) != 0 ? -1 : 0;
 }
 
 /* ===== 0x470790: the profile statistics, once per started profile
@@ -967,7 +939,7 @@ int32_t GAMEAPI snd_profile_update(void)
         return 0;
     po_dadd(0x600160, 0x600160, 0x4a3410);
     G32(0x4d4558) = 0;
-    po_QSWaveMixStopProfile(G32(0x4d453c), stats, 0x14);
+    QSWaveMixStopProfile(G32(0x4d453c), stats, 0x14);
     po_dfild64(0x600180, stats[0]);
     po_dfild64(0x600188, stats[1]);
     po_dfild64(0x600190, stats[2]);
@@ -1023,15 +995,15 @@ uint32_t GAMEAPI snd_channel_eax_props(uint32_t chan)
 
     if (!buffer)
         return 0;
-    if (((po_std3)PO_VT(buffer, 0))(buffer, 0x4a4330, A(&props)) < 0)
+    if (IDirectSoundBuffer_QueryInterface(buffer, GMEM(0x4a4330), (void **)&props) < 0)
         return 0;
     if (!props)
         return 0;
-    if (((po_std4)PO_VT(props, 0x14))(props, 0x4a33e8, 0, A(&support)) < 0)
+    if (IKsPropertySet_QuerySupport(props, GMEM(0x4a33e8), 0, &support) < 0)
         return 0;
     if ((support & 3) != 3)
         return 0;
-    if (((po_std4)PO_VT(props, 0x14))(props, 0x4a33f8, 0, A(&support)) < 0)
+    if (IKsPropertySet_QuerySupport(props, GMEM(0x4a33f8), 0, &support) < 0)
         return 0;
     return (support & 3) == 3 ? props : 0;
 }
@@ -1058,7 +1030,7 @@ int32_t GAMEAPI eax_voice_reverb_set(int32_t voice, uint32_t level)
     if (po_fcmp(G32(0x6cb530 + base), level) & 0x40)
         return 0;
     G32(0x6cb530 + base) = level;
-    if (((po_std7)PO_VT(props, 0x10))(props, 0x4a33f8, 1, 0, 0, A(&level), 4) < 0)
+    if (IKsPropertySet_Set(props, GMEM(0x4a33f8), 1, 0, 0, &level, 4) < 0)
         return -1;
     return 0;
 }
@@ -1074,7 +1046,7 @@ int32_t GAMEAPI eax_environment_set(uint32_t env)
         return 0;
     if (env >= 0x1a)
         env = 1;
-    return ((po_std7)PO_VT(props, 0x10))(props, 0x4a33e8, 1, 0, 0, A(&env), 4) >= 0 ? 1 : -1;
+    return IKsPropertySet_Set(props, GMEM(0x4a33e8), 1, 0, 0, &env, 4) >= 0 ? 1 : -1;
 }
 
 /* ===== 0x471740: Get the EAX environment into *out: 0, -1 when Get fails
@@ -1086,7 +1058,7 @@ int32_t GAMEAPI eax_environment_get(uint32_t *out)
 
     if (!props)
         return -1;
-    return ((po_std8)PO_VT(props, 0xc))(props, 0x4a33e8, 1, 0, 0, A(out), 4, A(&got)) >= 0 ? 0 : -1;
+    return IKsPropertySet_Get(props, GMEM(0x4a33e8), 1, 0, 0, out, 4, &got) >= 0 ? 0 : -1;
 }
 
 /* ===== 0x471780: the EAX listener volume (0..1, clamped; property 2):
@@ -1103,7 +1075,7 @@ int32_t GAMEAPI eax_volume_set(uint32_t level)
         level = 0;
     else if (!(po_fcmp(level, G32(0x4a331c)) & 0x41))
         level = 0x3f800000;
-    return ((po_std7)PO_VT(props, 0x10))(props, 0x4a33e8, 2, 0, 0, A(&level), 4) >= 0 ? 1 : -1;
+    return IKsPropertySet_Set(props, GMEM(0x4a33e8), 2, 0, 0, &level, 4) >= 0 ? 1 : -1;
 }
 
 /* ===== 0x471810: Get the EAX volume into *out: 0, -1 when Get fails or
@@ -1115,7 +1087,7 @@ int32_t GAMEAPI eax_volume_get(uint32_t *out)
 
     if (!props)
         return -1;
-    return ((po_std8)PO_VT(props, 0xc))(props, 0x4a33e8, 2, 0, 0, A(out), 4, A(&got)) >= 0 ? 0 : -1;
+    return IKsPropertySet_Get(props, GMEM(0x4a33e8), 2, 0, 0, out, 4, &got) >= 0 ? 0 : -1;
 }
 
 /* ===== 0x472040: jmp to the mixer 0x4722d0. */
@@ -1137,7 +1109,7 @@ void GAMEAPI replay_file_delete(uint8_t *name)
     if (*name) {
         po_copy(buf, PTR(0x4a7f7c), 9);
         po_strcat(buf, name);
-        po_DeleteFileA(buf);
+        DeleteFileA((const char *)buf);
     }
     *name = 0;
 }
@@ -1151,14 +1123,14 @@ void GAMEAPI replay_files_delete_all(void)
     uint32_t h;
 
     po_copy(pattern, PTR(0x4b22c4), 14);
-    h = (uint32_t)po_FindFirstFileA(pattern, fd);
+    h = (uint32_t)(uintptr_t)FindFirstFileA((const char *)pattern, fd);
     if (h != 0xffffffff) {
         do {
             if (fd[0x2c] != '.')
                 replay_file_delete(fd + 0x2c);
-        } while (po_FindNextFileA(h, fd));
+        } while (FindNextFileA(GMEM(h), fd));
     }
-    po_FindClose(h);
+    FindClose(GMEM(h));
 }
 
 /* ===== 0x4747b0: change to dir + "Direct3D\" (0x475030). */
@@ -1189,12 +1161,12 @@ int32_t GAMEAPI cd_find_data_path(int32_t quiet)
         po_strcpy(root, source);
         root[3] = 0;
     }
-    if (po_GetDriveTypeA(root) != 5) {
+    if (GetDriveTypeA((const char *)root) != 5) {
         text_line_get_at(msg, 0x104, 0x4b0064, 8);
         if (msg[0] == 0)
             po_copy(msg, PTR(0x4b2334), 0x34);
         if (!quiet)
-            po_MessageBoxA(0, msg, 0x4acc24, 0x10);
+            MessageBoxA(0, (const char *)msg, GMEM(0x4acc24), 0x10);
         return 0;
     }
     po_strcat(source, PTR(0x4ac740));
@@ -1206,7 +1178,7 @@ int32_t GAMEAPI cd_find_data_path(int32_t quiet)
         po_copy(msg, PTR(0x4b22ec), 0x35);
     if (quiet)
         return 1;
-    return po_MessageBoxA(0, msg, 0x4acc24, 0x11) != 2;
+    return MessageBoxA(0, (const char *)msg, GMEM(0x4acc24), 0x11) != 2;
 }
 
 /* ===== 0x474a10: CreateProcessA(app, app [+ " " args] [+ " " 0x4d4674],
@@ -1231,7 +1203,7 @@ int32_t GAMEAPI process_launch(const uint8_t *app, const uint8_t *args, uint32_t
     for (k = 0; k < 4; k++)
         pi[k] = 0;
     si[0] = 0x44;
-    po_CreateProcessA(app, cmd, 0, 0, 0, 0x4000000, 0, dir, si, pi);
+    CreateProcessA((const char *)app, (char *)cmd, 0, 0, 0, 0x4000000, 0, GMEM(dir), si, pi);
     return 1;
 }
 
@@ -1248,7 +1220,7 @@ int32_t GAMEAPI setup_program_launch(void)
 
     if (reg_value_read_at(0x4ac754, 0x4b2368, command, -1) == -1)
         return -1;
-    r = po_MessageBoxA(0, g_config + 0x17ce, g_config + 0x180e, 0x23);
+    r = MessageBoxA(0, GMEM(g_config + 0x17ce), GMEM(g_config + 0x180e), 0x23);
     if (r == 6) {
         reg_value_delete_at(0x4b2284, 0x4b22b0);
         reg_value_delete_at(0x4b2284, 0x4b22a8);
@@ -1262,7 +1234,7 @@ int32_t GAMEAPI setup_program_launch(void)
         si[k] = 0;
     si[0] = 0x44;
     command_token_copy_at(exe, command);
-    po_CreateProcessA(exe, command, 0, 0, 0, 0x4000000, 0, 0, si, pi);
+    CreateProcessA((const char *)exe, (char *)command, 0, 0, 0, 0x4000000, 0, 0, si, pi);
     return 0;
 }
 
@@ -1276,7 +1248,7 @@ int32_t GAMEAPI setup_program_launch(void)
 int32_t GAMEAPI chain_launch_and_wait(void)
 {
     uint32_t event = 0;
-    uint32_t start = (uint32_t)po_timeGetTime();
+    uint32_t start = (uint32_t)timeGetTime();
 
     if (U8(g_race, 0x58c) == 0)
         replay_files_save_at();
@@ -1289,9 +1261,9 @@ int32_t GAMEAPI chain_launch_and_wait(void)
     if (chain_event_create_at(&event, 0x4b2390) != -1) {
         chain_event_set_at(event);
         process_launch(PTR(0x4b23a0), PTR(0x4b23b0), 0x5ff0c0);
-        if (po_WaitForSingleObject(event, 100) != 0) {
+        if (WaitForSingleObject(GMEM(event), 100) != 0) {
             start += 10000;
-            while ((uint32_t)po_timeGetTime() <= start && po_WaitForSingleObject(event, 100) != 0)
+            while ((uint32_t)timeGetTime() <= start && WaitForSingleObject(GMEM(event), 100) != 0)
                 ;
         }
         chain_event_free_at(event);

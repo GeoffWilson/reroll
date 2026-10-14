@@ -15,13 +15,14 @@
  *  - the HUD: per-view update (0x4386f0), the race-kind extras (0x438760)
  *    and the sprite quad set-up all HUD pieces use (0x4387d0).
  *
- * Calls outside the group go by address; Windows calls go through the
- * import table. The GTE transform / projection pointers (0x6ccd78 /
+ * Calls outside the group go by address; Windows calls by name
+ * (winapi.h). The GTE transform / projection pointers (0x6ccd78 /
  * 0x6ccd80) hand a value from one to the other on the x87 stack, so each
  * pair (with the _ftol calls the beams make between them) is one asm
  * block. Float steps are the original's x87 instructions in inline asm. */
 #include "../runtime.h"
 #include "physics.h"
+#include "winapi.h"
 
 #define U8(p, off) (*(uint8_t *)((uint8_t *)(uintptr_t)(p) + (off)))
 #define U16(p, off) (*(uint16_t *)((uint8_t *)(uintptr_t)(p) + (off)))
@@ -56,31 +57,6 @@ typedef int32_t(GAMEAPI *pf_fn6)(uint32_t a, uint32_t b, uint32_t c, uint32_t d,
 #define CALL4(a, x, y, z, w) (((pf_fn4)(a))(A(x), A(y), A(z), A(w)))
 #define CALL5(a, x, y, z, w, v) (((pf_fn5)(a))(A(x), A(y), A(z), A(w), A(v)))
 #define CALL6(a, x, y, z, w, v, u) (((pf_fn6)(a))(A(x), A(y), A(z), A(w), A(v), A(u)))
-
-/* Windows calls through the import table (stdcall). */
-typedef int32_t(STDCALL *pf_api0)(void);
-typedef int32_t(STDCALL *pf_api1)(uint32_t a);
-typedef int32_t(STDCALL *pf_api2)(uint32_t a, uint32_t b);
-typedef int32_t(STDCALL *pf_api4)(uint32_t a, uint32_t b, uint32_t c, uint32_t d);
-typedef int32_t(STDCALL *pf_api5)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e);
-#define IAT0(slot) ((*(pf_api0 *)(uintptr_t)(slot))())
-#define IAT1(slot, a) ((*(pf_api1 *)(uintptr_t)(slot))(A(a)))
-#define IAT2(slot, a, b) ((*(pf_api2 *)(uintptr_t)(slot))(A(a), A(b)))
-#define IAT4(slot, a, b, c, d) ((*(pf_api4 *)(uintptr_t)(slot))(A(a), A(b), A(c), A(d)))
-#define IAT5(slot, a, b, c, d, e) ((*(pf_api5 *)(uintptr_t)(slot))(A(a), A(b), A(c), A(d), A(e)))
-#define pf_PostQuitMessage(code) IAT1(0x4a3238, code)
-#define pf_ClientToScreen(w, pt) IAT2(0x4a323c, w, pt)
-#define pf_GetDlgItem(w, id) IAT2(0x4a3244, w, id)
-#define pf_SetRect(r, l, t, rr, b) IAT5(0x4a3254, r, l, t, rr, b)
-#define pf_DestroyWindow(w) IAT1(0x4a3260, w)
-#define pf_SetFocus(w) IAT1(0x4a327c, w)
-#define pf_EnableWindow(w, on) IAT2(0x4a3284, w, on)
-#define pf_EndDialog(w, r) IAT2(0x4a3288, w, r)
-#define pf_SendDlgItemMessageA(w, id, msg, wp, lp) IAT5(0x4a3290, w, id, msg, wp, lp)
-#define pf_GetActiveWindow() IAT0(0x4a3294)
-#define pf_SetActiveWindow(w) IAT1(0x4a3298, w)
-#define pf_DefWindowProcA(w, m, wp, lp) IAT4(0x4a32a0, w, m, wp, lp)
-#define pf_timeGetTime() IAT0(0x4a32b4)
 
 /* Outside the group. */
 #define vec_length_at(v) CALL1(0x480cd0, v)
@@ -607,7 +583,7 @@ int32_t STDCALL window_proc(uint32_t hwnd, uint32_t msg, uint32_t wparam, uint32
     case 3:
         G32(0x4d5f94) = 0;
         G32(0x4d5f90) = G32(0x4d5f94);
-        pf_ClientToScreen(hwnd, 0x4d5f90);
+        ClientToScreen(GMEM(hwnd), GMEM(0x4d5f90));
         return 0;
     case 0x100:
         CALL5(0x4360e1, hwnd, wparam, 1, (int32_t)(int16_t)lparam, lparam >> 16);
@@ -621,7 +597,7 @@ int32_t STDCALL window_proc(uint32_t hwnd, uint32_t msg, uint32_t wparam, uint32
             return 0;
         break;
     }
-    return pf_DefWindowProcA(hwnd, msg, wparam, lparam);
+    return DefWindowProcA(GMEM(hwnd), msg, wparam, lparam);
 }
 
 /* ===== 0x436034: WM_DESTROY: the boot data saved (0x474260), everything
@@ -631,7 +607,7 @@ void GAMEAPI window_destroy_quit(void)
     CALL0(0x474260);
     CALL1(0x435e2c, 0);
     G32(0x4be460) = 1;
-    pf_PostQuitMessage(0);
+    PostQuitMessage(0);
 }
 
 /* ===== 0x436542: WM_COMMAND: id 0x9c41 destroys the window. (The window
@@ -639,16 +615,16 @@ void GAMEAPI window_destroy_quit(void)
 void GAMEAPI window_command(uint32_t hwnd, uint32_t id)
 {
     if (id == 0x9c41)
-        pf_DestroyWindow(hwnd);
+        DestroyWindow(GMEM(hwnd));
 }
 
 /* ===== 0x4368f0: the game window (0x6c8000) made active and focused if
  * it isn't, then the input poll 0x489600. ===== */
 void GAMEAPI input_focus_poll(void)
 {
-    if (G32(0x6c8000) != 0 && (uint32_t)pf_GetActiveWindow() != G32(0x6c8000)) {
-        pf_SetActiveWindow(G32(0x6c8000));
-        pf_SetFocus(G32(0x6c8000));
+    if (G32(0x6c8000) != 0 && (uint32_t)(uintptr_t)GetActiveWindow() != G32(0x6c8000)) {
+        SetActiveWindow(GMEM(G32(0x6c8000)));
+        SetFocus(GMEM(G32(0x6c8000)));
     }
     CALL0(0x489600);
 }
@@ -656,7 +632,7 @@ void GAMEAPI input_focus_poll(void)
 /* ===== 0x43692a: the clock, timeGetTime(). ===== */
 uint32_t GAMEAPI game_time_get(void)
 {
-    return (uint32_t)pf_timeGetTime();
+    return timeGetTime();
 }
 
 /* ===== 0x436c2c: the loading picture: loaded once (0x4be490 = 0x477530
@@ -689,7 +665,7 @@ void GAMEAPI loading_picture_draw(int32_t which)
     if (G32(0x4be490) != 0) {
         int32_t rect[4];
 
-        pf_SetRect(rect, 0, 0, G32(0x4acc38), G32(0x4acc3c));
+        SetRect(rect, 0, 0, G32(0x4acc38), G32(0x4acc3c));
         CALL6(0x4203a0, G32(0x4acc64), (int32_t)GS16(0x4be39a), (int32_t)GS16(0x4be39e), rect, 0, -1);
     }
 }
@@ -701,7 +677,7 @@ void GAMEAPI mode_dialog_languages_fill(uint32_t dlg)
     int32_t i;
 
     for (i = 0; i < 5; i++)
-        pf_SendDlgItemMessageA(dlg, 0x3ea, 0x143, 0, 0x4ace90 + i * 0x14);
+        SendDlgItemMessageA(GMEM(dlg), 0x3ea, 0x143, 0, 0x4ace90 + i * 0x14);
 }
 
 /* ===== 0x436f3b: the mode dialog's texts in the current language
@@ -716,7 +692,7 @@ void GAMEAPI mode_dialog_texts_set(uint32_t dlg)
 
     for (i = 0; i < 7; i++) {
         text_entry_at(text, 0x100, 0x4acee8 + i * 0x18, i + 2);
-        pf_SendDlgItemMessageA(dlg, items[i], 0xc, 0, text);
+        SendDlgItemMessageA(GMEM(dlg), items[i], 0xc, 0, (LPARAM)(uintptr_t)text);
     }
 }
 
@@ -736,29 +712,29 @@ int32_t STDCALL mode_dialog_proc(uint32_t dlg, uint32_t msg, uint32_t wparam, ui
         G32(0x4be4b8) = U8(g_config, 0x36);
         language_set_at(G32(0x4be4b8));
         mode_dialog_languages_fill(dlg);
-        pf_SendDlgItemMessageA(dlg, 0x3ea, 0x14e, U8(g_config, 0x36), 0);
+        SendDlgItemMessageA(GMEM(dlg), 0x3ea, 0x14e, U8(g_config, 0x36), 0);
         mode_dialog_texts_set(dlg);
         CALL2(0x4883c0, dlg, 0x3e8);
-        G32(0x4be448) = pf_SendDlgItemMessageA(dlg, 0x3e8, 0x147, 0, 0);
+        G32(0x4be448) = SendDlgItemMessageA(GMEM(dlg), 0x3e8, 0x147, 0, 0);
         CALL1(0x487020, G32(0x4be448));
         CALL4(0x488470, dlg, 0x3e9, G32(0x4be44c), G32(0x4acc58));
-        pf_SendDlgItemMessageA(dlg, 0x3f7, 0xf1, G32(0x4acc68 + G32(0x4acc58) * 4), 0);
-        pf_SendDlgItemMessageA(dlg, 0x406, 0xf1, G32(0x4acc68 + G32(0x4be44c) * 4), 0);
+        SendDlgItemMessageA(GMEM(dlg), 0x3f7, 0xf1, G32(0x4acc68 + G32(0x4acc58) * 4), 0);
+        SendDlgItemMessageA(GMEM(dlg), 0x406, 0xf1, G32(0x4acc68 + G32(0x4be44c) * 4), 0);
         if (CALL0(0x474b70) == 0)
-            pf_EnableWindow(pf_GetDlgItem(dlg, 3), 0);
+            EnableWindow(GetDlgItem(GMEM(dlg), 3), 0);
         return 1;
     }
     if (msg == 0x111) {
         uint32_t id = wparam & 0xffff, code = wparam >> 16;
 
         if (id == 0x3ea && code == 1) {
-            G32(0x4be4b8) = pf_SendDlgItemMessageA(dlg, 0x3ea, 0x147, 0, 0);
+            G32(0x4be4b8) = SendDlgItemMessageA(GMEM(dlg), 0x3ea, 0x147, 0, 0);
             language_set_at(G32(0x4be4b8));
             mode_dialog_texts_set(dlg);
             CALL4(0x488470, dlg, 0x3e9, G32(0x4be44c), G32(0x4acc58));
         }
         if (id == 0x3e8 && code == 1) {
-            G32(0x4be448) = pf_SendDlgItemMessageA(dlg, 0x3e8, 0x147, 0, 0);
+            G32(0x4be448) = SendDlgItemMessageA(GMEM(dlg), 0x3e8, 0x147, 0, 0);
             CALL1(0x487020, G32(0x4be448));
             CALL4(0x488470, dlg, 0x3e9, G32(0x4be44c), G32(0x4acc58));
         }
@@ -771,21 +747,21 @@ int32_t STDCALL mode_dialog_proc(uint32_t dlg, uint32_t msg, uint32_t wparam, ui
             }
             U8(g_config, 0x36) = (uint8_t)G32(0x4be4b8);
             language_set_at(U8(g_config, 0x36));
-            G32(0x4acc58) = pf_SendDlgItemMessageA(dlg, 0x3f7, 0xf0, 0, 0) == 1 ? 1 : 0;
-            G32(0x4be44c) = pf_SendDlgItemMessageA(dlg, 0x406, 0xf0, 0, 0) == 1 ? 1 : 0;
-            G32(0x4be448) = pf_SendDlgItemMessageA(dlg, 0x3e8, 0x147, 0, 0);
-            mode = (uint32_t)pf_SendDlgItemMessageA(dlg, 0x3e9, 0x147, 0, 0);
+            G32(0x4acc58) = SendDlgItemMessageA(GMEM(dlg), 0x3f7, 0xf0, 0, 0) == 1 ? 1 : 0;
+            G32(0x4be44c) = SendDlgItemMessageA(GMEM(dlg), 0x406, 0xf0, 0, 0) == 1 ? 1 : 0;
+            G32(0x4be448) = SendDlgItemMessageA(GMEM(dlg), 0x3e8, 0x147, 0, 0);
+            mode = (uint32_t)SendDlgItemMessageA(GMEM(dlg), 0x3e9, 0x147, 0, 0);
             if (CALL1(0x488d60, G32(0x4be448)) == 0)
                 U32(g_config, 0x48) = 0xb;
-            pf_EndDialog(dlg, mode << 16 | G32(0x4be448));
+            EndDialog(GMEM(dlg), mode << 16 | G32(0x4be448));
         }
         if (id == 2)
-            pf_EndDialog(dlg, -1);
+            EndDialog(GMEM(dlg), -1);
         if (id == 3) {
             U8(g_config, 0x36) = (uint8_t)G32(0x4be4b8);
             language_set_at(U8(g_config, 0x36));
             CALL1(0x473c50, 0);
-            pf_EndDialog(dlg, -2);
+            EndDialog(GMEM(dlg), -2);
         }
         return 1;
     }
@@ -818,13 +794,13 @@ int32_t STDCALL error_dialog_proc(uint32_t dlg, uint32_t msg, uint32_t wparam, u
                 CALL2(0x498460, message, extra);
             }
         }
-        pf_SendDlgItemMessageA(dlg, 0x409, 0xc, 0, title);
-        pf_SendDlgItemMessageA(dlg, 0x408, 0xc, 0, message);
+        SendDlgItemMessageA(GMEM(dlg), 0x409, 0xc, 0, (LPARAM)(uintptr_t)title);
+        SendDlgItemMessageA(GMEM(dlg), 0x408, 0xc, 0, (LPARAM)(uintptr_t)message);
         return 1;
     }
     if (msg == 0x111) {
         if ((wparam & 0xffff) == 1 || (wparam & 0xffff) == 2)
-            pf_EndDialog(dlg, -1);
+            EndDialog(GMEM(dlg), -1);
         return 1;
     }
     return 0;

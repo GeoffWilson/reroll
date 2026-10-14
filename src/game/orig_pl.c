@@ -24,6 +24,7 @@
  * address. */
 #include "../runtime.h"
 #include "physics.h"
+#include "winapi.h"
 
 #define U8(p, off) (*(uint8_t *)((uint8_t *)(uintptr_t)(p) + (off)))
 #define U16(p, off) (*(uint16_t *)((uint8_t *)(uintptr_t)(p) + (off)))
@@ -36,7 +37,6 @@
 #define A(x) ((uint32_t)(uintptr_t)(x))
 #define PTR(a) ((uint8_t *)(uintptr_t)(a))
 
-#define STDCALL __attribute__((stdcall))
 #define X87 "st", "st(1)", "st(2)", "st(3)", "st(4)", "st(5)", "st(6)", "st(7)"
 
 #define g_race G32(0x4b1960)
@@ -81,9 +81,6 @@ typedef int32_t(GAMEAPI *pl_fn7)(uint32_t a, uint32_t b, uint32_t c, uint32_t d,
 #define CALL4(a, x, y, z, w) (((pl_fn4)(a))(A(x), A(y), A(z), A(w)))
 #define CALL5(a, x, y, z, w, v) (((pl_fn5)(a))(A(x), A(y), A(z), A(w), A(v)))
 #define CALL7(a, x, y, z, w, v, u, t) (((pl_fn7)(a))(A(x), A(y), A(z), A(w), A(v), A(u), A(t)))
-
-typedef uint32_t(STDCALL *pl_api0)(void);
-#define pl_timeGetTime() ((*(pl_api0 *)(uintptr_t)0x4a32b4)())
 
 /* Outside the group. */
 #define key_slots_reset_at() CALL0(0x439fd0)
@@ -991,7 +988,7 @@ int32_t GAMEAPI netplay_race_start_send(void)
     g_net &= ~0x400u;
     G32(0x5d5cbc) = 0;
     G32(0x5d5cb8) = 0;
-    G32(0x5d5998) = pl_timeGetTime();
+    G32(0x5d5998) = timeGetTime();
     memset(m, 0, sizeof m);
     m[0] = 8;
     U32(m, 0x2c) = net_time_at();
@@ -1016,7 +1013,7 @@ int32_t GAMEAPI netplay_clock_send(void)
     uint8_t m[0xc];
 
     if ((G8(0x5d622c) & 1) && (G8(0x5d622c) & 2) && (G8(0x5d622c) & 0x80) && (G8(0x5d622c) & 0x20)) {
-        uint32_t now = pl_timeGetTime();
+        uint32_t now = timeGetTime();
         if (now > G32(0x4d0878) + 60000) {
             G32(0x4d0878) = now;
             memset(m, 0, sizeof m);

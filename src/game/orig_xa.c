@@ -19,8 +19,7 @@
  * returning the callee's result. */
 #include "../runtime.h"
 #include "physics.h"
-
-#define STDCALL __attribute__((stdcall))
+#include "winapi.h"
 
 #define U8(p, off) (*(uint8_t *)((uint8_t *)(uintptr_t)(p) + (off)))
 #define U16(p, off) (*(uint16_t *)((uint8_t *)(uintptr_t)(p) + (off)))
@@ -45,8 +44,6 @@ typedef int32_t(GAMEAPI *xa_fn4)(uint32_t a, uint32_t b, uint32_t c, uint32_t d)
 typedef int32_t(GAMEAPI *xa_fn5)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e);
 typedef int32_t(GAMEAPI *xa_fn8)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f,
                                  uint32_t g, uint32_t h);
-typedef int32_t(STDCALL *xa_api4)(uint32_t a, uint32_t b, uint32_t c, uint32_t d);
-typedef int32_t(STDCALL *xa_api5)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e);
 
 #define CALL0(a) (((xa_fn0)(uintptr_t)(a))())
 #define CALL1(a, x) (((xa_fn1)(uintptr_t)(a))((uint32_t)(x)))
@@ -248,9 +245,9 @@ int32_t GAMEAPI movie_frame_check(void)
         }
         GI32(0x4ac738) = pick;
     }
-    if (((xa_api5)(uintptr_t)G32(0x4a325c))(PA(msg), 0, 0, 0, 0) == 0)
+    if (PeekMessageA(msg, 0, 0, 0, 0) == 0)
         return 0;
-    if (((xa_api4)(uintptr_t)G32(0x4a3258))(PA(msg), 0, 0, 0) == 0)
+    if (GetMessageA(msg, 0, 0, 0) == 0)
         return 0;
     if (msg[1] != 0x100)
         return 0;

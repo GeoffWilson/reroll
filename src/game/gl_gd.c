@@ -7,12 +7,10 @@
  *    0x452640 / 0x4526f0 / 0x452900, the cheat-code typing 0x4360e1;
  *  - the joystick binding capture 0x48a2f0-0x48a590 and the DirectInput
  *    enumeration callbacks 0x4890b0 / 0x48ac40;
- *  - the video-mode list fill 0x488470 (dialog messages through the import
- *    slot 0x4a3290);
+ *  - the video-mode list fill 0x488470 (dialog messages, SendDlgItemMessageA);
  *  - the x87 ones: menu slider step 0x447d80, slider builder 0x44cb10, the
  *    sound options menu 0x451110, EAX voice fade 0x471580, 3D placement
- *    0x472bb0 and the channel refresh 0x470ef0 (QMixer through its import
- *    slots).
+ *    0x472bb0 and the channel refresh 0x470ef0 (QMixer calls).
  *
  * Every float computation uses the original's x87 instructions in inline
  * asm (same operand order and widths, intermediates kept in x87 registers
@@ -24,6 +22,7 @@
  * and are called by address. */
 #include "../runtime.h"
 #include "physics.h"
+#include "winapi.h"
 
 #define STDCALL __attribute__((stdcall))
 
@@ -55,9 +54,6 @@ typedef int32_t(GAMEAPI *gd_fn9)(int32_t a, int32_t b, int32_t c, int32_t d, int
 typedef char *(GAMEAPI *gd_strstr_fn)(const char *hay, const char *needle);
 typedef void(GAMEAPI *gd_strlwr_fn)(char *s);
 typedef int32_t(GAMEAPI *gd_sprintf3_fn)(char *dst, const char *format, int32_t a, int32_t b, int32_t c);
-typedef int32_t(STDCALL *gd_api5_fn)(int32_t a, int32_t b, int32_t c, int32_t d, int32_t e);
-typedef int32_t(STDCALL *gd_api2_fn)(int32_t a, int32_t b);
-typedef int32_t(STDCALL *gd_api3_fn)(int32_t a, int32_t b, int32_t c);
 
 /* ---- x87 helpers: the original's instructions, memory operands and all ---- */
 
@@ -804,27 +800,25 @@ int32_t STDCALL joy_names_collect(const uint8_t *guid, uint32_t a1, uint8_t *nam
 /* ===== 0x488470: fills the video mode combo box of a dialog: reset it,
  * list the modes (0x4d5fd4 of them, 3 ints each at 0x4d5fe8: width,
  * height, depth) with their text, and select the current mode
- * (0x4acc38.., else 640x480x16, else the first). The dialog messages go
- * through the import slot 0x4a3290 (SendDlgItemMessageA). */
+ * (0x4acc38.., else 640x480x16, else the first), by SendDlgItemMessageA. */
 void GAMEAPI video_mode_list_fill(int32_t dlg, int32_t item)
 {
-    gd_api5_fn send = *(gd_api5_fn *)0x4a3290;
     int32_t selected = -1;
     int32_t fallback = 0;
     char fmt[0x80];
     char text[0x70];
-    send(dlg, item, 0x14b, 0, 0);
+    SendDlgItemMessageA(GMEM(dlg), item, 0x14b, 0, 0);
     if (((gd_int_fn)0x487160)() == 0)
         return;
     int32_t n = GI32(0x4d5fd4);
-    send(dlg, item, 0x161, n, (int32_t)((uint32_t)n * 260u));
+    SendDlgItemMessageA(GMEM(dlg), item, 0x161, n, (int32_t)((uint32_t)n * 260u));
     int32_t i = 0;
     if (GI32(0x4d5fd4) > 0) {
         const int32_t *mode = (const int32_t *)0x4d5fe8;
         do {
             if (((gd_fn4)0x42e6d0)((int32_t)fmt, 0x80, 0x4b223c, 0) != -1) {
                 ((gd_sprintf3_fn)0x4979f0)(text, fmt, mode[-1], mode[0], mode[1]);
-                send(dlg, item, 0x143, 0, (int32_t)text);
+                SendDlgItemMessageA(GMEM(dlg), item, 0x143, 0, (LPARAM)(uintptr_t)text);
             }
             if (mode[-1] == GI32(0x4acc38) && mode[0] == GI32(0x4acc3c) && mode[1] == GI32(0x4acc40))
                 selected = i;
@@ -836,7 +830,7 @@ void GAMEAPI video_mode_list_fill(int32_t dlg, int32_t item)
     }
     if (selected == -1)
         selected = fallback;
-    send(dlg, item, 0x14e, selected, 0);
+    SendDlgItemMessageA(GMEM(dlg), item, 0x14e, selected, 0);
 }
 
 /* ===== x87: menu sliders ===== */
@@ -1318,14 +1312,12 @@ static inline uint32_t div_by_square(uint32_t fi, uint32_t v)
  * table is printed (0x4963c0). Returns -1 if EAX is off. */
 int32_t GAMEAPI sound_channels_refresh(void)
 {
-    gd_api2_fn is_done;
     int8_t head;
     uint32_t i;
     if (GI32(0x4d4524) == 0)
         return -1;
     if (GI32(0x4d4528) == 0)
         return -1;
-    is_done = *(gd_api2_fn *)0x4a31f8;
     head = -1;
     for (i = 0; i < 64; i++) {
         uint8_t *ch = CH(i);
@@ -1337,7 +1329,7 @@ int32_t GAMEAPI sound_channels_refresh(void)
         if (!(ch[0] & 1))
             continue;
         if (ch[2] == 0) {
-            if (is_done(GI32(0x4d453c), (int32_t)i) != 0) {
+            if (QSWaveMixIsChannelDone(GI32(0x4d453c), i) != 0) {
                 ch[0] &= 0xfe;
                 continue;
             }
@@ -1376,7 +1368,6 @@ int32_t GAMEAPI sound_channels_refresh(void)
     int32_t found = 0;
     uint32_t rank = 0;
     if (head != -1) {
-        gd_api3_fn pause = *(gd_api3_fn *)0x4a31fc;
         int32_t cur = head;
         do {
             uint8_t *ch = CH(cur);
@@ -1384,7 +1375,7 @@ int32_t GAMEAPI sound_channels_refresh(void)
             uint8_t flags = ch[0];
             if ((int32_t)rank < GI32(0x4b1c74)) {
                 if (flags & 8) {
-                    (*(gd_api3_fn *)0x4a3208)(GI32(0x4d453c), cur, 0);
+                    QSWaveMixRestartChannel(GI32(0x4d453c), cur, 0);
                     ch[0] &= 0xf7;
                 }
                 if (found == 0) {
@@ -1396,12 +1387,12 @@ int32_t GAMEAPI sound_channels_refresh(void)
                     }
                 }
             } else if (!(flags & 2)) {
-                (*(gd_api3_fn *)0x4a3200)(GI32(0x4d453c), cur, 0);
+                QSWaveMixFlushChannel(GI32(0x4d453c), cur, 0);
                 ch[0] &= 0xfe;
                 ch[2] = 0;
             } else if (!(flags & 8)) {
                 ch[0] = flags | 8;
-                pause(GI32(0x4d453c), cur, 0);
+                QSWaveMixPauseChannel(GI32(0x4d453c), cur, 0);
             }
             cur = (int8_t)ch[4];
             rank++;

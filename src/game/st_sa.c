@@ -14,10 +14,10 @@
  * Window creation, DirectDraw/Direct3D, DirectInput, the sound engine, the
  * registry and environment helpers (0x46b2xx..0x46b9xx), file and CD path
  * probing, process relaunch, the memory pool and the C runtime stay original
- * and are called by address. WinAPI calls go through the original's import
- * address table (0x4a3xxx), so the game's own imports are used. */
+ * and are called by address. WinAPI calls are by name (winapi.h). */
 #include "../runtime.h"
 #include "physics.h"
+#include "winapi.h"
 
 #define U8(p, off) (*(uint8_t *)((uint8_t *)(p) + (off)))
 #define U16(p, off) (*(uint16_t *)((uint8_t *)(p) + (off)))
@@ -34,34 +34,6 @@
 
 #define STDCALL __attribute__((stdcall))
 
-/* Imports, through the original's IAT. */
-typedef int32_t(STDCALL *api0_fn)(void);
-typedef int32_t(STDCALL *api1_fn)(uint32_t a);
-typedef int32_t(STDCALL *api2_fn)(uint32_t a, uint32_t b);
-typedef int32_t(STDCALL *api4_fn)(uint32_t a, uint32_t b, uint32_t c, uint32_t d);
-typedef int32_t(STDCALL *api5_fn)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e);
-#define IAT0(slot) (*(api0_fn *)(slot))
-#define IAT1(slot) (*(api1_fn *)(slot))
-#define IAT2(slot) (*(api2_fn *)(slot))
-#define IAT4(slot) (*(api4_fn *)(slot))
-#define IAT5(slot) (*(api5_fn *)(slot))
-#define GetUserNameA(buf, size) IAT2(0x4a3004)((uint32_t)(buf), (uint32_t)(size))
-#define GetStockObject(n) IAT1(0x4a3054)(n)
-#define GetUserDefaultLangID() IAT0(0x4a3118)()
-#define DispatchMessageA(m) IAT1(0x4a3248)((uint32_t)(m))
-#define TranslateMessage(m) IAT1(0x4a324c)((uint32_t)(m))
-#define ShowCursor(on) IAT1(0x4a3250)(on)
-#define GetMessageA(m, w, lo, hi) IAT4(0x4a3258)((uint32_t)(m), w, lo, hi)
-#define PeekMessageA(m, w, lo, hi, rm) IAT5(0x4a325c)((uint32_t)(m), w, lo, hi, rm)
-#define DestroyWindow(w) IAT1(0x4a3260)(w)
-#define SetFocus(w) IAT1(0x4a327c)(w)
-#define MessageBoxA(w, text, cap, type) IAT4(0x4a3280)(w, text, cap, type)
-#define DialogBoxParamA(inst, res, parent, proc, param) IAT5(0x4a328c)(inst, res, parent, proc, param)
-#define ShowWindow(w, cmd) IAT2(0x4a329c)(w, cmd)
-#define GetClientRect(w, r) IAT2(0x4a32a4)(w, (uint32_t)(r))
-#define SetForegroundWindow(w) IAT1(0x4a32a8)(w)
-#define CoUninitialize() IAT0(0x4a3300)()
-#define CoInitialize(p) IAT1(0x4a3308)(p)
 
 /* Original functions called by address. */
 typedef int32_t(GAMEAPI *f0)(void);
@@ -720,7 +692,7 @@ void GAMEAPI config_defaults(void)
     U8(g_config, 0x19) = G8(0x4af658);
     U8(g_config, 0x1a) = G8(0x4af658);
     U8(g_config, 0x1b) = G8(0x4af658);
-    GetUserNameA(g_config + 0x120, &size);
+    GetUserNameA((char *)(g_config + 0x120), &size);
     records_defaults();
     U8(g_config, 0x6) = 0;
     config_default_texts(1);
@@ -1283,7 +1255,7 @@ int32_t GAMEAPI startup_init(char *line)
     if (G32(0x4b494c))
         CALL1(0x4962c0, 0x4acc88);
     if (((uint32_t)GetUserDefaultLangID() & 0xffff & 0x3ff) == 0x11) {
-        MessageBoxA(0, 0x4acc90, 0x4acc24, 0x10);
+        MessageBoxA(0, GMEM(0x4acc90), GMEM(0x4acc24), 0x10);
         return 0;
     }
     if (CALL1(0x46b870, 0x4accd0) == 1)
@@ -1335,15 +1307,15 @@ int32_t GAMEAPI startup_init(char *line)
 int32_t GAMEAPI startup_window(uint32_t previous)
 {
     if (!previous) {
-        uint32_t brush = (uint32_t)GetStockObject(4);
+        uint32_t brush = (uint32_t)(uintptr_t)GetStockObject(4);
         if (!(CALL3(0x477130, 0x435ed1, 0x65, brush) & 0xffff))
             return 0;
     }
     g_window = (uint32_t)((f6)0x4771c0)(1, 0, 0, g_screen_w, g_screen_h, g_windowed);
     if (!g_window)
         return 0;
-    SetForegroundWindow(g_window);
-    SetFocus(g_window);
+    SetForegroundWindow(GMEM(g_window));
+    SetFocus(GMEM(g_window));
     return 1;
 }
 
@@ -1354,7 +1326,7 @@ int32_t GAMEAPI startup_options(void)
 {
     G32(0x4be440) = U8(g_config, 0xa);
     if (g_frontend_mode) {
-        ShowWindow(g_window, 1);
+        ShowWindow(GMEM(g_window), 1);
         chain_event_signal();
         if (G32(0x4d4658))
             race_result_flow();
@@ -1385,7 +1357,7 @@ int32_t GAMEAPI startup_direct3d(void)
 {
     int32_t rect[4];
 
-    GetClientRect(g_window, rect);
+    GetClientRect(GMEM(g_window), rect);
     CALL3(0x4877d0, g_window, rect[2], rect[3]);
     if (!((f7)0x487e10)(g_windowed, G32(0x4acc60), g_screen_w, g_screen_h, 1, G32(0x4be45c), g_screen_bpp)) {
         CALL0(0x487210);
@@ -1418,7 +1390,7 @@ int32_t GAMEAPI startup_mode_dialog(void)
         return 1;
     CALL0(0x487d70);
     if (!G32(0x4be440)) {
-        result = (uint32_t)DialogBoxParamA(g_instance, 0x81, g_window, 0x437171, 0);
+        result = (uint32_t)DialogBoxParamA(GMEM(g_instance), GMEM(0x81), GMEM(g_window), (void *)(uintptr_t)0x437171, 0);
         if (result != 0xffffffff && result != 0xfffffffe) {
             g_screen_w = G32(0x4d5fe4 + (result >> 16) * 0xc);
             g_screen_h = G32(0x4d5fe8 + (result >> 16) * 0xc);
@@ -1442,7 +1414,7 @@ int32_t GAMEAPI startup_mode_dialog(void)
 void GAMEAPI error_dialog(void)
 {
     if (I32(g_config, 0x48) != -1) {
-        DialogBoxParamA(g_instance, 0x83, 0, 0x4375c7, 0);
+        DialogBoxParamA(GMEM(g_instance), GMEM(0x83), 0, (void *)(uintptr_t)0x4375c7, 0);
         U32(g_config, 0x48) = 0xffffffff;
     }
 }
@@ -1610,7 +1582,7 @@ int32_t STDCALL game_main(uint32_t instance, uint32_t previous, char *line, int3
             }
             if (G32(0x4be48c)) {
                 shutdown_restart();
-                DestroyWindow(g_window);
+                DestroyWindow(GMEM(g_window));
                 G32(0x4be48c) = 0;
             }
         }

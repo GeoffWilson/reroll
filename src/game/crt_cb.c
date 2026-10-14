@@ -12,7 +12,7 @@
  * 0x49bcf1), _ftol's truncation, strncpy's padding.
  *
  * Allocation: malloc / calloc / free go straight to HeapAlloc / HeapFree on
- * the runtime heap (*0x6d1268) through the import table, as the original's
+ * the runtime heap (*0x6d1268), as the original's
  * large-block path does; the small-block heap (__sbh_*, 0x49b240-0x49ba3b) is
  * only reached through these three entries, so it is no longer used. Blocks
  * are rounded to 16 bytes as before.
@@ -27,6 +27,7 @@
  * see build/groups/cb_notes.txt). */
 #include "../runtime.h"
 #include "physics.h"
+#include "winapi.h"
 
 #define U8(p, off) (*(uint8_t *)((uint8_t *)(p) + (off)))
 #define S8(p, off) (*(int8_t *)((uint8_t *)(p) + (off)))
@@ -57,33 +58,6 @@
 #define g_ismbcodepage GI32(0x6d103c)
 #define g_mbctype ((const uint8_t *)0x6d1141) /* _mbctype + 1 */
 #define g_fastflag GI32(0x4db28c)          /* maths: skip the exception check */
-
-/* Imports, through the original's IAT. */
-#define IAT(slot, type) (*(type *)(slot))
-typedef void *(STDCALL *heap_alloc_fn)(uint32_t heap, uint32_t flags, uint32_t size);
-typedef int32_t(STDCALL *heap_free_fn)(uint32_t heap, uint32_t flags, void *p);
-typedef int32_t(STDCALL *api0_fn)(void);
-typedef int32_t(STDCALL *api1_fn)(uint32_t a);
-typedef int32_t(STDCALL *api2_fn)(uint32_t a, uint32_t b);
-typedef int32_t(STDCALL *api4_fn)(uint32_t a, uint32_t b, uint32_t c, uint32_t d);
-typedef int32_t(STDCALL *api6_fn)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f);
-#define HeapAlloc_ IAT(0x4a31c4, heap_alloc_fn)
-#define HeapFree_ IAT(0x4a31c0, heap_free_fn)
-#define InterlockedIncrement_(p) IAT(0x4a31ac, api1_fn)((uint32_t)(p))
-#define InterlockedDecrement_(p) IAT(0x4a31c8, api1_fn)((uint32_t)(p))
-#define GetLastError_() IAT(0x4a310c, api0_fn)()
-#define SetCurrentDirectoryA_(s) IAT(0x4a31a8, api1_fn)((uint32_t)(s))
-#define GetCurrentDirectoryA_(n, s) IAT(0x4a31b8, api2_fn)((n), (uint32_t)(s))
-#define SetEnvironmentVariableA_(n, v) IAT(0x4a30ec, api2_fn)((uint32_t)(n), (uint32_t)(v))
-#define GetFileAttributesA_(s) IAT(0x4a31a4, api1_fn)((uint32_t)(s))
-#define GetFullPathNameA_(s, n, b, f) IAT(0x4a31bc, api4_fn)((uint32_t)(s), (n), (uint32_t)(b), (uint32_t)(f))
-#define GetSystemTimeAsFileTime_(t) IAT(0x4a317c, api1_fn)((uint32_t)(t))
-#define CreateThread_(a, s, f, p, fl, id) \
-    IAT(0x4a3148, api6_fn)((a), (s), (uint32_t)(f), (uint32_t)(p), (fl), (uint32_t)(id))
-#define ResumeThread_(h) IAT(0x4a3194, api1_fn)((uint32_t)(h))
-#define GetCurrentProcess_() IAT(0x4a3198, api0_fn)()
-#define TerminateProcess_(h, c) IAT(0x4a319c, api2_fn)((uint32_t)(h), (c))
-#define ExitProcess_(c) IAT(0x4a31a0, api1_fn)(c)
 
 /* Original runtime functions left in place. */
 typedef void(GAMEAPI *void0_fn)(void);
@@ -345,9 +319,9 @@ int32_t GAMEAPI msvc_toupper(int32_t c)
             c -= 0x20;
         return c;
     }
-    InterlockedIncrement_(g_unguarded_readlc);
+    InterlockedIncrement(GMEM(g_unguarded_readlc));
     if (g_setlc_active != 0) {
-        InterlockedDecrement_(g_unguarded_readlc);
+        InterlockedDecrement(GMEM(g_unguarded_readlc));
         crt_lock(0x13);
         locked = 1;
     }
@@ -355,7 +329,7 @@ int32_t GAMEAPI msvc_toupper(int32_t c)
     if (locked)
         crt_unlock(0x13);
     else
-        InterlockedDecrement_(g_unguarded_readlc);
+        InterlockedDecrement(GMEM(g_unguarded_readlc));
     return c;
 }
 
@@ -368,9 +342,9 @@ int32_t GAMEAPI msvc_tolower(int32_t c)
             c += 0x20;
         return c;
     }
-    InterlockedIncrement_(g_unguarded_readlc);
+    InterlockedIncrement(GMEM(g_unguarded_readlc));
     if (g_setlc_active != 0) {
-        InterlockedDecrement_(g_unguarded_readlc);
+        InterlockedDecrement(GMEM(g_unguarded_readlc));
         crt_lock(0x13);
         locked = 1;
     }
@@ -378,7 +352,7 @@ int32_t GAMEAPI msvc_tolower(int32_t c)
     if (locked)
         crt_unlock(0x13);
     else
-        InterlockedDecrement_(g_unguarded_readlc);
+        InterlockedDecrement(GMEM(g_unguarded_readlc));
     return c;
 }
 
@@ -429,7 +403,7 @@ static void *heap_block(uint32_t size, uint32_t flags)
     if (size == 0)
         size = 1;
     size = (size + 0xf) & ~0xfu;
-    return HeapAlloc_(g_crt_heap, flags, size);
+    return HeapAlloc(GMEM(g_crt_heap), flags, size);
 }
 
 /* _callnewh 0x49ba20: the new handler, if one is set; nonzero to retry. */
@@ -468,7 +442,7 @@ void *GAMEAPI msvc_calloc(uint32_t count, uint32_t size)
     for (;;) {
         p = 0;
         if (rounded <= 0xffffffe0u) {
-            p = HeapAlloc_(g_crt_heap, 8, rounded);
+            p = HeapAlloc(GMEM(g_crt_heap), 8, rounded);
             if (p != 0)
                 return p;
         }
@@ -483,7 +457,7 @@ void *GAMEAPI msvc_calloc(uint32_t count, uint32_t size)
 void GAMEAPI msvc_free(void *p)
 {
     if (p != 0)
-        HeapFree_(g_crt_heap, 0, p);
+        HeapFree(GMEM(g_crt_heap), 0, p);
 }
 
 /* 0x498180: __allmul: 64-bit product (stdcall, edx:eax). */
@@ -518,7 +492,7 @@ int32_t GAMEAPI msvc_clock(void)
 {
     uint32_t now[2];
     uint64_t t;
-    GetSystemTimeAsFileTime_(now);
+    GetSystemTimeAsFileTime((uint64_t *)now);
     t = ((uint64_t)now[1] << 32) - (((uint64_t)G32(0x4db2ec) << 32) | G32(0x4db2e8)) + now[0];
     return (int32_t)udiv64(t, 10000, 0);
 }
@@ -1056,14 +1030,12 @@ static void crop_zeros(char *buf)
 
 /* wctomb 0x49f99b (with _wctomb_lk 0x49f9f4): one wide character to the
  * locale's multibyte form; in the "C" locale bytes only (EILSEQ above). */
-typedef int32_t(STDCALL *wctomb_api_fn)(uint32_t cp, uint32_t flags, const uint16_t *w, int32_t n, char *out,
-                                        int32_t size, uint32_t def, int32_t *used);
 static int32_t wide_to_mb(char *out, uint16_t wc)
 {
     int32_t locked = 0, r;
-    InterlockedIncrement_(g_unguarded_readlc);
+    InterlockedIncrement(GMEM(g_unguarded_readlc));
     if (g_setlc_active != 0) {
-        InterlockedDecrement_(g_unguarded_readlc);
+        InterlockedDecrement(GMEM(g_unguarded_readlc));
         crt_lock(0x13);
         locked = 1;
     }
@@ -1079,7 +1051,7 @@ static int32_t wide_to_mb(char *out, uint16_t wc)
         }
     } else {
         int32_t used = 0;
-        r = IAT(0x4a3134, wctomb_api_fn)(G32(0x4db38c), 0x220, &wc, 1, out, g_mb_cur_max, 0, &used);
+        r = WideCharToMultiByte(G32(0x4db38c), 0x220, &wc, 1, out, g_mb_cur_max, 0, &used);
         if (r == 0 || used != 0) {
             *crt_errno() = 0x2a;
             r = -1;
@@ -1088,7 +1060,7 @@ static int32_t wide_to_mb(char *out, uint16_t wc)
     if (locked)
         crt_unlock(0x13);
     else
-        InterlockedDecrement_(g_unguarded_readlc);
+        InterlockedDecrement(GMEM(g_unguarded_readlc));
     return r;
 }
 
@@ -1706,7 +1678,7 @@ char *GAMEAPI msvc_getcwd(char *buf, int32_t size)
     char *r = 0;
     uint32_t len;
     crt_lock(0xc);
-    len = (uint32_t)GetCurrentDirectoryA_(0x104, local);
+    len = (uint32_t)GetCurrentDirectoryA(0x104, local);
     if (len != 0 && len + 1 < 0x105) {
         if (buf == 0) {
             int32_t n = (int32_t)(len + 1) <= size ? size : (int32_t)(len + 1);
@@ -1730,7 +1702,7 @@ int32_t GAMEAPI msvc_chdir(const char *path)
 {
     char local[0x108];
     char env[4];
-    if (SetCurrentDirectoryA_(path) != 0 && GetCurrentDirectoryA_(0x105, local) != 0) {
+    if (SetCurrentDirectoryA(path) != 0 && GetCurrentDirectoryA(0x105, local) != 0) {
         uint8_t c = (uint8_t)local[0];
         if ((c == '\\' || c == '/') && local[0] == local[1])
             return 0;
@@ -1738,10 +1710,10 @@ int32_t GAMEAPI msvc_chdir(const char *path)
         env[1] = (char)(g_mbctype[c] & 0x20 ? G8(0x6d1040 + c) : c); /* _mbctoupper 0x49d4a0 */
         env[2] = ':';
         env[3] = 0;
-        if (SetEnvironmentVariableA_(env, local) != 0)
+        if (SetEnvironmentVariableA(env, local) != 0)
             return 0;
     }
-    crt_dosmaperr((uint32_t)GetLastError_());
+    crt_dosmaperr((uint32_t)GetLastError());
     return -1;
 }
 
@@ -1749,9 +1721,9 @@ int32_t GAMEAPI msvc_chdir(const char *path)
  * for write (EACCES). */
 int32_t GAMEAPI msvc_access(const char *path, uint32_t mode)
 {
-    uint32_t attr = (uint32_t)GetFileAttributesA_(path);
+    uint32_t attr = (uint32_t)GetFileAttributesA(path);
     if (attr == 0xffffffffu) {
-        crt_dosmaperr((uint32_t)GetLastError_());
+        crt_dosmaperr((uint32_t)GetLastError());
         return -1;
     }
     if ((attr & 1) && (mode & 2)) {
@@ -1776,7 +1748,7 @@ void GAMEAPI msvc_exit(int32_t code)
 {
     crt_lockexit();
     if (GI32(0x4db2d4) == 1)
-        TerminateProcess_(GetCurrentProcess_(), (uint32_t)code);
+        TerminateProcess(GetCurrentProcess(), (uint32_t)code);
     G32(0x4db2d0) = 1;
     G8(0x4db2cc) = 0;
     if (G32(0x6d2294) != 0) {
@@ -1790,7 +1762,7 @@ void GAMEAPI msvc_exit(int32_t code)
     call_table(0x4a701c, 0x4a7024);
     call_table(0x4a7028, 0x4a702c);
     G32(0x4db2d4) = 1;
-    ExitProcess_((uint32_t)code);
+    ExitProcess((uint32_t)code);
 }
 
 /* 0x498d7c: _beginthread: a per-thread data block (calloc 0x74, _initptd)
@@ -1805,11 +1777,11 @@ uint32_t GAMEAPI msvc_beginthread(uint32_t start, uint32_t stack_size, uint32_t 
         crt_initptd((uint32_t)ptd);
         U32(ptd, 0x48) = start;
         U32(ptd, 0x4c) = arg;
-        h = (uint32_t)CreateThread_(0, stack_size, crt_threadstart, ptd, 4, ptd);
+        h = (uint32_t)(uintptr_t)CreateThread(0, stack_size, (void *)(uintptr_t)crt_threadstart, ptd, 4, (DWORD *)ptd);
         U32(ptd, 4) = h;
-        if (h != 0 && ResumeThread_(h) != -1)
+        if (h != 0 && (int32_t)ResumeThread(GMEM(h)) != -1)
             return h;
-        error = (uint32_t)GetLastError_();
+        error = (uint32_t)GetLastError();
     }
     msvc_free(ptd);
     if (error != 0)

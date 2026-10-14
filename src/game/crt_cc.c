@@ -26,8 +26,8 @@
  * Everything keeps the original's data in the exe's data section at the
  * same addresses (the stream table, the handle table, the lock table, the
  * multibyte tables...), so the in-place restart (which reloads the data
- * section) resets it as before. Windows calls go through the import table
- * in the original's order. Simplified where the game cannot see it: the
+ * section) resets it as before. Windows calls (winapi.h) are made in the
+ * original's order. Simplified where the game cannot see it: the
  * stack-allocated buffers of the locale helpers are C arrays (no _alloca,
  * no SEH frame; an over-long string falls back to failure as the
  * original's out-of-stack path does), the start-up and thread start set no
@@ -44,6 +44,7 @@
  * _isctype 0x498051 (group CB), WinMain 0x4351e0. */
 #include "../runtime.h"
 #include "physics.h"
+#include "winapi.h"
 
 #define U8(p, off) (*(uint8_t *)((uint8_t *)(p) + (off)))
 #define S8(p, off) (*(int8_t *)((uint8_t *)(p) + (off)))
@@ -59,71 +60,7 @@
 
 #define STDCALL __attribute__((stdcall))
 
-/* ---------------------------------------------------------------- imports */
-
-#define IAT(slot, type) (*(type *)(slot))
-typedef uint32_t(STDCALL *w0_fn)(void);
-typedef uint32_t(STDCALL *w1_fn)(uint32_t);
-typedef uint32_t(STDCALL *w2_fn)(uint32_t, uint32_t);
-typedef uint32_t(STDCALL *w3_fn)(uint32_t, uint32_t, uint32_t);
-typedef uint32_t(STDCALL *w4_fn)(uint32_t, uint32_t, uint32_t, uint32_t);
-typedef uint32_t(STDCALL *w5_fn)(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
-typedef uint32_t(STDCALL *w6_fn)(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
-typedef uint32_t(STDCALL *w7_fn)(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
-typedef uint32_t(STDCALL *w8_fn)(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
 #define A(x) ((uint32_t)(uintptr_t)(x))
-
-#define ReadFile_(h, b, n, r, o) IAT(0x4a3070, w5_fn)(A(h), A(b), (n), A(r), (o))
-#define WriteFile_(h, b, n, r, o) IAT(0x4a3074, w5_fn)(A(h), A(b), (n), A(r), (o))
-#define SetEndOfFile_(h) IAT(0x4a3094, w1_fn)(A(h))
-#define LoadLibraryA_(s) IAT(0x4a30a4, w1_fn)(A(s))
-#define FlushFileBuffers_(h) IAT(0x4a30b0, w1_fn)(A(h))
-#define GetFileType_(h) IAT(0x4a30b4, w1_fn)(A(h))
-#define SetHandleCount_(n) IAT(0x4a30bc, w1_fn)(n)
-#define GetEnvironmentStringsW_() IAT(0x4a30c0, w0_fn)()
-#define GetEnvironmentStrings_() IAT(0x4a30c4, w0_fn)()
-#define FreeEnvironmentStringsW_(p) IAT(0x4a30c8, w1_fn)(A(p))
-#define FreeEnvironmentStringsA_(p) IAT(0x4a30cc, w1_fn)(A(p))
-#define GetModuleFileNameA_(m, b, n) IAT(0x4a30d0, w3_fn)((m), A(b), (n))
-#define GetOEMCP_() IAT(0x4a30dc, w0_fn)()
-#define GetACP_() IAT(0x4a30e0, w0_fn)()
-#define GetCPInfo_(cp, i) IAT(0x4a30e4, w2_fn)((cp), A(i))
-#define SetStdHandle_(n, h) IAT(0x4a30f0, w2_fn)((n), A(h))
-#define RaiseException_(c, f, n, a) IAT(0x4a30f4, w4_fn)((c), (f), (n), A(a))
-#define GetStdHandle_(n) IAT(0x4a30f8, w1_fn)(n)
-#define CloseHandle_(h) IAT(0x4a3100, w1_fn)(A(h))
-#define SetFilePointer_(h, d, hi, m) IAT(0x4a3104, w4_fn)(A(h), (d), A(hi), (m))
-#define CreateFileA_(n, a, s, sa, c, f, t) IAT(0x4a3108, w7_fn)(A(n), (a), (s), A(sa), (c), (f), (t))
-#define GetLastError_() IAT(0x4a310c, w0_fn)()
-#define TlsGetValue_(i) IAT(0x4a311c, w1_fn)(i)
-#define SetLastError_(e) IAT(0x4a3120, w1_fn)(e)
-#define TlsAlloc_() IAT(0x4a3124, w0_fn)()
-#define GetCurrentThreadId_() IAT(0x4a3128, w0_fn)()
-#define LCMapStringW_(l, f, s, n, d, m) IAT(0x4a312c, w6_fn)((l), (f), A(s), (n), A(d), (m))
-#define LCMapStringA_(l, f, s, n, d, m) IAT(0x4a3130, w6_fn)((l), (f), A(s), (n), A(d), (m))
-#define WideCharToMultiByte_(cp, f, w, n, s, m, d, u) \
-    IAT(0x4a3134, w8_fn)((cp), (f), A(w), (n), A(s), (m), A(d), A(u))
-#define DeleteCriticalSection_(c) IAT(0x4a3150, w1_fn)(A(c))
-#define InitializeCriticalSection_(c) IAT(0x4a3154, w1_fn)(A(c))
-#define HeapCreate_(f, i, m) IAT(0x4a315c, w3_fn)((f), (i), (m))
-#define HeapDestroy_(h) IAT(0x4a3160, w1_fn)(h)
-#define GetStringTypeW_(t, s, n, o) IAT(0x4a3164, w4_fn)((t), A(s), (n), A(o))
-#define GetStringTypeA_(l, t, s, n, o) IAT(0x4a3168, w5_fn)((l), (t), A(s), (n), A(o))
-#define MultiByteToWideChar_(cp, f, s, n, w, m) IAT(0x4a316c, w6_fn)((cp), (f), A(s), (n), A(w), (m))
-#define LeaveCriticalSection_(c) IAT(0x4a3170, w1_fn)(A(c))
-#define EnterCriticalSection_(c) IAT(0x4a3174, w1_fn)(A(c))
-#define GetProcAddress_(m, n) IAT(0x4a3178, w2_fn)((m), A(n))
-#define GetSystemTimeAsFileTime_(t) IAT(0x4a317c, w1_fn)(A(t))
-#define GetVersion_() IAT(0x4a3180, w0_fn)()
-#define GetCommandLineA_() IAT(0x4a3184, w0_fn)()
-#define GetStartupInfoA_(s) IAT(0x4a3188, w1_fn)(A(s))
-#define GetModuleHandleA_(n) IAT(0x4a318c, w1_fn)(A(n))
-#define TlsSetValue_(i, v) IAT(0x4a3190, w2_fn)((i), A(v))
-#define GetCurrentProcess_() IAT(0x4a3198, w0_fn)()
-#define TerminateProcess_(h, c) IAT(0x4a319c, w2_fn)((h), (c))
-#define ExitProcess_(c) IAT(0x4a31a0, w1_fn)(c)
-#define ExitThread_(c) IAT(0x4a31b0, w1_fn)(c)
-#define HeapAlloc_(h, f, n) IAT(0x4a31c4, w3_fn)((h), (f), (n))
 
 /* ------------------------------------------------------ our entries */
 
@@ -304,19 +241,19 @@ void GAMEAPI crtc_initptd(uint8_t *ptd)
  * error is kept). */
 uint8_t *GAMEAPI crtc_getptd(void)
 {
-    uint32_t error = GetLastError_();
-    uint8_t *ptd = (uint8_t *)(uintptr_t)TlsGetValue_(g_tlsindex);
+    uint32_t error = GetLastError();
+    uint8_t *ptd = (uint8_t *)TlsGetValue(g_tlsindex);
     if (ptd == 0) {
         ptd = rt_calloc(1, 0x74);
-        if (ptd != 0 && TlsSetValue_(g_tlsindex, ptd) != 0) {
+        if (ptd != 0 && TlsSetValue(g_tlsindex, ptd) != 0) {
             crtc_initptd(ptd);
-            U32(ptd, 0) = GetCurrentThreadId_();
+            U32(ptd, 0) = GetCurrentThreadId();
             U32(ptd, 4) = 0xffffffffu;
         } else {
             crtc_amsg_exit(0x10);
         }
     }
-    SetLastError_(error);
+    SetLastError(error);
     return ptd;
 }
 
@@ -325,7 +262,7 @@ static void freeptd(uint8_t *ptd)
 {
     if (g_tlsindex == 0xffffffffu)
         return;
-    if (ptd != 0 || (ptd = (uint8_t *)(uintptr_t)TlsGetValue_(g_tlsindex)) != 0) {
+    if (ptd != 0 || (ptd = (uint8_t *)TlsGetValue(g_tlsindex)) != 0) {
         if (U32(ptd, 0x24))
             rt_free(PTR(ptd, 0x24));
         if (U32(ptd, 0x28))
@@ -342,7 +279,7 @@ static void freeptd(uint8_t *ptd)
             rt_free(PTR(ptd, 0x50));
         rt_free(ptd);
     }
-    TlsSetValue_(g_tlsindex, 0);
+    TlsSetValue(g_tlsindex, 0);
 }
 
 /* 0x49d48e / 0x49d497: errno and _doserrno (the thread's +8 / +0xc). */
@@ -380,10 +317,10 @@ void GAMEAPI crtc_dosmaperr(uint32_t oserr)
 /* 0x49b138: _mtinitlocks: the four preallocated locks. */
 static void mtinitlocks(void)
 {
-    InitializeCriticalSection_(G32(0x4b5108));
-    InitializeCriticalSection_(G32(0x4b50f8));
-    InitializeCriticalSection_(G32(0x4b50e8));
-    InitializeCriticalSection_(G32(0x4b50c8));
+    InitializeCriticalSection(GMEM(G32(0x4b5108)));
+    InitializeCriticalSection(GMEM(G32(0x4b50f8)));
+    InitializeCriticalSection(GMEM(G32(0x4b50e8)));
+    InitializeCriticalSection(GMEM(G32(0x4b50c8)));
 }
 
 /* 0x49b161: _lock: a runtime lock (table 0x4b50c4), made on first use. */
@@ -396,20 +333,20 @@ void GAMEAPI crtc_lock(int32_t n)
             crtc_amsg_exit(0x11);
         crtc_lock(0x11);
         if (*slot == 0) {
-            InitializeCriticalSection_(cs);
+            InitializeCriticalSection(cs);
             *slot = A(cs);
         } else {
             rt_free(cs);
         }
         crtc_unlock(0x11);
     }
-    EnterCriticalSection_(*slot);
+    EnterCriticalSection(GMEM(*slot));
 }
 
 /* 0x49b1c2: _unlock. */
 void GAMEAPI crtc_unlock(int32_t n)
 {
-    LeaveCriticalSection_(G32(g_locktable + 4 * (uint32_t)n));
+    LeaveCriticalSection(GMEM(G32(g_locktable + 4 * (uint32_t)n)));
 }
 
 /* 0x49ad88 / 0x49adda: lock a stream (an _iob entry by its runtime lock
@@ -420,7 +357,7 @@ static void lock_file(uint8_t *s)
     if (a >= g_iob && a <= 0x4b50a0)
         crtc_lock((int32_t)((a - g_iob) >> 5) + 0x1c);
     else
-        EnterCriticalSection_(s + 0x20);
+        EnterCriticalSection((void **)(s + 0x20));
 }
 
 static void unlock_file(uint8_t *s)
@@ -429,7 +366,7 @@ static void unlock_file(uint8_t *s)
     if (a >= g_iob && a <= 0x4b50a0)
         crtc_unlock((int32_t)((a - g_iob) >> 5) + 0x1c);
     else
-        LeaveCriticalSection_(s + 0x20);
+        LeaveCriticalSection((void **)(s + 0x20));
 }
 
 /* 0x49adb7 / 0x49ae09: the same by index into __piob. */
@@ -438,7 +375,7 @@ static void lock_file2(int32_t i, uint8_t *s)
     if (i < 0x14)
         crtc_lock(i + 0x1c);
     else
-        EnterCriticalSection_(s + 0x20);
+        EnterCriticalSection((void **)(s + 0x20));
 }
 
 static void unlock_file2(int32_t i, uint8_t *s)
@@ -446,7 +383,7 @@ static void unlock_file2(int32_t i, uint8_t *s)
     if (i < 0x14)
         crtc_unlock(i + 0x1c);
     else
-        LeaveCriticalSection_(s + 0x20);
+        LeaveCriticalSection((void **)(s + 0x20));
 }
 
 /* =================================================== low-level handles */
@@ -458,17 +395,17 @@ static void lock_fhandle(int32_t fh)
     if (I32(io, 8) == 0) {
         crtc_lock(0x11);
         if (I32(io, 8) == 0) {
-            InitializeCriticalSection_(io + 0xc);
+            InitializeCriticalSection((void **)(io + 0xc));
             I32(io, 8)++;
         }
         crtc_unlock(0x11);
     }
-    EnterCriticalSection_(pioinfo(fh) + 0xc);
+    EnterCriticalSection((void **)(pioinfo(fh) + 0xc));
 }
 
 static void unlock_fhandle(int32_t fh)
 {
-    LeaveCriticalSection_(pioinfo(fh) + 0xc);
+    LeaveCriticalSection((void **)(pioinfo(fh) + 0xc));
 }
 
 static void ioinfo_block_init(uint8_t *block)
@@ -507,18 +444,18 @@ static int32_t alloc_osfhnd(void)
             if (I32(p, 8) == 0) {
                 crtc_lock(0x11);
                 if (I32(p, 8) == 0) {
-                    InitializeCriticalSection_(p + 0xc);
+                    InitializeCriticalSection((void **)(p + 0xc));
                     I32(p, 8)++;
                 }
                 crtc_unlock(0x11);
             }
-            EnterCriticalSection_(p + 0xc);
+            EnterCriticalSection((void **)(p + 0xc));
             if (!(U8(p, 4) & FOPEN)) {
                 I32(p, 0) = -1;
                 fh = (int32_t)((p - GPTR(g_pioinfo + 4 * i)) / 0x24) + i * 0x20;
                 goto done;
             }
-            LeaveCriticalSection_(p + 0xc);
+            LeaveCriticalSection((void **)(p + 0xc));
         }
     }
 done:
@@ -538,11 +475,11 @@ static int32_t set_osfhnd(int32_t fh, uint32_t h)
     if ((uint32_t)fh < g_nhandle && OSFHND(fh) == -1) {
         if (g_app_type == 1) {
             if (fh == 0)
-                SetStdHandle_(0xfffffff6u, h);
+                SetStdHandle(0xfffffff6u, GMEM(h));
             else if (fh == 1)
-                SetStdHandle_(0xfffffff5u, h);
+                SetStdHandle(0xfffffff5u, GMEM(h));
             else if (fh == 2)
-                SetStdHandle_(0xfffffff4u, h);
+                SetStdHandle(0xfffffff4u, GMEM(h));
         }
         OSFHND(fh) = (int32_t)h;
         return 0;
@@ -557,11 +494,11 @@ static int32_t free_osfhnd(int32_t fh)
     if ((uint32_t)fh < g_nhandle && (OSFILE(fh) & FOPEN) && OSFHND(fh) != -1) {
         if (g_app_type == 1) {
             if (fh == 0)
-                SetStdHandle_(0xfffffff6u, 0);
+                SetStdHandle(0xfffffff6u, 0);
             else if (fh == 1)
-                SetStdHandle_(0xfffffff5u, 0);
+                SetStdHandle(0xfffffff5u, 0);
             else if (fh == 2)
-                SetStdHandle_(0xfffffff4u, 0);
+                SetStdHandle(0xfffffff4u, 0);
         }
         OSFHND(fh) = -1;
         return 0;
@@ -592,8 +529,8 @@ static int32_t lseek_lk(int32_t fh, int32_t pos, uint32_t method)
         *crtc_errno() = 9;
         return -1;
     }
-    newpos = SetFilePointer_(h, (uint32_t)pos, 0, method);
-    error = newpos == 0xffffffffu ? GetLastError_() : 0;
+    newpos = SetFilePointer(GMEM(h), pos, 0, method);
+    error = newpos == 0xffffffffu ? GetLastError() : 0;
     if (error == 0) {
         OSFILE(fh) &= ~FEOFLAG;
         return (int32_t)newpos;
@@ -632,8 +569,8 @@ static int32_t read_lk(int32_t fh, char *buf, uint32_t cnt)
         bytes_read = 1;
         PIPECH(fh) = 10;
     }
-    if (ReadFile_(OSFHND(fh), dst, cnt, &os_read, 0) == 0) {
-        error = GetLastError_();
+    if (ReadFile(GMEM(OSFHND(fh)), dst, cnt, &os_read, 0) == 0) {
+        error = GetLastError();
         if (error == 5) {
             *crtc_errno() = 9;
             *crtc_doserrno() = 5;
@@ -672,7 +609,7 @@ static int32_t read_lk(int32_t fh, char *buf, uint32_t cnt)
             continue;
         }
         p++;
-        if ((ReadFile_(OSFHND(fh), &peek, 1, &os_read, 0) == 0 && GetLastError_() != 0) || os_read == 0) {
+        if ((ReadFile(GMEM(OSFHND(fh)), &peek, 1, &os_read, 0) == 0 && GetLastError() != 0) || os_read == 0) {
             *q++ = '\r';
         } else if (OSFILE(fh) & (FDEV | FPIPE)) {
             if (peek == '\n') {
@@ -732,8 +669,8 @@ static int32_t write_lk(int32_t fh, const char *buf, uint32_t cnt)
                     break;
             }
             n = (int32_t)(q - lfbuf);
-            if (WriteFile_(OSFHND(fh), lfbuf, (uint32_t)n, &written, 0) == 0) {
-                error = GetLastError_();
+            if (WriteFile(GMEM(OSFHND(fh)), lfbuf, (uint32_t)n, &written, 0) == 0) {
+                error = GetLastError();
                 break;
             }
             charcount += written;
@@ -741,11 +678,11 @@ static int32_t write_lk(int32_t fh, const char *buf, uint32_t cnt)
                 break;
         }
     } else {
-        if (WriteFile_(OSFHND(fh), buf, cnt, &written, 0) != 0) {
+        if (WriteFile(GMEM(OSFHND(fh)), buf, cnt, &written, 0) != 0) {
             error = 0;
             charcount = written;
         } else {
-            error = GetLastError_();
+            error = GetLastError();
         }
     }
     if (charcount != 0)
@@ -792,8 +729,8 @@ static int32_t close_lk(int32_t fh)
         }
         if (shared) {
             /* the other one still uses it */
-        } else if (CloseHandle_(get_osfhandle(fh)) == 0) {
-            error = GetLastError_();
+        } else if (CloseHandle(GMEM(get_osfhandle(fh))) == 0) {
+            error = GetLastError();
         }
     }
     free_osfhnd(fh);
@@ -828,7 +765,7 @@ static int32_t crt_commit(int32_t fh)
     }
     lock_fhandle(fh);
     if (OSFILE(fh) & FOPEN) {
-        uint32_t error = FlushFileBuffers_(get_osfhandle(fh)) == 0 ? GetLastError_() : 0;
+        uint32_t error = FlushFileBuffers(GMEM(get_osfhandle(fh))) == 0 ? GetLastError() : 0;
         if (error == 0) {
             unlock_fhandle(fh);
             return 0;
@@ -888,11 +825,11 @@ static int32_t chsize_lk(int32_t fh, int32_t size)
         setmode_lk(fh, oldmode);
     } else if (extend < 0) {
         lseek_lk(fh, size, 0);
-        r = SetEndOfFile_(get_osfhandle(fh)) != 0 ? 0 : -1;
+        r = SetEndOfFile(GMEM(get_osfhandle(fh))) != 0 ? 0 : -1;
         if (r == -1) {
             uint32_t error;
             *crtc_errno() = 0xd;
-            error = GetLastError_();
+            error = GetLastError();
             *crtc_doserrno() = (int32_t)error;
         }
     }
@@ -991,12 +928,12 @@ static int32_t crt_sopen(const char *path, uint32_t oflag, uint32_t shflag, uint
         *crtc_doserrno() = 0;
         return -1;
     }
-    h = CreateFileA_(path, access, share, sa, create, attrib, 0);
+    h = (uint32_t)(uintptr_t)CreateFileA(path, access, share, sa, create, attrib, 0);
     if (h == 0xffffffffu)
         goto oserror;
-    ftype = GetFileType_(h);
+    ftype = GetFileType(GMEM(h));
     if (ftype == 0) {
-        CloseHandle_(h);
+        CloseHandle(GMEM(h));
         goto oserror;
     }
     if (ftype == 2)
@@ -1027,7 +964,7 @@ fail:
     unlock_fhandle(fh);
     return -1;
 oserror:
-    crtc_dosmaperr(GetLastError_());
+    crtc_dosmaperr(GetLastError());
     unlock_fhandle(fh);
     return -1;
 }
@@ -1433,8 +1370,8 @@ static uint8_t *getstream(void)
         if (s == 0) {
             PTR(g_piob, 4 * i) = rt_malloc(0x38);
             if (PTR(g_piob, 4 * i) != 0) {
-                InitializeCriticalSection_(PTR(g_piob, 4 * i) + 0x20);
-                EnterCriticalSection_(PTR(g_piob, 4 * i) + 0x20);
+                InitializeCriticalSection((void **)(PTR(g_piob, 4 * i) + 0x20));
+                EnterCriticalSection((void **)(PTR(g_piob, 4 * i) + 0x20));
                 found = PTR(g_piob, 4 * i);
                 goto init;
             }
@@ -1723,7 +1660,7 @@ static int32_t fcloseall(void)
             if ((F_FLAG(s) & (IOREAD | IOWRT | IORW)) && crtc_fclose(s) != -1)
                 count++;
             if (i >= 0x14) {
-                DeleteCriticalSection_(PTR(g_piob, 4 * i) + 0x20);
+                DeleteCriticalSection((void **)(PTR(g_piob, 4 * i) + 0x20));
                 rt_free(PTR(g_piob, 4 * i));
                 PTR(g_piob, 4 * i) = 0;
             }
@@ -1799,9 +1736,9 @@ int32_t GAMEAPI crtc_get_string_type(uint32_t type, const char *src, int32_t n, 
 {
     uint16_t dummy[2];
     if (g_stringtype_f == 0) {
-        if (GetStringTypeW_(1, 0x4a4df4, 1, dummy) != 0)
+        if (GetStringTypeW(1, GMEM(0x4a4df4), 1, dummy) != 0)
             g_stringtype_f = 1;
-        else if (GetStringTypeA_(0, 1, 0x4a4df0, 1, dummy) != 0)
+        else if (GetStringTypeA(0, 1, GMEM(0x4a4df0), 1, dummy) != 0)
             g_stringtype_f = 2;
         else
             return 0;
@@ -1809,23 +1746,23 @@ int32_t GAMEAPI crtc_get_string_type(uint32_t type, const char *src, int32_t n, 
     if (g_stringtype_f == 2) {
         if (lcid == 0)
             lcid = g_lc_ctype;
-        return (int32_t)GetStringTypeA_(lcid, type, src, (uint32_t)n, out);
+        return (int32_t)GetStringTypeA(lcid, type, src, n, out);
     }
     if (g_stringtype_f == 1) {
         int32_t size, got, i;
         if (cp == 0)
             cp = g_lc_codepage;
-        size = (int32_t)MultiByteToWideChar_(cp, error ? 9 : 1, src, (uint32_t)n, 0, 0);
+        size = MultiByteToWideChar(cp, error ? 9 : 1, src, n, 0, 0);
         if (size == 0 || size > WBUF_MAX)
             return 0;
         {
             uint16_t wide[size];
             for (i = 0; i < size; i++)
                 wide[i] = 0;
-            got = (int32_t)MultiByteToWideChar_(cp, 1, src, (uint32_t)n, wide, (uint32_t)size);
+            got = MultiByteToWideChar(cp, 1, src, n, wide, size);
             if (got == 0)
                 return 0;
-            return (int32_t)GetStringTypeW_(type, wide, (uint32_t)got, out);
+            return (int32_t)GetStringTypeW(type, wide, got, out);
         }
     }
     return 0;
@@ -1839,9 +1776,9 @@ int32_t GAMEAPI crtc_lcmap_string(uint32_t lcid, uint32_t flags, const char *src
 {
     int32_t insize, outsize;
     if (g_lcmap_f == 0) {
-        if (LCMapStringW_(0, 0x100, 0x4a4df4, 1, 0, 0) != 0)
+        if (LCMapStringW(0, 0x100, GMEM(0x4a4df4), 1, 0, 0) != 0)
             g_lcmap_f = 1;
-        else if (LCMapStringA_(0, 0x100, 0x4a4df0, 1, 0, 0) != 0)
+        else if (LCMapStringA(0, 0x100, GMEM(0x4a4df0), 1, 0, 0) != 0)
             g_lcmap_f = 2;
         else
             return 0;
@@ -1849,19 +1786,19 @@ int32_t GAMEAPI crtc_lcmap_string(uint32_t lcid, uint32_t flags, const char *src
     if (n > 0)
         n = strncnt(src, n);
     if (g_lcmap_f == 2)
-        return (int32_t)LCMapStringA_(lcid, flags, src, (uint32_t)n, dst, (uint32_t)dstn);
+        return LCMapStringA(lcid, flags, src, n, dst, dstn);
     if (g_lcmap_f != 1)
         return 0;
     if (cp == 0)
         cp = g_lc_codepage;
-    insize = (int32_t)MultiByteToWideChar_(cp, error ? 9 : 1, src, (uint32_t)n, 0, 0);
+    insize = MultiByteToWideChar(cp, error ? 9 : 1, src, n, 0, 0);
     if (insize == 0 || insize > WBUF_MAX)
         return 0;
     {
         uint16_t in[insize];
-        if (MultiByteToWideChar_(cp, 1, src, (uint32_t)n, in, (uint32_t)insize) == 0)
+        if (MultiByteToWideChar(cp, 1, src, n, in, insize) == 0)
             return 0;
-        outsize = (int32_t)LCMapStringW_(lcid, flags, in, (uint32_t)insize, 0, 0);
+        outsize = LCMapStringW(lcid, flags, in, insize, 0, 0);
         if (outsize == 0)
             return 0;
         if (flags & 0x400) { /* LCMAP_SORTKEY: bytes straight into dst */
@@ -1869,7 +1806,7 @@ int32_t GAMEAPI crtc_lcmap_string(uint32_t lcid, uint32_t flags, const char *src
                 return outsize;
             if (dstn < outsize)
                 return 0;
-            if (LCMapStringW_(lcid, flags, in, (uint32_t)insize, dst, (uint32_t)dstn) == 0)
+            if (LCMapStringW(lcid, flags, in, insize, (WCHAR *)dst, dstn) == 0)
                 return 0;
             return outsize;
         }
@@ -1878,11 +1815,11 @@ int32_t GAMEAPI crtc_lcmap_string(uint32_t lcid, uint32_t flags, const char *src
         {
             uint16_t out[outsize];
             int32_t r;
-            if (LCMapStringW_(lcid, flags, in, (uint32_t)insize, out, (uint32_t)outsize) == 0)
+            if (LCMapStringW(lcid, flags, in, insize, out, outsize) == 0)
                 return 0;
             if (dstn == 0)
                 dst = 0;
-            r = (int32_t)WideCharToMultiByte_(cp, 0x220, out, (uint32_t)outsize, dst, (uint32_t)dstn, 0, 0);
+            r = WideCharToMultiByte(cp, 0x220, out, outsize, dst, dstn, 0, 0);
             return r;
         }
     }
@@ -1928,7 +1865,7 @@ static void set_sbcs(void)
 static void set_sb_up_low(void)
 {
     uint8_t info[20];
-    if (GetCPInfo_(g_mbcodepage, info) == 1) {
+    if (GetCPInfo(g_mbcodepage, info) == 1) {
         uint8_t sb[0x100], lower[0x100], upper[0x100];
         uint16_t type[0x100];
         uint32_t c;
@@ -1985,10 +1922,10 @@ static int32_t setmbcp(int32_t codepage)
     crtc_lock(0x19);
     if (codepage == -2) {
         g_sysfixed_cp = 1;
-        cp = GetOEMCP_();
+        cp = GetOEMCP();
     } else if (codepage == -3) {
         g_sysfixed_cp = 1;
-        cp = GetACP_();
+        cp = GetACP();
     } else if (codepage == -4) {
         g_sysfixed_cp = 1;
         cp = g_lc_codepage;
@@ -2030,7 +1967,7 @@ static int32_t setmbcp(int32_t codepage)
     }
     {
         uint8_t info[20];
-        if (GetCPInfo_(cp, info) == 1) {
+        if (GetCPInfo(cp, info) == 1) {
             g_mblcid = 0;
             clear_mbctype();
             if (U32(info, 0) < 2) {
@@ -2246,7 +2183,7 @@ static void doexit(int32_t code, int32_t quick, int32_t retcaller)
 {
     crtc_lockexit();
     if (g_c_exit_done == 1)
-        TerminateProcess_(GetCurrentProcess_(), (uint32_t)code);
+        TerminateProcess(GetCurrentProcess(), (uint32_t)code);
     g_c_termination = 1;
     g_exitflag = (uint8_t)retcaller;
     if (quick == 0) {
@@ -2264,7 +2201,7 @@ static void doexit(int32_t code, int32_t quick, int32_t retcaller)
         return;
     }
     g_c_exit_done = 1;
-    ExitProcess_((uint32_t)code);
+    ExitProcess((uint32_t)code);
 }
 
 /* 0x498c9a: _exit. */
@@ -2274,26 +2211,30 @@ void GAMEAPI crtc_exit_quick(int32_t code)
 }
 
 /* 0x49ff7c: __crtMessageBoxA (user32 loaded on first use; owned by the
- * active window's last popup). */
+ * active window's last popup). MessageBoxA, GetActiveWindow and
+ * GetLastActivePopup are called through the addresses GetProcAddress gave. */
+typedef int32_t(W32API *message_box_fn)(HWND owner, const char *text, const char *caption, UINT type);
+typedef HWND(W32API *active_window_fn)(void);
+typedef HWND(W32API *last_popup_fn)(HWND h);
 static int32_t crt_message_box(const char *text, const char *caption, uint32_t type)
 {
     uint32_t owner = 0;
     if (g_crt_message_box == 0) {
-        uint32_t user32 = LoadLibraryA_(0x4a516c);
+        uint32_t user32 = (uint32_t)(uintptr_t)LoadLibraryA(GMEM(0x4a516c));
         if (user32 == 0)
             return 0;
-        g_crt_message_box = GetProcAddress_(user32, 0x4a5160);
+        g_crt_message_box = (uint32_t)(uintptr_t)GetProcAddress(GMEM(user32), GMEM(0x4a5160));
         if (g_crt_message_box == 0)
             return 0;
-        g_crt_active_window = GetProcAddress_(user32, 0x4a5150);
-        g_crt_last_popup = GetProcAddress_(user32, 0x4a513c);
+        g_crt_active_window = (uint32_t)(uintptr_t)GetProcAddress(GMEM(user32), GMEM(0x4a5150));
+        g_crt_last_popup = (uint32_t)(uintptr_t)GetProcAddress(GMEM(user32), GMEM(0x4a513c));
     }
     if (g_crt_active_window != 0) {
-        owner = ((w0_fn)(uintptr_t)g_crt_active_window)();
+        owner = (uint32_t)(uintptr_t)((active_window_fn)(uintptr_t)g_crt_active_window)();
         if (owner != 0 && g_crt_last_popup != 0)
-            owner = ((w1_fn)(uintptr_t)g_crt_last_popup)(owner);
+            owner = (uint32_t)(uintptr_t)((last_popup_fn)(uintptr_t)g_crt_last_popup)(GMEM(owner));
     }
-    return (int32_t)((w4_fn)(uintptr_t)g_crt_message_box)(owner, A(text), A(caption), type);
+    return ((message_box_fn)(uintptr_t)g_crt_message_box)(GMEM(owner), text, caption, type);
 }
 
 /* 0x49dee9: _NMSG_WRITE: a runtime error message to stderr (console) or a
@@ -2310,10 +2251,10 @@ static void nmsg_write(uint32_t number)
         uint32_t written;
         const char *msg = (const char *)(uintptr_t)G32(g_rterrs + 8 * i + 4);
         uint32_t len = str_len(msg);
-        WriteFile_(GetStdHandle_(0xfffffff4u), msg, len, &written, 0);
+        WriteFile(GetStdHandle(0xfffffff4u), msg, len, &written, 0);
     } else if (number != 0xfc) {
         char progname[0x104], outmsg[0xa0], *name = progname;
-        if (GetModuleFileNameA_(0, progname, 0x104) == 0)
+        if (GetModuleFileNameA(0, progname, 0x104) == 0)
             rt_strcpy(progname, (const char *)0x4a5124); /* "<program name unknown>" */
         if (str_len(progname) + 1 > 0x3c) {
             name = progname + str_len(progname) - 0x3b;
@@ -2361,7 +2302,7 @@ static void fast_error_exit(uint32_t n)
     if (g_error_mode == 1)
         ff_msgbanner();
     nmsg_write(n);
-    ExitProcess_(0xff);
+    ExitProcess(0xff);
 }
 
 /* ========================================================== threads */
@@ -2375,9 +2316,9 @@ static void endthread(void)
     if (ptd == 0)
         crtc_amsg_exit(0x10);
     if (U32(ptd, 4) != 0xffffffffu)
-        CloseHandle_(U32(ptd, 4));
+        CloseHandle(GMEM(U32(ptd, 4)));
     freeptd(ptd);
-    ExitThread_(0);
+    ExitThread(0);
 }
 
 /* 0x498df3: _threadstart, the thread procedure _beginthread passes to
@@ -2385,7 +2326,7 @@ static void endthread(void)
  * SEH frame). */
 uint32_t STDCALL crtc_threadstart(uint8_t *ptd)
 {
-    if (TlsSetValue_(g_tlsindex, ptd) == 0)
+    if (TlsSetValue(g_tlsindex, ptd) == 0)
         crtc_amsg_exit(0x10);
     /* _FPmtinit (0x4b4ab0) is the runtime's empty function: not called */
     ((void(GAMEAPI *)(uint32_t))(uintptr_t)U32(ptd, 0x48))(U32(ptd, 0x4c));
@@ -2399,10 +2340,10 @@ uint32_t STDCALL crtc_threadstart(uint8_t *ptd)
  * the small-block heap itself is no longer used, see crt_cb.c). */
 static int32_t heap_init(int32_t mt)
 {
-    g_crtheap = HeapCreate_(mt == 0, 0x1000, 0);
+    g_crtheap = (uint32_t)(uintptr_t)HeapCreate(mt == 0, 0x1000, 0);
     if (g_crtheap == 0)
         return 0;
-    G32(0x6d1264) = HeapAlloc_(g_crtheap, 0, 0x140);
+    G32(0x6d1264) = (uint32_t)(uintptr_t)HeapAlloc(GMEM(g_crtheap), 0, 0x140);
     if (G32(0x6d1264) != 0) {
         G32(0x6d125c) = 0;
         G32(0x6d1260) = 0;
@@ -2410,7 +2351,7 @@ static int32_t heap_init(int32_t mt)
         G32(0x6d1250) = 0x10;
         return 1;
     }
-    HeapDestroy_(g_crtheap);
+    HeapDestroy(GMEM(g_crtheap));
     return 0;
 }
 
@@ -2419,14 +2360,14 @@ static int32_t mtinit(void)
 {
     uint8_t *ptd;
     mtinitlocks();
-    g_tlsindex = TlsAlloc_();
+    g_tlsindex = TlsAlloc();
     if (g_tlsindex == 0xffffffffu)
         return 0;
     ptd = rt_calloc(1, 0x74);
-    if (ptd == 0 || TlsSetValue_(g_tlsindex, ptd) == 0)
+    if (ptd == 0 || TlsSetValue(g_tlsindex, ptd) == 0)
         return 0;
     crtc_initptd(ptd);
-    U32(ptd, 0) = GetCurrentThreadId_();
+    U32(ptd, 0) = GetCurrentThreadId();
     U32(ptd, 4) = 0xffffffffu;
     return 1;
 }
@@ -2443,7 +2384,7 @@ static void ioinit(void)
     g_nhandle = 0x20;
     GPTR(g_pioinfo) = block;
     ioinfo_block_init(block);
-    GetStartupInfoA_(si);
+    GetStartupInfoA(si);
     if (U16(si, 0x32) != 0 && U32(si, 0x34) != 0) { /* cbReserved2, lpReserved2 */
         uint8_t *p = PTR(si, 0x34);
         int32_t n = I32(p, 0), count;
@@ -2467,7 +2408,7 @@ static void ioinit(void)
             } while ((int32_t)g_nhandle < n);
         }
         for (i = 0; i < count; i++, flags++, handles++) {
-            if (*handles != 0xffffffffu && (*flags & FOPEN) && ((*flags & FPIPE) || GetFileType_(*handles) != 0)) {
+            if (*handles != 0xffffffffu && (*flags & FOPEN) && ((*flags & FPIPE) || GetFileType(GMEM(*handles)) != 0)) {
                 uint8_t *io = pioinfo(i);
                 U32(io, 0) = *handles;
                 U8(io, 4) = *flags;
@@ -2479,8 +2420,8 @@ static void ioinit(void)
         if (I32(io, 0) == -1) {
             uint32_t h, type;
             U8(io, 4) = 0x81; /* FOPEN | FTEXT */
-            h = GetStdHandle_(i == 0 ? 0xfffffff6u : i == 1 ? 0xfffffff5u : 0xfffffff4u);
-            if (h != 0xffffffffu && (type = GetFileType_(h)) != 0) {
+            h = (uint32_t)(uintptr_t)GetStdHandle(i == 0 ? 0xfffffff6u : i == 1 ? 0xfffffff5u : 0xfffffff4u);
+            if (h != 0xffffffffu && (type = GetFileType(GMEM(h))) != 0) {
                 U32(io, 0) = h;
                 if ((type & 0xff) == 2)
                     U8(io, 4) |= FDEV;
@@ -2493,7 +2434,7 @@ static void ioinit(void)
             U8(io, 4) |= FTEXT;
         }
     }
-    SetHandleCount_(g_nhandle);
+    SetHandleCount(g_nhandle);
 }
 
 /* 0x49dbc2: __crtGetEnvironmentStringsA: a malloc'd copy of the
@@ -2503,11 +2444,11 @@ static uint8_t *get_environment_strings(void)
     uint16_t *wide = 0;
     uint8_t *narrow = 0;
     if (g_env_f == 0) {
-        wide = (uint16_t *)(uintptr_t)GetEnvironmentStringsW_();
+        wide = GetEnvironmentStringsW();
         if (wide != 0) {
             g_env_f = 1;
         } else {
-            narrow = (uint8_t *)(uintptr_t)GetEnvironmentStrings_();
+            narrow = (uint8_t *)GetEnvironmentStrings();
             if (narrow == 0)
                 return 0;
             g_env_f = 2;
@@ -2520,7 +2461,7 @@ static uint8_t *get_environment_strings(void)
         int32_t n;
         uint32_t size;
         uint8_t *copy = 0;
-        if (wide == 0 && (wide = (uint16_t *)(uintptr_t)GetEnvironmentStringsW_()) == 0)
+        if (wide == 0 && (wide = GetEnvironmentStringsW()) == 0)
             return 0;
         for (p = wide; *p != 0;) {
             while (*p != 0)
@@ -2528,19 +2469,19 @@ static uint8_t *get_environment_strings(void)
             p++;
         }
         n = (int32_t)(p - wide) + 1;
-        size = WideCharToMultiByte_(0, 0, wide, (uint32_t)n, 0, 0, 0, 0);
+        size = (uint32_t)WideCharToMultiByte(0, 0, wide, n, 0, 0, 0, 0);
         if (size != 0 && (copy = rt_malloc(size)) != 0 &&
-            WideCharToMultiByte_(0, 0, wide, (uint32_t)n, copy, size, 0, 0) == 0) {
+            WideCharToMultiByte(0, 0, wide, n, (char *)copy, (int32_t)size, 0, 0) == 0) {
             rt_free(copy);
             copy = 0;
         }
-        FreeEnvironmentStringsW_(wide);
+        FreeEnvironmentStringsW(wide);
         return copy;
     }
     {
         uint8_t *p, *copy;
         uint32_t size;
-        if (narrow == 0 && (narrow = (uint8_t *)(uintptr_t)GetEnvironmentStrings_()) == 0)
+        if (narrow == 0 && (narrow = (uint8_t *)GetEnvironmentStrings()) == 0)
             return 0;
         for (p = narrow; *p != 0;) {
             while (*p != 0)
@@ -2551,7 +2492,7 @@ static uint8_t *get_environment_strings(void)
         copy = rt_malloc(size);
         if (copy != 0)
             copy_bytes(copy, narrow, size);
-        FreeEnvironmentStringsA_(narrow);
+        FreeEnvironmentStringsA((char *)narrow);
         return copy;
     }
 }
@@ -2666,7 +2607,7 @@ static void setargv(void)
     uint8_t *block;
     if (g_mbctype_initialized == 0)
         crtc_initmbctable();
-    GetModuleFileNameA_(0, g_pgmname, 0x104);
+    GetModuleFileNameA(0, GMEM(g_pgmname), 0x104);
     g_pgmptr = g_pgmname;
     cmd = *g_acmdln != 0 ? g_acmdln : (const uint8_t *)g_pgmname;
     parse_cmdline(cmd, 0, 0, &numargs, &numchars);
@@ -2853,9 +2794,9 @@ static uint32_t p5_test_fdiv(void)
 void GAMEAPI crtc_fpmath(void)
 {
     uint32_t kernel32, present;
-    kernel32 = GetModuleHandleA_(0x4a4d0c);
-    if (kernel32 != 0 && (present = GetProcAddress_(kernel32, 0x4a4cf0)) != 0)
-        g_adjust_fdiv = ((w1_fn)(uintptr_t)present)(0);
+    kernel32 = (uint32_t)(uintptr_t)GetModuleHandleA(GMEM(0x4a4d0c));
+    if (kernel32 != 0 && (present = (uint32_t)(uintptr_t)GetProcAddress(GMEM(kernel32), GMEM(0x4a4cf0))) != 0)
+        g_adjust_fdiv = ((BOOL(W32API *)(DWORD))(uintptr_t)present)(0); /* IsProcessorFeaturePresent */
     else
         g_adjust_fdiv = p5_test_fdiv();
     controlfp(0x10000, 0x30000);
@@ -2866,7 +2807,7 @@ void GAMEAPI crtc_fpmath(void)
 void GAMEAPI crtc_clock_init(void)
 {
     uint32_t ft[2];
-    GetSystemTimeAsFileTime_(ft);
+    GetSystemTimeAsFileTime((uint64_t *)ft);
     G32(g_clock_start) = ft[0];
     G32(g_clock_start + 4) = ft[1];
 }
@@ -2892,7 +2833,7 @@ void GAMEAPI crtc_entry(void)
 {
     uint8_t si[0x44];
     uint8_t *cmdline;
-    uint32_t version = GetVersion_(), show;
+    uint32_t version = GetVersion(), show;
     int32_t r;
     g_winminor = version >> 8 & 0xff;
     g_winmajor = version & 0xff;
@@ -2903,16 +2844,16 @@ void GAMEAPI crtc_entry(void)
     if (mtinit() == 0)
         fast_error_exit(0x10);
     ioinit();
-    g_acmdln = (uint8_t *)(uintptr_t)GetCommandLineA_();
+    g_acmdln = (uint8_t *)GetCommandLineA();
     g_aenvptr = get_environment_strings();
     setargv();
     setenvp();
     cinit();
     U32(si, 0x2c) = 0; /* dwFlags */
-    GetStartupInfoA_(si);
+    GetStartupInfoA(si);
     cmdline = wincmdln();
     show = (U8(si, 0x2c) & 1) ? U16(si, 0x30) : 10;
-    r = game_winmain(GetModuleHandleA_(0), 0, cmdline, show);
+    r = game_winmain((uint32_t)(uintptr_t)GetModuleHandleA(0), 0, cmdline, show);
     rt_exit(r);
 }
 
@@ -2947,6 +2888,11 @@ void GAMEAPI crtc_entry(void)
  * IsProcessorFeaturePresent(0) answers for) the fprem loop called the
  * runtime's P5-safe remainder 0x49ca7c; that gives fprem's result on any
  * other CPU, so it is fprem here. errno is crtc_errno. */
+#ifdef REROLL_NATIVE
+#define CC_CALL_RAISE_EXCEPTION "call RaiseException"
+#else
+#define CC_CALL_RAISE_EXCEPTION "call dword ptr [0x4a30f4]" /* the import slot */
+#endif
 __asm__(".intel_syntax noprefix\n"
         ".text\n"
         ".globl crtc_fmod\n"
@@ -4081,7 +4027,7 @@ __asm__(".intel_syntax noprefix\n"
         ".Lcc_4a11ce: push ebx\n"
         ".Lcc_4a11cf: push 0x0\n"
         ".Lcc_4a11d1: push dword ptr [ebp + 0x10]\n"
-        ".Lcc_4a11d4: call dword ptr [0x4a30f4]\n"
+        ".Lcc_4a11d4: " CC_CALL_RAISE_EXCEPTION "\n"
         ".Lcc_4a11da: mov eax, dword ptr [ebp + 0x8]\n"
         ".Lcc_4a11dd: test byte ptr [eax + 0x8], 0x10\n"
         ".Lcc_4a11e1: je .Lcc_4a11e6\n"

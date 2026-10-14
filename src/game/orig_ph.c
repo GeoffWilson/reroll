@@ -22,6 +22,7 @@
  * outside the group is called by address. */
 #include "../runtime.h"
 #include "physics.h"
+#include "winapi.h"
 
 #define U8(p, off) (*(uint8_t *)((uint8_t *)(uintptr_t)(p) + (off)))
 #define U16(p, off) (*(uint16_t *)((uint8_t *)(uintptr_t)(p) + (off)))
@@ -33,9 +34,6 @@
 #define G32(a) (*(uint32_t *)(uintptr_t)(a))
 #define GI32(a) (*(int32_t *)(uintptr_t)(a))
 #define A(x) ((uint32_t)(uintptr_t)(x))
-
-#define STDCALL __attribute__((stdcall))
-#define IMPORT(a) (*(void **)(uintptr_t)(a))
 
 typedef int32_t(GAMEAPI *ph_fn0)(void);
 typedef int32_t(GAMEAPI *ph_fn1)(uint32_t a);
@@ -401,9 +399,6 @@ int32_t GAMEAPI glyph_sheet_pack(uint32_t name, int32_t cell_w, uint8_t *out, in
 #define HEAP_FREEP G32(0x4c2470)
 #define HEAP_FIRST G32(0x4c2478)
 
-typedef uint32_t(STDCALL *global_alloc_fn)(uint32_t flags, uint32_t size);
-#define GlobalAlloc_ ((global_alloc_fn)IMPORT(0x4a3114))
-
 /* 0x444500: once (0x4c2478 unset): a 0x9c4000-byte zeroed GlobalAlloc block
  * (fatal error when refused), then one malloc of nearly all of it, freed
  * again, so the free list starts as one block. */
@@ -411,7 +406,7 @@ void GAMEAPI kr_heap_init(void)
 {
     if (HEAP_FIRST != 0)
         return;
-    uint32_t p = GlobalAlloc_(0x40, 0x9c4000);
+    uint32_t p = (uint32_t)(uintptr_t)GlobalAlloc(0x40, 0x9c4000);
     HEAP_START = p;
     if (p == 0) {
         fatal_error_ph(0x4af5b0);

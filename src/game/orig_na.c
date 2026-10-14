@@ -20,8 +20,7 @@
  * outside the group is called by address. */
 #include "../runtime.h"
 #include "physics.h"
-
-#define STDCALL __attribute__((stdcall))
+#include "winapi.h"
 
 #define U8(p, off) (*(uint8_t *)((uint8_t *)(p) + (off)))
 #define S16(p, off) (*(int16_t *)((uint8_t *)(p) + (off)))
@@ -53,7 +52,6 @@ typedef int32_t(GAMEAPI *na_fn4)(uint32_t a, uint32_t b, uint32_t c, uint32_t d)
 typedef int32_t(GAMEAPI *na_fn6)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f);
 typedef int32_t(GAMEAPI *na_fn8)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f,
                                  uint32_t g, uint32_t h);
-typedef int32_t(STDCALL *na_api2)(uint32_t a, uint32_t b);
 
 #define CALL0(a) (((na_int_fn)(a))())
 #define CALL1(a, x) (((na_fn1)(a))((uint32_t)(x)))
@@ -532,7 +530,7 @@ int32_t GAMEAPI screenshot_dump(void)
     U32(info, 0x1c) = 0xb12;
     U32(info, 0x20) = 0;
     U32(info, 0x24) = 0;
-    ((na_api2) * (void **)0x4a3140)(0x4a76d8, 0); /* CreateDirectoryA("\RollCage\Dumps", 0) */
+    CreateDirectoryA(GMEM(0x4a76d8), 0); /* "\RollCage\Dumps" */
     n = 1;
     do
         CALL3(0x4979f0, PTRARG(name), 0x4a76bc, n++); /* sprintf("\RollCage\Dumps\Dump%d.bmp") */

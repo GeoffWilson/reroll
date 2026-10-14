@@ -18,14 +18,15 @@
  *    DrawPrimitive flushes, the render state selection 0x420a30 /
  *    0x420770 / 0x4209c0 and the flat quad 0x41f550.
  *
- * COM calls go through the object's vtable (stdcall), SetRect through the
- * import table, everything outside the group by address. Float code is the
+ * COM calls are the typed methods of com.h, SetRect the typed import of
+ * winapi.h, everything outside the group by address. Float code is the
  * original's x87 instruction sequence in inline asm, so results match under
  * either precision control; _ftol (0x497a80) is called by address where the
  * value can be fractional. Stack buffers the original leaves uninitialised
  * (surface descriptions, the sprite packet, out-pointer slots) are zeroed
  * here. */
 #include "../runtime.h"
+#include "com.h"
 #include "physics.h"
 
 /* This group's prototypes (also in build/groups/pa_protos.txt for physics.h). */
@@ -75,8 +76,6 @@ void vertex_emit(void); /* 0x420b10: asm entry, register argument edx (vertex) *
 void GAMEAPI vertex_emit_c(const uint8_t *v); /* 0x420b10 body */
 void GAMEAPI vertex_list_draw_fan(const int32_t *list); /* 0x420bb0 */
 
-#define STDCALL __attribute__((stdcall))
-
 #define U8(p, off) (*(uint8_t *)((uint8_t *)(p) + (off)))
 #define U16(p, off) (*(uint16_t *)((uint8_t *)(p) + (off)))
 #define I32(p, off) (*(int32_t *)((uint8_t *)(p) + (off)))
@@ -96,15 +95,6 @@ typedef int32_t(GAMEAPI *pa_fn2)(uint32_t a, uint32_t b);
 typedef int32_t(GAMEAPI *pa_fn3)(uint32_t a, uint32_t b, uint32_t c);
 typedef int32_t(GAMEAPI *pa_fn4)(uint32_t a, uint32_t b, uint32_t c, uint32_t d);
 typedef int32_t(GAMEAPI *pa_fn6)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f);
-typedef int32_t(STDCALL *pa_com1)(uint32_t self);
-typedef int32_t(STDCALL *pa_com2)(uint32_t self, uint32_t a);
-typedef int32_t(STDCALL *pa_com3)(uint32_t self, uint32_t a, uint32_t b);
-typedef int32_t(STDCALL *pa_com4)(uint32_t self, uint32_t a, uint32_t b, uint32_t c);
-typedef int32_t(STDCALL *pa_com5)(uint32_t self, uint32_t a, uint32_t b, uint32_t c, uint32_t d);
-typedef int32_t(STDCALL *pa_com6)(uint32_t self, uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e);
-typedef int32_t(STDCALL *pa_com8)(uint32_t self, uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e,
-                                  uint32_t f, uint32_t g);
-typedef int32_t(STDCALL *pa_setrect_fn)(int32_t *rect, int32_t left, int32_t top, int32_t right, int32_t bottom);
 
 #define CALL0(a) ((pa_fn0)(a))()
 #define CALL1(a, x) ((pa_fn1)(a))((uint32_t)(x))
@@ -114,30 +104,14 @@ typedef int32_t(STDCALL *pa_setrect_fn)(int32_t *rect, int32_t left, int32_t top
 #define CALL6(a, x, y, z, w, u, v)                                                                                     \
     ((pa_fn6)(a))((uint32_t)(x), (uint32_t)(y), (uint32_t)(z), (uint32_t)(w), (uint32_t)(u), (uint32_t)(v))
 
-/* COM: method at byte offset `off` of the object's vtable. */
-#define VT(obj, off) (*(void **)(uintptr_t)(G32(obj) + (off)))
-#define COM1(obj, off) ((pa_com1)VT(obj, off))(obj)
-#define COM2(obj, off, a) ((pa_com2)VT(obj, off))(obj, (uint32_t)(a))
-#define COM3(obj, off, a, b) ((pa_com3)VT(obj, off))(obj, (uint32_t)(a), (uint32_t)(b))
-#define COM4(obj, off, a, b, c) ((pa_com4)VT(obj, off))(obj, (uint32_t)(a), (uint32_t)(b), (uint32_t)(c))
-#define COM5(obj, off, a, b, c, d)                                                                                     \
-    ((pa_com5)VT(obj, off))(obj, (uint32_t)(a), (uint32_t)(b), (uint32_t)(c), (uint32_t)(d))
-#define COM6(obj, off, a, b, c, d, e)                                                                                  \
-    ((pa_com6)VT(obj, off))(obj, (uint32_t)(a), (uint32_t)(b), (uint32_t)(c), (uint32_t)(d), (uint32_t)(e))
-#define COM8(obj, off, a, b, c, d, e, f, g)                                                                            \
-    ((pa_com8)VT(obj, off))(obj, (uint32_t)(a), (uint32_t)(b), (uint32_t)(c), (uint32_t)(d), (uint32_t)(e),       \
-                            (uint32_t)(f), (uint32_t)(g))
-
-/* SetRect through the import table. */
-#define SET_RECT(r, l, t, rt, b) ((pa_setrect_fn)G32(0x4a3254))((r), (l), (t), (int32_t)(rt), (int32_t)(b))
-
+/* COM methods com.h lacks (native/ does not implement them). */
 /* Direct3D objects and the last HRESULT. */
 #define DDRAW G32(0x4d5f40)
 #define D3D G32(0x4b8380)
 #define DEVICE G32(0x4b8384)
 #define VIEWPORT G32(0x4b8388)
-#define HRESULT G32(0x4d6f18)
-#define RENDER_STATE(state, value) COM3(DEVICE, 0x5c, (state), (value))
+#define g_hresult G32(0x4d6f18)
+#define RENDER_STATE(state, value) IDirect3DDevice2_SetRenderState(DEVICE, (state), (value))
 
 /* Outside the group. */
 #define mem_fill(p, v, n) CALL3(0x476f50, p, v, n)
@@ -236,8 +210,8 @@ int32_t GAMEAPI viewport_clear(uint32_t keep_target)
     rect[1] = pa_ftol(0x6ccd6c);
     rect[2] = pa_ftol(0x6ccd68);
     rect[3] = pa_ftol(0x6ccd70);
-    HRESULT = (uint32_t)COM4(VIEWPORT, 0x30, 1, A32(rect), flags);
-    return HRESULT == 0;
+    g_hresult = (uint32_t)IDirect3DViewport2_Clear(VIEWPORT, 1, A32(rect), flags);
+    return g_hresult == 0;
 }
 
 /* ===== 0x41e0d0: release the two materials, then all texture slots
@@ -245,11 +219,11 @@ int32_t GAMEAPI viewport_clear(uint32_t keep_target)
 int32_t GAMEAPI d3d_materials_release(void)
 {
     if (G32(0x4bddd0) != 0) {
-        COM1(G32(0x4bddd0), 0x08);
+        IDirect3DMaterial2_Release(G32(0x4bddd0));
         G32(0x4bddd0) = 0;
     }
     if (G32(0x4bddcc) != 0) {
-        COM1(G32(0x4bddcc), 0x08);
+        IDirect3DMaterial2_Release(G32(0x4bddcc));
         G32(0x4bddcc) = 0;
     }
     return texture_slots_release_x();
@@ -275,15 +249,15 @@ void GAMEAPI material_init(uint32_t *m, uint32_t r, uint32_t g, uint32_t b)
 /* ===== 0x41e170: BeginScene; 1 on success. ===== */
 int32_t GAMEAPI d3d_scene_begin(void)
 {
-    HRESULT = (uint32_t)COM1(DEVICE, 0x28);
-    return HRESULT == 0;
+    g_hresult = (uint32_t)IDirect3DDevice2_BeginScene(DEVICE);
+    return g_hresult == 0;
 }
 
 /* ===== 0x41e190: EndScene when there is a device. ===== */
 void GAMEAPI d3d_scene_end(void)
 {
     if (DEVICE != 0)
-        COM1(DEVICE, 0x2c);
+        IDirect3DDevice2_EndScene(DEVICE);
 }
 
 /* The 16-bit colour of 8-bit r, g, b in the screen format (shifts at
@@ -466,11 +440,11 @@ void GAMEAPI background_colour_set(int32_t r, int32_t g, int32_t b)
     m[0x11] = 0x40a00000;
     m[0x13] = 1;
     m[0x12] = 0;
-    if (COM2(G32(0x4bddcc), 0x0c, A32(m)) != 0)
+    if (IDirect3DMaterial2_SetMaterial(G32(0x4bddcc), (const uint8_t *)m) != 0)
         return;
-    if (COM3(G32(0x4bddcc), 0x14, DEVICE, A32(&handle)) != 0)
+    if (IDirect3DMaterial2_GetHandle(G32(0x4bddcc), GMEM(DEVICE), &handle) != 0)
         return;
-    COM2(VIEWPORT, 0x20, handle);
+    IDirect3DViewport2_SetBackground(VIEWPORT, handle);
 }
 
 /* ===== 0x41ed00: create the background material 0x4bddcc (black, power
@@ -488,25 +462,25 @@ int32_t GAMEAPI materials_create(void)
     m1[0x11] = 0x40a00000;
     m1[0x13] = 1;
     m1[0x12] = 0;
-    if (COM3(D3D, 0x14, 0x4bddcc, 0) != 0)
+    if (IDirect3D2_CreateMaterial(D3D, GMEM(0x4bddcc), 0) != 0)
         return 0;
-    if (COM2(G32(0x4bddcc), 0x0c, A32(m1)) != 0)
+    if (IDirect3DMaterial2_SetMaterial(G32(0x4bddcc), (const uint8_t *)m1) != 0)
         return 0;
-    if (COM3(G32(0x4bddcc), 0x14, DEVICE, A32(&handle)) != 0)
+    if (IDirect3DMaterial2_GetHandle(G32(0x4bddcc), GMEM(DEVICE), &handle) != 0)
         return 0;
-    if (COM2(VIEWPORT, 0x20, handle) != 0)
+    if (IDirect3DViewport2_SetBackground(VIEWPORT, handle) != 0)
         return 0;
     material_init(m2, 0x3f800000, 0x3f800000, 0x3f800000);
     m2[0x12] = G32(0x4ba6fc);
     m2[0x11] = 0x3f800000;
     m2[0x13] = 0x40;
-    if (COM3(D3D, 0x14, 0x4bddd0, 0) != 0)
+    if (IDirect3D2_CreateMaterial(D3D, GMEM(0x4bddd0), 0) != 0)
         return 0;
-    if (COM2(G32(0x4bddd0), 0x0c, A32(m2)) != 0)
+    if (IDirect3DMaterial2_SetMaterial(G32(0x4bddd0), (const uint8_t *)m2) != 0)
         return 0;
-    if (COM3(G32(0x4bddd0), 0x14, DEVICE, 0x4bddd4) != 0)
+    if (IDirect3DMaterial2_GetHandle(G32(0x4bddd0), GMEM(DEVICE), GMEM(0x4bddd4)) != 0)
         return 0;
-    COM3(DEVICE, 0x64, 1, G32(0x4bddd4));
+    IDirect3DDevice2_SetLightState(DEVICE, 1, G32(0x4bddd4));
     return 1;
 }
 
@@ -535,9 +509,9 @@ int32_t GAMEAPI surfaces_clear(void)
         for (i = 0; i < 0x19; i++)
             fx[i] = 0;
         fx[0] = 100;
-        SET_RECT(rect, 0, 0, U32(desc, 0x0c), U32(desc, 0x08));
-        HRESULT = (uint32_t)COM6(G32(surfaces[k]), 0x14, A32(rect), 0, 0, 0x1000400, A32(fx));
-        if (HRESULT != 0)
+        SetRect(rect, 0, 0, (int32_t)U32(desc, 0x0c), (int32_t)U32(desc, 0x08));
+        g_hresult = (uint32_t)IDirectDrawSurface_Blt(G32(surfaces[k]), rect, 0, 0, 0x1000400, (const uint8_t *)fx);
+        if (g_hresult != 0)
             return 0;
     }
     return 1;
@@ -552,7 +526,7 @@ int32_t GAMEAPI texture_page_show(int32_t page)
 
     screen_area_set(0, 0, G32(0x4acc38), G32(0x4acc3c));
     slot = (int32_t)PAGE_SLOT(page);
-    SET_RECT(rect, 0, 0, SLOT(0x10, slot), SLOT(0x14, slot));
+    SetRect(rect, 0, 0, (int32_t)SLOT(0x10, slot), (int32_t)SLOT(0x14, slot));
     image_tiles_draw(page, (int32_t)SLOT(0x10, slot), (int32_t)SLOT(0x14, slot), rect, 1, 0xffffffffu);
     return 1;
 }
@@ -647,7 +621,7 @@ void GAMEAPI d3d_viewport_set(uint32_t x, uint32_t y, uint32_t w, uint32_t h)
                      : "=m"(vp[8]), "=m"(hf)
                      : "m"(h64), "m"(vp[6])
                      : "st", "st(1)", "memory");
-    HRESULT = (uint32_t)COM2(VIEWPORT, 0x14, A32(vp));
+    g_hresult = (uint32_t)IDirect3DViewport2_SetViewport(VIEWPORT, (const uint8_t *)vp);
 }
 
 /* ===== 0x41f3f0: the vertex snap switch 0x4b86b8 (0x420600). ===== */
@@ -789,8 +763,8 @@ int32_t GAMEAPI pvrc_texture_probe(void)
 
     for (i = 0; i < 0x6c; i++)
         desc[i] = 0;
-    HRESULT = (uint32_t)COM3(DDRAW, 0x00, 0x4a3540, A32(&dd2));
-    if (HRESULT != 0)
+    g_hresult = (uint32_t)IDirectDraw_QueryInterface(DDRAW, GMEM(0x4a3540), (void **)&dd2);
+    if (g_hresult != 0)
         return 0;
     U32(desc, 0x08) = 2;
     U32(desc, 0x0c) = 2;
@@ -800,34 +774,34 @@ int32_t GAMEAPI pvrc_texture_probe(void)
     U32(desc, 0x48) = 0x20;
     U32(desc, 0x4c) = 4;
     U32(desc, 0x50) = 0x43525650;
-    HRESULT = (uint32_t)COM4(dd2, 0x18, A32(desc), A32(&surf), 0);
-    if (HRESULT != 0)
+    g_hresult = (uint32_t)IDirectDraw_CreateSurface(dd2, desc, (void **)&surf, 0);
+    if (g_hresult != 0)
         return 0;
-    HRESULT = (uint32_t)COM5(surf, 0x64, 0, A32(desc), 1, 0);
-    if (HRESULT != 0) {
-        COM1(surf, 0x08);
+    g_hresult = (uint32_t)IDirectDrawSurface_Lock(surf, 0, desc, 1, 0);
+    if (g_hresult != 0) {
+        IDirectDrawSurface_Release(surf);
         return 0;
     }
     bits = U32(desc, 0x24);
-    HRESULT = (uint32_t)COM2(surf, 0x80, A32(desc));
-    if (HRESULT != 0) {
-        COM1(surf, 0x08);
+    g_hresult = (uint32_t)IDirectDrawSurface_Unlock(surf, A32(desc));
+    if (g_hresult != 0) {
+        IDirectDrawSurface_Release(surf);
         return 0;
     }
-    HRESULT = (uint32_t)COM3(surf, 0x00, 0x4a3920, A32(&tex));
-    if (HRESULT != 0) {
-        COM1(surf, 0x08);
+    g_hresult = (uint32_t)IDirectDrawSurface_QueryInterface(surf, GMEM(0x4a3920), (void **)&tex);
+    if (g_hresult != 0) {
+        IDirectDrawSurface_Release(surf);
         return 0;
     }
-    HRESULT = (uint32_t)COM3(tex, 0x0c, DEVICE, A32(&handle));
-    if (HRESULT != 0) {
-        COM1(tex, 0x08);
-        COM1(surf, 0x08);
+    g_hresult = (uint32_t)IDirect3DTexture2_GetHandle(tex, GMEM(DEVICE), &handle);
+    if (g_hresult != 0) {
+        IDirect3DTexture2_Release(tex);
+        IDirectDrawSurface_Release(surf);
         return 0;
     }
     ok = G32(bits + 4) != 0;
-    COM1(tex, 0x08);
-    COM1(surf, 0x08);
+    IDirect3DTexture2_Release(tex);
+    IDirectDrawSurface_Release(surf);
     return ok;
 }
 
@@ -842,12 +816,12 @@ int32_t GAMEAPI ddraw_device_id_check(void)
 
     for (i = 0; i < 0x428; i++)
         ident[i] = 0;
-    HRESULT = (uint32_t)COM3(DDRAW, 0x00, 0x4a3550, A32(&dd4));
-    if (HRESULT != 0)
+    g_hresult = (uint32_t)IDirectDraw_QueryInterface(DDRAW, GMEM(0x4a3550), (void **)&dd4);
+    if (g_hresult != 0)
         return 0;
-    HRESULT = (uint32_t)COM3(dd4, 0x6c, A32(ident), 0);
-    COM1(dd4, 0x08);
-    if (HRESULT != 0)
+    g_hresult = (uint32_t)IDirectDraw4_GetDeviceIdentifier(dd4, ident, 0);
+    IDirectDraw_Release(dd4);
+    if (g_hresult != 0)
         return 0;
     vendor = U32(ident, 0x408);
     device = U32(ident, 0x40c);
@@ -974,10 +948,10 @@ int32_t GAMEAPI texture_lock(int32_t page, uint32_t flags, uint32_t *bits, uint3
     if (G32(0x4bcd78) != 0) {
         uint32_t pal = (uint32_t)page;
 
-        HRESULT = (uint32_t)COM2(SLOT(4, slot), 0x50, A32(&pal));
+        g_hresult = (uint32_t)IDirectDrawSurface_GetPalette(SLOT(4, slot), (void **)&pal);
         if (pal != 0) {
-            COM5(pal, 0x10, 0, 0, 0x100, A32(palette));
-            COM1(pal, 0x08);
+            IDirectDrawPalette_GetEntries(pal, 0, 0, 0x100, palette);
+            IDirectDrawPalette_Release(pal);
         }
     }
     return 1;
@@ -1035,10 +1009,10 @@ void GAMEAPI texture_palettes_apply(void)
 
         texture_reload(slot);
         if (G32(0x4bcd78) != 0) {
-            HRESULT = (uint32_t)COM5(DDRAW, 0x14, 0x4c, PAL_DATA(i), A32(&pal), 0);
-            HRESULT = (uint32_t)COM2(SLOT(4, slot), 0x7c, pal);
-            HRESULT = (uint32_t)COM2(SLOT(8, slot), 0x7c, pal);
-            COM1(pal, 0x08);
+            g_hresult = (uint32_t)IDirectDraw_CreatePalette(DDRAW, 0x4c, GMEM(PAL_DATA(i)), (void **)&pal, 0);
+            g_hresult = (uint32_t)IDirectDrawSurface_SetPalette(SLOT(4, slot), pal);
+            g_hresult = (uint32_t)IDirectDrawSurface_SetPalette(SLOT(8, slot), pal);
+            IDirectDrawPalette_Release(pal);
         }
     }
     PAL_COUNT = 0;
@@ -1052,19 +1026,19 @@ int32_t GAMEAPI texture_reload(uint32_t slot)
     uint32_t tex = 0;
     int32_t r;
 
-    HRESULT = (uint32_t)COM3(SLOT(4, slot), 0x00, 0x4a3920, A32(&tex));
-    if (HRESULT != 0)
+    g_hresult = (uint32_t)IDirectDrawSurface_QueryInterface(SLOT(4, slot), GMEM(0x4a3920), (void **)&tex);
+    if (g_hresult != 0)
         return 0;
-    HRESULT = (uint32_t)COM3(SLOT(8, slot), 0x00, 0x4a3920, 0x4ba708 + slot * 0x24);
-    if (HRESULT != 0)
+    g_hresult = (uint32_t)IDirectDrawSurface_QueryInterface(SLOT(8, slot), GMEM(0x4a3920), GMEM(0x4ba708 + slot * 0x24));
+    if (g_hresult != 0)
         return 0;
     r = texture_slot_handle_x(slot);
     if (r == 0)
         return r;
-    HRESULT = (uint32_t)COM2(SLOT(0xc, slot), 0x14, tex);
-    if (HRESULT != 0)
+    g_hresult = (uint32_t)IDirect3DTexture2_Load(SLOT(0xc, slot), GMEM(tex));
+    if (g_hresult != 0)
         return 0;
-    COM1(tex, 0x08);
+    IDirect3DTexture2_Release(tex);
     return 1;
 }
 
@@ -1261,21 +1235,21 @@ void GAMEAPI vertices_snap_thunk(void)
 void GAMEAPI vertices_draw_list_noclip(void)
 {
     vertices_snap();
-    HRESULT = (uint32_t)COM6(DEVICE, 0x74, 4, 3, G32(0x4bcd80), G32(0x4bddd8), 8);
+    g_hresult = (uint32_t)IDirect3DDevice2_DrawPrimitive(DEVICE, 4, 3, G32(0x4bcd80), G32(0x4bddd8), 8);
     G32(0x4bddd8) = 0;
 }
 
 void GAMEAPI vertices_draw_list(void)
 {
     vertices_snap();
-    HRESULT = (uint32_t)COM6(DEVICE, 0x74, 4, 3, G32(0x4bcd80), G32(0x4bddd8), 0x1c);
+    g_hresult = (uint32_t)IDirect3DDevice2_DrawPrimitive(DEVICE, 4, 3, G32(0x4bcd80), G32(0x4bddd8), 0x1c);
     G32(0x4bddd8) = 0;
 }
 
 void GAMEAPI vertices_draw_fan(void)
 {
     vertices_snap();
-    HRESULT = (uint32_t)COM6(DEVICE, 0x74, 6, 3, G32(0x4bcd80), G32(0x4bddd8), 0x1c);
+    g_hresult = (uint32_t)IDirect3DDevice2_DrawPrimitive(DEVICE, 6, 3, G32(0x4bcd80), G32(0x4bddd8), 0x1c);
     G32(0x4bddd8) = 0;
 }
 
@@ -1291,7 +1265,7 @@ void GAMEAPI vertices_draw_quads(void)
     n = GI32(0x4bddd8);
     p = G32(0x4bcd80);
     while (n > 0) {
-        HRESULT = (uint32_t)COM8(DEVICE, 0x78, 4, 3, p, (uint32_t)n, 0x4a80b0, 6, 0x1c);
+        g_hresult = (uint32_t)IDirect3DDevice2_DrawIndexedPrimitive(DEVICE, 4, 3, p, (uint32_t)n, 0x4a80b0, 6, 0x1c);
         n = GI32(0x4bddd8) - 4;
         GI32(0x4bddd8) = n;
     }

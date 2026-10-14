@@ -75,7 +75,8 @@ static uint8_t *thunks;
 
 __attribute__((used)) static void unresolved_called(uint32_t index)
 {
-    nt_fatal("the game called %s, which the native build does not implement yet",
+    nt_fatal(nt_no_exe ? "the game called %s through the import table" :
+                         "the game called %s, which the native build does not implement yet",
              index < (uint32_t)unresolved_count ? unresolved_names[index] : "?");
 }
 
@@ -201,7 +202,10 @@ static void map_exe(const char *path)
                 snprintf(name, sizeof name, "#%u", *names & 0xffff);
             else
                 snprintf(name, sizeof name, "%s", (const char *)image + *names + 2);
-            fn = nt_find_export(dll, name);
+            /* Without the exe's code nothing calls through the table: the game's
+             * C calls native/ directly (src/game/winapi.h). Each slot stops
+             * the game, naming the import, if anything still does. */
+            fn = nt_no_exe ? 0 : nt_find_export(dll, name);
             if (fn)
                 resolved++;
             else
@@ -436,7 +440,8 @@ _Noreturn void nt_restart(void)
     if (slash)
         *slash = 0;
     nt_set_current_directory(directory);
-    *(uint32_t *)(uintptr_t)nt_teb_address() = 0xffffffffu; /* no exception frames */
+    if (nt_teb_address())
+        *(uint32_t *)(uintptr_t)nt_teb_address() = 0xffffffffu; /* no exception frames */
     __asm__ volatile("fldcw %0" : : "m"(cw));
     longjmp(restart_point, 1);
 }
@@ -448,7 +453,6 @@ __attribute__((used, noreturn)) static void start_game(void)
     BOOL WINAPI reroll_install(HANDLE instance, DWORD reason, void *reserved); /* src/main.c */
     nt_teb_init_thread();
     reroll_install((HANDLE)IMAGE_BASE, 1 /* attach */, 0);
-    nt_exe_coverage_start(); /* after the hooks: their entries are ours */
     nt_lowmem_arena(1); /* from here on, what's allocated is the game's */
     nt_game_started = 1;
     if (setjmp(restart_point))

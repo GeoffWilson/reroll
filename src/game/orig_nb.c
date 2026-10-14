@@ -17,17 +17,16 @@
  *    render states 0x41db00 and the small state setters, texture slot
  *    release / handle, shutdown 0x41d130.
  *
- * COM calls go through the object's vtable (stdcall), Windows calls through
- * the import table, everything outside the group by address. Float code is
+ * COM calls are the typed methods of com.h, Windows calls the typed imports
+ * of winapi.h, everything outside the group by address. Float code is
  * the original's x87 instruction sequence in inline asm (memory operands
  * and register intermediates as the original), so results match under any
  * precision control word; integer logic is C. Register-to-register x87
  * operations are emitted as the original's bytes (AT&T operand order for
  * fsubp / fdivp is ambiguous). */
 #include "../runtime.h"
+#include "com.h"
 #include "physics.h"
-
-#define STDCALL __attribute__((stdcall))
 
 #define U8(p, off) (*(uint8_t *)((uint8_t *)(p) + (off)))
 #define U16(p, off) (*(uint16_t *)((uint8_t *)(p) + (off)))
@@ -49,11 +48,6 @@ typedef int32_t(GAMEAPI *nb_fn2)(uint32_t a, uint32_t b);
 typedef int32_t(GAMEAPI *nb_fn3)(uint32_t a, uint32_t b, uint32_t c);
 typedef int32_t(GAMEAPI *nb_fn4)(uint32_t a, uint32_t b, uint32_t c, uint32_t d);
 typedef float(GAMEAPI *nb_float3_fn)(uint32_t a, uint32_t b, uint32_t c);
-typedef int32_t(STDCALL *nb_com1)(uint32_t self);
-typedef int32_t(STDCALL *nb_com2)(uint32_t self, uint32_t a);
-typedef int32_t(STDCALL *nb_com3)(uint32_t self, uint32_t a, uint32_t b);
-typedef int32_t(STDCALL *nb_com4)(uint32_t self, uint32_t a, uint32_t b, uint32_t c);
-typedef int32_t(STDCALL *nb_api1)(uint32_t a);
 
 #define CALL0(a) ((nb_int_fn)(a))()
 #define CALL1(a, x) ((nb_fn1)(a))((uint32_t)(x))
@@ -61,13 +55,8 @@ typedef int32_t(STDCALL *nb_api1)(uint32_t a);
 #define CALL3(a, x, y, z) ((nb_fn3)(a))((uint32_t)(x), (uint32_t)(y), (uint32_t)(z))
 #define CALL4(a, x, y, z, w) ((nb_fn4)(a))((uint32_t)(x), (uint32_t)(y), (uint32_t)(z), (uint32_t)(w))
 
-/* COM: method at byte offset `off` of the object's vtable. */
-#define VT(obj, off) (*(void **)(uintptr_t)(G32(obj) + (off)))
-#define COM1(obj, off) ((nb_com1)VT(obj, off))(obj)
-#define COM2(obj, off, a) ((nb_com2)VT(obj, off))(obj, (uint32_t)(a))
-#define COM3(obj, off, a, b) ((nb_com3)VT(obj, off))(obj, (uint32_t)(a), (uint32_t)(b))
-#define COM4(obj, off, a, b, c) ((nb_com4)VT(obj, off))(obj, (uint32_t)(a), (uint32_t)(b), (uint32_t)(c))
-
+/* COM methods com.h declares without their context argument (the
+ * callback type's commas cut it off): the full DirectX signatures. */
 #define mem_fill(p, v, n) CALL3(0x476f50, p, v, n)
 #define mem_copy(d, s, n) CALL3(0x476f30, d, s, n)
 #define block_alloc(n, f) ((uint32_t)CALL2(0x476ae0, n, f))
@@ -637,7 +626,7 @@ void GAMEAPI cpu_features_read(void)
         G32(0x4b825c) = 1;
 }
 
-/* ===== 0x41c930: GetSystemInfo (import 0x4a313c): an Intel 386 / 486
+/* ===== 0x41c930: GetSystemInfo: an Intel 386 / 486
  * (processor type 386 / 486, architecture 0) -> 0; else reads the cpuid
  * features and returns 1. ===== */
 int32_t GAMEAPI cpu_check(void)
@@ -645,7 +634,7 @@ int32_t GAMEAPI cpu_check(void)
     uint8_t info[0x24];
     uint32_t type;
 
-    (*(nb_api1 *)0x4a313c)((uint32_t)(uintptr_t)info);
+    GetSystemInfo((DWORD *)info);
     type = U32(info, 0x18);
     if ((type == 0x182 || type == 0x1e6) && U16(info, 0) == 0)
         return 0;
@@ -855,7 +844,7 @@ void GAMEAPI fatal_error(const uint8_t *fmt, ...)
 #define g_device 0x4b8384u
 #define g_viewport 0x4b8388u
 #define g_ddraw 0x4d5f40u
-#define RS(state, value) COM3(G32(g_device), 0x5c, state, value) /* SetRenderState */
+#define RS(state, value) IDirect3DDevice2_SetRenderState(G32(g_device), state, value)
 
 /* ===== 0x41cfd0: the texture coordinate tables: three blocks (0x200,
  * 0x1800, 0x1130 bytes; old ones freed) and in the last, for n = 1 << i (i
@@ -903,7 +892,7 @@ void GAMEAPI d3d_tables_alloc(void)
  * into 0x4b8380; 1 on success. ===== */
 int32_t GAMEAPI ddraw_query_d3d(void)
 {
-    g_hresult = (uint32_t)COM3(G32(g_ddraw), 0, 0x4a3860, g_d3d);
+    g_hresult = (uint32_t)IDirectDraw_QueryInterface(G32(g_ddraw), GMEM(0x4a3860), GMEM(g_d3d));
     return g_hresult == 0;
 }
 
@@ -912,7 +901,7 @@ int32_t GAMEAPI ddraw_query_d3d(void)
 int32_t GAMEAPI d3d_devices_enumerate(void)
 {
     G32(0x4ba6f4) = 0;
-    g_hresult = (uint32_t)COM3(G32(g_d3d), 0xc, 0x41d280, 0);
+    g_hresult = (uint32_t)IDirect3D2_EnumDevices(G32(g_d3d), (void *)(uintptr_t)0x41d280, 0);
     return 1;
 }
 
@@ -971,7 +960,7 @@ int32_t GAMEAPI d3d_texture_format_pick(void)
     uint32_t i;
 
     G32(0x4baffc) = 0;
-    g_hresult = (uint32_t)COM3(G32(g_device), 0x24, 0x41d790, 0);
+    g_hresult = (uint32_t)IDirect3DDevice2_EnumTextureFormats(G32(g_device), (void *)(uintptr_t)0x41d790, 0);
     if (g_hresult)
         return 0;
     i = (uint32_t)CALL2(0x41f060, 0, 0);
@@ -984,7 +973,7 @@ int32_t GAMEAPI d3d_texture_format_pick(void)
  * 0x4b8384; then the texture formats when 0x4b86a4. ===== */
 int32_t GAMEAPI d3d_device_create(void)
 {
-    g_hresult = (uint32_t)COM4(G32(g_d3d), 0x20, 0x4b8690, G32(0x4d5f4c), g_device);
+    g_hresult = (uint32_t)IDirect3D2_CreateDevice(G32(g_d3d), GMEM(0x4b8690), GMEM(G32(0x4d5f4c)), GMEM(g_device));
     if (g_hresult) {
         dx_error(g_hresult);
         return 0;
@@ -1002,15 +991,15 @@ int32_t GAMEAPI texture_slot_release(int32_t i)
     uint32_t s = (uint32_t)i * 0x24;
 
     if (G32(s + 0x4ba704)) {
-        COM1(G32(s + 0x4ba704), 8);
+        IDirectDrawSurface_Release(G32(s + 0x4ba704));
         G32(s + 0x4ba704) = 0;
     }
     if (G32(s + 0x4ba700)) {
-        COM1(G32(s + 0x4ba700), 8);
+        IDirectDrawSurface_Release(G32(s + 0x4ba700));
         G32(s + 0x4ba700) = 0;
     }
     if (G32(s + 0x4ba708)) {
-        COM1(G32(s + 0x4ba708), 8);
+        IDirect3DTexture2_Release(G32(s + 0x4ba708));
         G32(s + 0x4ba708) = 0;
     }
     G32(s + 0x4ba6fc) = 0;
@@ -1039,7 +1028,7 @@ int32_t GAMEAPI texture_slot_handle(int32_t i)
 {
     uint32_t s = (uint32_t)i * 0x24;
 
-    g_hresult = (uint32_t)COM3(G32(s + 0x4ba708), 0xc, G32(g_device), s + 0x4ba6fc);
+    g_hresult = (uint32_t)IDirect3DTexture2_GetHandle(G32(s + 0x4ba708), GMEM(G32(g_device)), GMEM(s + 0x4ba6fc));
     if (g_hresult) {
         dx_error(g_hresult);
         return 0;
@@ -1066,7 +1055,7 @@ int32_t GAMEAPI zbuffer_create(uint32_t width, uint32_t height)
     G32(0x6cce7c) = 0;
     G32(0x4d5f98) = 0;
     if (G32(0x4d5fa0)) {
-        COM1(G32(0x4d5fa0), 8);
+        IDirectDrawSurface_Release(G32(0x4d5fa0));
         G32(0x4d5fa0) = 0;
     }
     if (G32(0x4b86a8) == 0)
@@ -1089,10 +1078,10 @@ int32_t GAMEAPI zbuffer_create(uint32_t width, uint32_t height)
         desc[6] = 8;
     else
         return 0;
-    g_hresult = (uint32_t)COM4(G32(g_ddraw), 0x18, desc, 0x4d5fa0, 0);
+    g_hresult = (uint32_t)IDirectDraw_CreateSurface(G32(g_ddraw), (const uint8_t *)desc, GMEM(0x4d5fa0), 0);
     if (g_hresult)
         return 1;
-    g_hresult = (uint32_t)COM2(G32(0x4d5f4c), 0xc, G32(0x4d5fa0));
+    g_hresult = (uint32_t)IDirectDrawSurface_AddAttachedSurface(G32(0x4d5f4c), GMEM(G32(0x4d5fa0)));
     if (g_hresult)
         return 0;
     if (!CALL2(0x487660, desc, G32(0x4d5fa0)))
@@ -1238,10 +1227,10 @@ int32_t GAMEAPI d3d_viewport_create(uint32_t width, uint32_t height)
 {
     uint32_t vp[0xb], i, wf, hf, half, two = G32(0x4a3314);
 
-    g_hresult = (uint32_t)COM3(G32(g_d3d), 0x18, g_viewport, 0);
+    g_hresult = (uint32_t)IDirect3D2_CreateViewport(G32(g_d3d), GMEM(g_viewport), 0);
     if (g_hresult)
         return 0;
-    g_hresult = (uint32_t)COM2(G32(g_device), 0x18, G32(g_viewport));
+    g_hresult = (uint32_t)IDirect3DDevice2_AddViewport(G32(g_device), G32(g_viewport));
     if (g_hresult)
         return 0;
     for (i = 0; i < 0xb; i++)
@@ -1266,10 +1255,10 @@ int32_t GAMEAPI d3d_viewport_create(uint32_t width, uint32_t height)
                      : "=m"(vp[8])
                      : "m"(hf), "m"(vp[6])
                      : "st", "st(1)");
-    g_hresult = (uint32_t)COM2(G32(g_viewport), 0x14, vp);
+    g_hresult = (uint32_t)IDirect3DViewport2_SetViewport(G32(g_viewport), (const uint8_t *)vp);
     if (g_hresult)
         return 0;
-    g_hresult = (uint32_t)COM2(G32(g_device), 0x34, G32(g_viewport));
+    g_hresult = (uint32_t)IDirect3DDevice2_SetCurrentViewport(G32(g_device), GMEM(G32(g_viewport)));
     return g_hresult == 0;
 }
 
@@ -1293,20 +1282,20 @@ int32_t GAMEAPI d3d_shutdown(void)
         G32(0x4bde00) = 0;
     }
     if (G32(0x4d5fa0)) {
-        COM1(G32(0x4d5fa0), 8);
+        IDirectDrawSurface_Release(G32(0x4d5fa0));
         G32(0x4d5fa0) = 0;
         G32(0x4d5f98) = 0;
     }
     if (G32(g_viewport)) {
-        COM1(G32(g_viewport), 8);
+        IDirect3DViewport2_Release(G32(g_viewport));
         G32(g_viewport) = 0;
     }
     if (G32(g_device)) {
-        COM1(G32(g_device), 8);
+        IDirect3DDevice2_Release(G32(g_device));
         G32(g_device) = 0;
     }
     if (G32(g_d3d)) {
-        COM1(G32(g_d3d), 8);
+        IDirect3D2_Release(G32(g_d3d));
         G32(g_d3d) = 0;
     }
     return 1;

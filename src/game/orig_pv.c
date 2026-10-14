@@ -27,12 +27,13 @@
  * Float steps are the original's x87 instructions in inline asm (memory
  * operands, so results follow the control word as the original's do); the
  * transform / projection pointers *0x6ccd78 / *0x6ccd80 are called back to
- * back in one asm block. Windows calls go through the import table, COM
- * calls through the object's vtable; the thread procedure and the timer
+ * back in one asm block. Windows calls are the typed imports of winapi.h,
+ * COM calls typed methods (com.h, DirectSound here); the thread procedure and the timer
  * callback the original passes as immediates are ours here. Functions that
  * take their argument in ecx (MSVC fastcall) have an asm entry that calls
  * a *_c body. Everything outside the group is called by address. */
 #include "../runtime.h"
+#include "com.h"
 #include "physics.h"
 
 #define U8(p, off) (*(uint8_t *)((uint8_t *)(uintptr_t)(p) + (off)))
@@ -72,61 +73,13 @@ typedef int32_t(PV_FAST *pv_fast3)(uint32_t c, uint32_t d, uint32_t s);
 #define FAST2(a, x, y) (((pv_fast2)(a))(A(x), A(y)))
 #define FAST3(a, x, y, z) (((pv_fast3)(a))(A(x), A(y), A(z)))
 
-/* stdcall: imports and COM methods. */
+/* stdcall: the timer callback. */
 #define PV_STD __attribute__((stdcall))
-typedef int32_t(PV_STD *pv_std1)(uint32_t a);
-typedef int32_t(PV_STD *pv_std2)(uint32_t a, uint32_t b);
-typedef int32_t(PV_STD *pv_std3)(uint32_t a, uint32_t b, uint32_t c);
-typedef int32_t(PV_STD *pv_std4)(uint32_t a, uint32_t b, uint32_t c, uint32_t d);
-typedef int32_t(PV_STD *pv_std5)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e);
-typedef int32_t(PV_STD *pv_std6)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f);
-typedef int32_t(PV_STD *pv_std8)(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f, uint32_t g,
-                                 uint32_t h);
 
-#define IAT(slot, type) (*(type *)(uintptr_t)(slot))
-#define pv_CreateThread(sa, st, fn, arg, fl, id) IAT(0x4a3148, pv_std6)(A(sa), A(st), A(fn), A(arg), A(fl), A(id))
-#define pv_InterlockedExchange(p, v) IAT(0x4a314c, pv_std2)(A(p), A(v))
-#define pv_InterlockedIncrement(p) IAT(0x4a31ac, pv_std1)(A(p))
-#define pv_ExitThread(c) IAT(0x4a31b0, pv_std1)(A(c))
-#define pv_GetExitCodeThread(h, p) IAT(0x4a31b4, pv_std2)(A(h), A(p))
-#define pv_MessageBoxA(w, t, c, f) IAT(0x4a3280, pv_std4)(A(w), A(t), A(c), A(f))
-#define pv_timeGetDevCaps(p, n) IAT(0x4a32b0, pv_std2)(A(p), A(n))
-#define pv_timeSetEvent(d, r, cb, u, f) ((uint32_t)IAT(0x4a32bc, pv_std5)(A(d), A(r), A(cb), A(u), A(f)))
-#define pv_timeBeginPeriod(p) IAT(0x4a32c0, pv_std1)(A(p))
-/* DirectSoundCreate through its thunk 0x4a1c36, as the original. */
-#define pv_DirectSoundCreate(g, out, u) (((pv_std3)0x4a1c36)(A(g), A(out), A(u)))
-
-/* A COM method: slot off of obj's vtable. */
-#define VT(obj, off) (*(uint32_t *)(uintptr_t)(*(uint32_t *)(uintptr_t)(obj) + (off)))
-#define COM1(o, off) (((pv_std1)VT(o, off))(A(o)))
-#define COM2(o, off, a) (((pv_std2)VT(o, off))(A(o), A(a)))
-#define COM3(o, off, a, b) (((pv_std3)VT(o, off))(A(o), A(a), A(b)))
-#define COM4(o, off, a, b, c) (((pv_std4)VT(o, off))(A(o), A(a), A(b), A(c)))
-#define COM5(o, off, a, b, c, d) (((pv_std5)VT(o, off))(A(o), A(a), A(b), A(c), A(d)))
-#define COM6(o, off, a, b, c, d, e) (((pv_std6)VT(o, off))(A(o), A(a), A(b), A(c), A(d), A(e)))
-#define COM8(o, off, a, b, c, d, e, f, g) (((pv_std8)VT(o, off))(A(o), A(a), A(b), A(c), A(d), A(e), A(f), A(g)))
-
-/* IDirectPlay4A */
-#define DP_GET_SESSION_DESC 0x58
-#define DP_SET_SESSION_DESC 0x7c
-#define DP_SEND_CHAT_MESSAGE 0xa0
-#define DP_GET_MESSAGE_QUEUE 0xc8
 #define DPERR_BUFFERTOOSMALL 0x8877001eu
-/* IDirectSound */
-#define DS_RELEASE 0x08
-#define DS_CREATE_SOUND_BUFFER 0x0c
-#define DS_GET_CAPS 0x10
-#define DS_SET_COOPERATIVE_LEVEL 0x18
-/* IDirectSoundBuffer */
-#define DSB_RELEASE 0x08
-#define DSB_GET_CAPS 0x0c
-#define DSB_GET_CURRENT_POSITION 0x10
-#define DSB_LOCK 0x2c
-#define DSB_PLAY 0x30
-#define DSB_SET_FORMAT 0x38
-#define DSB_SET_FREQUENCY 0x44
-#define DSB_UNLOCK 0x4c
 
+/* IDirectSound / IDirectSoundBuffer, which com.h lacks (native/ makes no
+ * DirectSound object): the DirectX signatures. */
 /* Game state. */
 #define g_dplay G32(0x5d2060)
 #define g_dplay_hr G32(0x5d6230)
@@ -418,20 +371,20 @@ static int32_t net_session_flags(int set)
 {
     uint32_t size = 0, desc;
 
-    g_dplay_hr = COM3(g_dplay, DP_GET_SESSION_DESC, 0, &size);
+    g_dplay_hr = IDirectPlay4A_GetSessionDesc(g_dplay, 0, A(&size));
     if (g_dplay_hr != 0 && g_dplay_hr != DPERR_BUFFERTOOSMALL)
         return 0;
     desc = block_alloc_at(size, 0);
     if (desc == 0)
         return 0;
-    g_dplay_hr = COM3(g_dplay, DP_GET_SESSION_DESC, desc, &size);
+    g_dplay_hr = IDirectPlay4A_GetSessionDesc(g_dplay, desc, A(&size));
     if (g_dplay_hr != 0)
         return 0;
     if (set)
         U32(desc, 4) |= 0x21;
     else
         U32(desc, 4) &= ~0x21u;
-    g_dplay_hr = COM3(g_dplay, DP_SET_SESSION_DESC, desc, 0);
+    g_dplay_hr = IDirectPlay4A_SetSessionDesc(g_dplay, desc, 0);
     if (g_dplay_hr != 0)
         return 0;
     block_free_at(desc);
@@ -471,7 +424,7 @@ int32_t GAMEAPI net_chat_send(char *text)
             chat[0] = 0xc;
             chat[1] = 0;
             chat[2] = CHAT_LINES;
-            COM5(g_dplay, DP_SEND_CHAT_MESSAGE, g_local_id, 0, 0, chat);
+            IDirectPlay4A_SendChatMessage(g_dplay, g_local_id, 0, 0, A(chat));
         }
     }
     return 1;
@@ -492,7 +445,7 @@ int32_t GAMEAPI net_send_queue_low(void)
 {
     uint32_t count = 0, bytes = 0;
 
-    g_dplay_hr = COM6(g_dplay, DP_GET_MESSAGE_QUEUE, 0, 0, 1, &count, &bytes);
+    g_dplay_hr = IDirectPlay4A_GetMessageQueue(g_dplay, 0, 0, 1, &count, &bytes);
     if (g_dplay_hr != 0)
         return 0;
     return count < 2;
@@ -506,8 +459,8 @@ int32_t GAMEAPI net_message_queue_count(void)
 {
     uint32_t bytes = 0, recv = 0, sent = 0;
 
-    g_dplay_hr = COM6(g_dplay, DP_GET_MESSAGE_QUEUE, 0, 0, 1, &sent, &bytes);
-    g_dplay_hr = COM6(g_dplay, DP_GET_MESSAGE_QUEUE, 0, 0, 2, &recv, &bytes);
+    g_dplay_hr = IDirectPlay4A_GetMessageQueue(g_dplay, 0, 0, 1, &sent, &bytes);
+    g_dplay_hr = IDirectPlay4A_GetMessageQueue(g_dplay, 0, 0, 2, &recv, &bytes);
     if (g_dplay_hr != 0)
         return 0;
     return (int32_t)(recv + sent);
@@ -1011,31 +964,38 @@ void GAMEAPI snatch_state_check(void)
 }
 
 /* =================================================================
- * import thunks: jumps through the import slots, as the original
+ * import thunks: jumps through the import slots, as the original (the
+ * native build jumps to its own implementation, as winapi.h calls it)
  * ================================================================= */
+
+#ifdef REROLL_NATIVE
+#define PV_IMPORT_JMP(name, slot) __asm__ volatile("jmp " #name)
+#else
+#define PV_IMPORT_JMP(name, slot) __asm__ volatile("jmp *" #slot)
+#endif
 
 /* 0x4910f0: DirectDrawCreate. */
 __attribute__((naked)) void ddraw_create_thunk(void)
 {
-    __asm__ volatile("jmp *0x4a3024");
+    PV_IMPORT_JMP(DirectDrawCreate, 0x4a3024);
 }
 
 /* 0x4910f6: DirectDrawEnumerateA. */
 __attribute__((naked)) void ddraw_enumerate_thunk(void)
 {
-    __asm__ volatile("jmp *0x4a3028");
+    PV_IMPORT_JMP(DirectDrawEnumerateA, 0x4a3028);
 }
 
 /* 0x4910fc: DirectInputCreateA. */
 __attribute__((naked)) void dinput_create_thunk(void)
 {
-    __asm__ volatile("jmp *0x4a3030");
+    PV_IMPORT_JMP(DirectInputCreateA, 0x4a3030);
 }
 
 /* 0x492b88: DirectPlayLobbyCreateA (dplayx ordinal 4). */
 __attribute__((naked)) void dplay_lobby_create_thunk(void)
 {
-    __asm__ volatile("jmp *0x4a3038");
+    PV_IMPORT_JMP(DirectPlayLobbyCreateA, 0x4a3038);
 }
 
 /* =================================================================
@@ -1151,7 +1111,7 @@ int32_t GAMEAPI movie_play_loop(uint8_t *m)
             crt_free_at(U32(m, (U32(m, 0x364) + 0x22) * 0xc));
             U32(m, (U32(m, 0x364) + 0x22) * 0xc) = 0;
             U32(m, 0x364) = (U32(m, 0x364) + 1) & 0x1f;
-            pv_InterlockedIncrement(m + 0x348);
+            InterlockedIncrement((LONG *)(m + 0x348));
             U32(m, 0x36c) = U32(m, 0x36c) - 1;
         } else if (U32(m, 0x1c) & 0x100) {
             slot = U32(m, 0x60);
@@ -1305,22 +1265,22 @@ uint32_t GAMEAPI movie_player_run(uint32_t path, uint32_t window, const uint32_t
     if (m == 0)
         return 0;
     if (U32(m, 0x1c) & 0x200) {
-        U32(m, 0x3c) = (uint32_t)pv_CreateThread(0, 0, movie_thread_proc, m, 0, m + 0x38);
+        U32(m, 0x3c) = (uint32_t)(uintptr_t)CreateThread(0, 0, (void *)movie_thread_proc, GMEM(m), 0, GMEM(m + 0x38));
         if (U32(m, 0x3c) == 0) {
             g_movie_error = 4;
             return 0;
         }
         return m;
     }
-    pv_InterlockedExchange(g_movie_busy, 1);
+    InterlockedExchange(GMEM(g_movie_busy), 1);
     movie_play_loop(PTR(m));
     if ((U32(m, 0x1c) & 0x200) && U32(m, 0x3c) != 0) {
         code = A(config); /* the argument's slot in the original */
-        if (pv_GetExitCodeThread(U32(m, 0x3c), &code) != 0)
-            pv_ExitThread(code);
+        if (GetExitCodeThread(GMEM(U32(m, 0x3c)), &code) != 0)
+            ExitThread(code);
     }
     movie_close(PTR(m));
-    pv_InterlockedExchange(g_movie_busy, 0);
+    InterlockedExchange(GMEM(g_movie_busy), 0);
     return m;
 }
 
@@ -1330,20 +1290,20 @@ int32_t GAMEAPI movie_thread_proc(uint8_t *m)
 {
     uint32_t code = 0;
 
-    pv_InterlockedExchange(g_movie_busy, 1);
+    InterlockedExchange(GMEM(g_movie_busy), 1);
     movie_play_loop(m);
     if ((U32(m, 0x1c) & 0x200) && U32(m, 0x3c) != 0)
-        if (pv_GetExitCodeThread(U32(m, 0x3c), &code) != 0)
-            pv_ExitThread(code);
+        if (GetExitCodeThread(GMEM(U32(m, 0x3c)), &code) != 0)
+            ExitThread(code);
     movie_close(m);
-    pv_InterlockedExchange(g_movie_busy, 0);
+    InterlockedExchange(GMEM(g_movie_busy), 0);
     return 0;
 }
 
 /* 0x493340 (text in ecx): "Reaper Fatal Error" box, exit(1). */
 void GAMEAPI movie_fatal_error_c(uint32_t text)
 {
-    pv_MessageBoxA(0, text, 0x4b306c, 0);
+    MessageBoxA(0, GMEM(text), GMEM(0x4b306c), 0);
     crt_exit_at(1);
 }
 
@@ -1378,7 +1338,7 @@ void GAMEAPI movie_sound_init_c(uint8_t *m)
     if (g_ds == 0) {
         g_ds_owned = 1;
         window = U32(m, 0x44);
-        if (pv_DirectSoundCreate(0, 0x4da28c, 0) != 0 || COM3(g_ds, DS_SET_COOPERATIVE_LEVEL, window, 3) != 0)
+        if (DirectSoundCreate(0, GMEM(0x4da28c), 0) != 0 || IDirectSound_SetCooperativeLevel(g_ds, GMEM(window), 3) != 0)
             g_ds = 0;
         if (g_ds == 0) {
             g_ds_primary = 0;
@@ -1388,7 +1348,7 @@ void GAMEAPI movie_sound_init_c(uint8_t *m)
     for (i = 0; i < 0x18; i++)
         caps[i] = 0;
     caps[0] = 0x60;
-    COM2(g_ds, DS_GET_CAPS, caps);
+    IDirectSound_GetCaps(g_ds, caps);
     g_ds_16bit = (caps[1] >> 5) & 1;
     if (U32(m, 0x1c) & 0x2000) {
         g_ds_primary_owned = 0;
@@ -1400,7 +1360,7 @@ void GAMEAPI movie_sound_init_c(uint8_t *m)
         dcaps[2] = 0;
         dcaps[3] = 0;
         dcaps[4] = 0;
-        COM2(g_ds_primary, DSB_GET_CAPS, dcaps);
+        IDirectSoundBuffer_GetCaps(g_ds_primary, dcaps);
         g_ds_bytes = dcaps[2];
     }
     if (g_ds_primary != 0)
@@ -1411,7 +1371,7 @@ create:
     desc[2] = 0;
     desc[3] = 0;
     desc[4] = 0;
-    if (COM4(g_ds, DS_CREATE_SOUND_BUFFER, desc, 0x4da290, 0) != 0)
+    if (IDirectSound_CreateSoundBuffer(g_ds, desc, GMEM(0x4da290), 0) != 0)
         return;
     ch = (caps[1] & 2) ? 2 : 1;
     rate = S16(m, 0x14);
@@ -1424,14 +1384,14 @@ create:
     U16(wfx, 0xc) = align;
     U16(wfx, 0xe) = bits;
     U16(wfx, 0x10) = 0;
-    if (COM2(g_ds_primary, DSB_SET_FORMAT, wfx) != 0)
+    if (IDirectSoundBuffer_SetFormat(g_ds_primary, wfx) != 0)
         return;
     dcaps[0] = 0x14;
     dcaps[1] = 0;
     dcaps[2] = 0;
     dcaps[3] = 0;
     dcaps[4] = 0;
-    COM2(g_ds_primary, DSB_GET_CAPS, dcaps);
+    IDirectSoundBuffer_GetCaps(g_ds_primary, dcaps);
     g_ds_primary_owned = 1;
     g_ds_bytes = dcaps[2];
 }
@@ -1452,11 +1412,11 @@ void GAMEAPI movie_sound_release_c(uint8_t *m)
     if (!(U32(m, 0x1c) & 0x800))
         return;
     if (g_ds_primary_owned != 0 && (U32(m, 0x1c) & 0x2000) && g_ds_primary != 0) {
-        COM1(g_ds_primary, DSB_RELEASE);
+        IDirectSoundBuffer_Release(g_ds_primary);
         g_ds_primary = 0;
     }
     if (g_ds_owned != 0 && g_ds != 0)
-        COM1(g_ds, DS_RELEASE);
+        IDirectSound_Release(g_ds);
 }
 
 __asm__(".text\n"
@@ -1495,8 +1455,8 @@ int32_t GAMEAPI movie_sound_start_c(uint8_t *m)
         desc[2] = g_ds_bytes;
         desc[3] = 0;
         desc[4] = A(wfx);
-        if (COM4(g_ds, DS_CREATE_SOUND_BUFFER, desc, m + 0x94, 0) == 0)
-            COM2(U32(m, 0x94), DSB_SET_FREQUENCY, (int32_t)S16(m, 0x14));
+        if (IDirectSound_CreateSoundBuffer(g_ds, desc, (void **)(m + 0x94), 0) == 0)
+            IDirectSoundBuffer_SetFrequency(U32(m, 0x94), (DWORD)(int32_t)S16(m, 0x14));
         else
             U32(m, 0x94) = 0;
     } else {
@@ -1509,10 +1469,10 @@ int32_t GAMEAPI movie_sound_start_c(uint8_t *m)
         dcaps[2] = 0;
         dcaps[3] = 0;
         dcaps[4] = 0;
-        COM2(U32(m, 0x94), DSB_GET_CAPS, dcaps);
+        IDirectSoundBuffer_GetCaps(U32(m, 0x94), dcaps);
         U32(m, 0x354) = dcaps[2];
         U32(m, 0x358) = 0;
-        COM4(U32(m, 0x94), DSB_PLAY, 0, 0, 1);
+        IDirectSoundBuffer_Play(U32(m, 0x94), 0, 0, 1);
     } else {
         U32(m, 0x378) = 0;
         U32(m, 0x354) = 0x8000;
@@ -1523,7 +1483,7 @@ int32_t GAMEAPI movie_sound_start_c(uint8_t *m)
     tc[1] = 0;
     U32(m, 0x350) = 1;
     U32(m, 0x374) = 0;
-    if (pv_timeGetDevCaps(tc, 8) != 0)
+    if (timeGetDevCaps(tc, 8) != 0)
         movie_fatal_error_c(0x4b3098);
     min = tc[0] > 1 ? tc[0] : 1;
     if (min >= tc[1])
@@ -1531,8 +1491,8 @@ int32_t GAMEAPI movie_sound_start_c(uint8_t *m)
     else
         period = tc[0] > 1 ? tc[0] : 1;
     U32(m, 0x334) = period;
-    pv_timeBeginPeriod(period);
-    U32(m, 0x330) = pv_timeSetEvent(10, U32(m, 0x334), movie_sound_timer, m, 1);
+    timeBeginPeriod(period);
+    U32(m, 0x330) = timeSetEvent(10, U32(m, 0x334), (void *)movie_sound_timer, A(m), 1);
     if (U32(m, 0x330) == 0)
         movie_fatal_error_c(0x4b3080);
     while (V32(m, 0x374) == 0)
@@ -1568,7 +1528,7 @@ void PV_STD movie_sound_timer(uint32_t id, uint32_t msg, uint32_t user, uint32_t
     (void)id;
     (void)dw1;
     (void)dw2;
-    if (pv_InterlockedExchange(m + 0x32c, 1) != 0)
+    if (InterlockedExchange((LONG *)(m + 0x32c), 1) != 0)
         return;
     if (U32(m, 0x374) != 0 && U32(m, 0x350) != 0) {
         if (U32(m, 0x318) != 0) {
@@ -1577,7 +1537,7 @@ void PV_STD movie_sound_timer(uint32_t id, uint32_t msg, uint32_t user, uint32_t
                 U32(m, 0x378) = U32(m, 0x378) - U32(m, 0x354);
             pos = U32(m, 0x378);
         } else {
-            COM3(U32(m, 0x94), DSB_GET_CURRENT_POSITION, &n1, &p1);
+            IDirectSoundBuffer_GetCurrentPosition(U32(m, 0x94), &n1, &p1);
             pos = n1;
         }
         if (U32(m, 0x358) > pos)
@@ -1587,21 +1547,21 @@ void PV_STD movie_sound_timer(uint32_t id, uint32_t msg, uint32_t user, uint32_t
         k = U32(m, 0x35c);
         if ((int32_t)room >= I32(m, 8 * k + 0x9c) && U32(m, 8 * U32(m, 0x35c) + 0x98) != 0) {
             if (U32(m, 0x318) == 0) {
-                COM8(U32(m, 0x94), DSB_LOCK, U32(m, 0x358), U32(m, 8 * U32(m, 0x35c) + 0x9c), &p1, &n1, &p2,
-                     &n2, 0);
+                IDirectSoundBuffer_Lock(U32(m, 0x94), U32(m, 0x358), U32(m, 8 * U32(m, 0x35c) + 0x9c), (void **)&p1,
+                                        &n1, (void **)&p2, &n2, 0);
                 pv_copy(PTR(p1), PTR(U32(m, 8 * U32(m, 0x35c) + 0x98)), n1);
                 if (n2 != 0)
                     pv_copy(PTR(p2), PTR(U32(m, 8 * U32(m, 0x35c) + 0x98) + n1), n2);
-                COM5(U32(m, 0x94), DSB_UNLOCK, p1, n1, p2, n2);
+                IDirectSoundBuffer_Unlock(U32(m, 0x94), GMEM(p1), n1, GMEM(p2), n2);
             }
             U32(m, 0x358) = (U32(m, 8 * U32(m, 0x35c) + 0x9c) + U32(m, 0x358)) % U32(m, 0x354);
             crt_free_at(U32(m, 8 * U32(m, 0x35c) + 0x98));
             U32(m, 8 * U32(m, 0x35c) + 0x98) = 0;
             U32(m, 0x35c) = (U32(m, 0x35c) + 1) & 0x1f;
             U32(m, 0x370) = U32(m, 0x370) - 1;
-            pv_InterlockedIncrement(m + 0x34c);
+            InterlockedIncrement((LONG *)(m + 0x34c));
         }
     }
     U32(m, 0x374) = U32(m, 0x374) + 1;
-    pv_InterlockedExchange(m + 0x32c, 0);
+    InterlockedExchange((LONG *)(m + 0x32c), 0);
 }

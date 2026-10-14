@@ -33,9 +33,12 @@ Everything that still runs is now in scope (docs/native/plan64.md, phase
 1): the C runtime, file I/O, allocation, x87 float code, DirectDraw use and
 drawing. Your group's note says what it covers. Functions outside your
 list are called by address so the existing hooks route them. Keep the
-calls the original makes to Windows functions (through the import table,
-`*(void **)0x4a2xxx`, or the same named function), so the emulator test can
-log and compare them; a later step replaces them. Never hook 0x471c90 or
+calls the original makes to Windows functions, by name through
+src/game/winapi.h (`ReadFile(GMEM(h), ...)`), and to COM objects through
+src/game/com.h (`IDirectDrawSurface_Lock(surface, ...)`): natively they call
+native/ directly, and in the emulator they go through the import slot or the
+object's vtable so the test can log and compare them. Never read an import
+slot or a vtable yourself. Never hook 0x471c90 or
 0x471da0 (the verifier needs them). List anything you skip in your notes
 with the reason.
 
