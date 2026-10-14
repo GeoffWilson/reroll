@@ -72,7 +72,7 @@ ARG = SCR + 0x27000
 GLOWP = SCR + 0x28000  # glow packets
 STUBPAGE = 0x02200000
 
-REGIONS = [(0x4B0000, 0x26000), (0x5D7000, 0x23000), (0x6B8000, 0xA000), (0x6CB000, 0x4000)]
+REGIONS = [(0x4AC000, 0x1000), (0x4B0000, 0x26000), (0x5D7000, 0x23000), (0x6B8000, 0xA000), (0x6CB000, 0x4000)]
 
 # cdecl callees at their own addresses
 STUBS = {
@@ -293,17 +293,18 @@ def font(st, rng):
 def message(st, rng, rec, owners):
     n = pick(rng, 0, 0, 1, 8, rng.randrange(0, 0x41), 0x40)
     st.put(rec, "<I", pick(rng, 0, 0, *owners))
-    st.put(rec + 4, "<h", rng.randrange(-100, 700))
+    st.put(rec + 4, "<h", rng.randrange(1, 700))  # on screen: letters wholly off it are left out on purpose
     st.put(rec + 6, "<h", rng.randrange(-100, 500))
     st.put(rec + 8, "<B", n)
     st.put(rec + 9, "<B", pick(rng, 0, 0, 1, 0x20, 0x21, r32(rng) & 0xFF))
     st.put(rec + 0xC, "<h", pick(rng, -1, -1, rng.randrange(0, 0x100), rng.randrange(-0x8000, 0x8000)))
-    st.put(rec + 0xE, "<h", pick(rng, 0x100, 0x80, rng.randrange(-0x200, 0x400)))
+    st.put(rec + 0xE, "<h", pick(rng, 0x100, 0x80, rng.randrange(0, 0x400)))
     st.putb(rec + 0x10, bytes(pick(rng, 0x20, rng.randrange(0x20, 0x80), rng.getrandbits(8)) for _ in range(0x40)))
 
 
 def g_text(st, rng):
     font(st, rng)
+    st.put(0x4ACC38, "<i", 0x40000000)  # a screen wide enough for every letter (see message)
     owners = [5, 7]
     mode = pick(rng, 0, 1, 2)
     if mode == 1:

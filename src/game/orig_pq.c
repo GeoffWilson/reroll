@@ -234,6 +234,8 @@ void GAMEAPI text_messages_draw(uint32_t owner, int32_t mode)
                     uint8_t code;
                     int16_t s;
 
+                    int32_t gx = x + (int32_t)*(const float *)(uintptr_t)0x6ccd54; /* the origin is a float */
+
                     f = pq_int_add(x, G32(0x6ccd54));
                     U32(pkt, 8) = 0x40;
                     U32(pkt, 0x6c) = 0x40066666;
@@ -285,7 +287,13 @@ void GAMEAPI text_messages_draw(uint32_t owner, int32_t mode)
                     U32(pkt, 0x44) = dim;
                     U32(pkt, 0x64) = dim;
                     U8(pkt, 7) = code;
-                    if (mode == 1)
+                    /* Deliberate change: a glyph wholly off the game's screen
+                     * isn't drawn. The original parks some messages there
+                     * (Practice's "pause game / to change car" at x 1443 of
+                     * 1024), where the widened picture would show them. */
+                    if (gx >= GI32(0x4acc38) || gx + (dw >> 8) <= 0)
+                        ;
+                    else if (mode == 1)
                         pq_draw_prim(pkt);
                     else
                         pq_ot_link(U32(G32(0x6ce608), 4), pkt);

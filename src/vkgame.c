@@ -444,30 +444,39 @@ static void check_leak(uint32_t start)
 
 /* REROLL_DEBUG_OFFSCREEN=1: log the 2D packets drawn past the 4:3 screen's
  * sides (visible in the widened picture, off-screen in the original), each
- * packet address / page / code once, up to 200. */
+ * packet address / page / code once, up to 200. REROLL_DEBUG_OFFSCREEN=n
+ * > 1 starts after n ms (past the menus' slides). */
 static void debug_offscreen(const struct rd_list *list, uint32_t start)
 {
     static int on = -1, logged;
     static uint32_t seen[256];
     uint32_t i, k;
 
-    if (on < 0)
-        on = getenv("REROLL_DEBUG_OFFSCREEN") && atoi(getenv("REROLL_DEBUG_OFFSCREEN"));
-    if (!on || logged >= 200)
+    static uint64_t from;
+    if (on < 0) {
+        /* 1, or the milliseconds to wait before logging (past the menus) */
+        on = getenv("REROLL_DEBUG_OFFSCREEN") ? atoi(getenv("REROLL_DEBUG_OFFSCREEN")) : 0;
+        uint64_t f;
+        QueryPerformanceFrequency(&f);
+        from = now() + (on > 1 ? (uint64_t)on * f / 1000 : 0);
+    }
+    if (!on || logged >= 200 || now() < from)
         return;
     for (i = 0; i < list->prim_count && logged < 200; i++) {
         const struct rd_prim *p = &list->prims[i];
         const struct rd_vertex *v = &list->verts[p->first];
-        float lo = v[0].x, hi = v[0].x, ylo = v[0].y;
+        float lo = v[0].sx, hi = v[0].sx, ylo = v[0].sy;
         uint32_t key;
-        if (!(p->flags & RD_2D))
+        if (!(p->flags & RD_2D) && v[0].z <= 0.0f)
             continue;
         for (k = 1; k < p->count; k++) {
-            lo = v[k].x < lo ? v[k].x : lo;
-            hi = v[k].x > hi ? v[k].x : hi;
-            ylo = v[k].y < ylo ? v[k].y : ylo;
+            lo = v[k].sx < lo ? v[k].sx : lo;
+            hi = v[k].sx > hi ? v[k].sx : hi;
+            ylo = v[k].sy < ylo ? v[k].sy : ylo;
         }
-        if (hi <= (float)list->view.screen_w + 2.0f && lo >= -2.0f)
+        /* wholly past the game screen's right or left edge (3D: as the
+         * game projected it), by a quarter of its width */
+        if (lo <= (float)list->view.screen_w * 1.25f && hi >= -(float)list->view.screen_w * 0.25f)
             continue;
         key = p->packet ^ (uint32_t)p->page << 24 ^ (uint32_t)p->code << 16;
         for (k = 0; k < 256 && seen[k] && seen[k] != key; k++)
@@ -476,8 +485,8 @@ static void debug_offscreen(const struct rd_list *list, uint32_t start)
             continue;
         seen[k] = key;
         logged++;
-        log_printf("offscreen 2D: packet %x code %x page %x x %d..%d y %d (screen %d, walk %x)", p->packet, p->code,
-                   p->page, (int)lo, (int)hi, (int)ylo, list->view.screen_w, start);
+        log_printf("offscreen %s: packet %x code %x page %x x %d..%d y %d (screen %d, walk %x)",
+                   (p->flags & RD_2D) ? "2D" : "3D", p->packet, p->code, p->page, (int)lo, (int)hi, (int)ylo, list->view.screen_w, start);
     }
 }
 

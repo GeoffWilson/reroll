@@ -106,6 +106,9 @@ Besides the additions above:
 - **No network play yet** (`fe_n.c`): Multiplayer's "Networked" is greyed out.
   The network game is ported, but there is no transport under it yet
   (`native/dplayx.c` reports no network).
+- **Parked messages** (`orig_pq.c`): message letters wholly off the game's screen
+  aren't drawn. Practice parks its "pause game to change car" hint past the
+  right edge, where the wide picture would show it.
 - **Frame rate** (`frame.c`, `interp.c`): physics keeps the original 32 ms steps
   on its own clock; per-draw state (HUD flash countdowns, the trackside trigger
   queue) still advances once per step.
