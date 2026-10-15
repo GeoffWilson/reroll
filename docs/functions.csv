@@ -38,7 +38,7 @@ address,name,status,notes
 0x427b10,controls_read,verified,"src/game/st_sc.c. (player, flag) -> action bitmask from the player's 27 bindings. Emulator fuzz"
 0x427d00,controls_mask_menu_keys,verified,src/game/st_sc.c. clears actions bound to arrows/Enter/Space/Esc while those keys are held. Emulator fuzz
 0x428d70,controls_nav_bits,verified,"src/game/st_sc.c. menu directions straight from stick X/Y (threshold 0x40), ignoring bindings. Emulator fuzz"
-0x428e10,controls_packet,verified,"src/game/controls.c. Per-player 64-bit packet: low = controls_read mask; high bytes = nav bits, raw axis X, Y, Z. Deliberate change: Y (analog throttle) taken from the triggers (Z) instead of the stick"
+0x428e10,controls_packet,verified,"src/game/controls.c. Per-player 64-bit packet: low = controls_read mask; high bytes = nav bits, raw axis X, Y, Z. Deliberate changes: Y (analog throttle) taken from the triggers (Z) instead of the stick; the menu bits also take the d-pad and A / B as select / back (pause menu)"
 0x436958,sim_steps_due,verified,"src/game/gl_gc.c. (now - base) / 33 - done, at least 1 (unsigned). Fuzz ok; clock: fuzz-only.. Emulator fuzz"
 0x4440b0,race_frame,verified,"src/game/frame.c. Original: single-player = exactly 1 step per frame. Replaced: steps from a 32/16 ms QPC clock, one blended draw per display frame (interp.c)"
 0x444120,sim_step,verified,"src/game/pre_r.c. the per-step dispatcher: calls every callee by address, so the hooks route each to C or the original. Emulator fuzz (all callees stubbed, call sequence compared); no in-game verify (draws)"
