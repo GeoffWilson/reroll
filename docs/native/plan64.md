@@ -192,7 +192,10 @@ Then 64-bit SDL3 and Vulkan, and no 32-bit libraries are needed.
   sound fully into the sewer-pipe reverb (to hear that it works). Headless tests:
   ALSOFT_CONF with `drivers=wave` writes the output to a file.
 - Far objects drawn by the renderer (REROLL_FAR_OBJECTS is off).
-- Gamepad hot-plug (asked for 2026-10-14): native/dinput.c only finds pads
-  at start-up, so a pad switched on later is never seen. Watch SDL's
-  gamepad added/removed events and attach the pad to the game's joystick
-  device (and its force-feedback effects) while it runs.
+- Gamepad hot-plug: done 2026-10-15 (native/dinput.c). The game's
+  joysticks are slots: the pads at start fill them, with none there is one
+  empty slot (so the game still makes its joystick and rumble effects); a
+  pad that disconnects leaves its slot centred, and a pad that connects
+  takes the first empty one. More pads than slots at start-up need a restart.
+  With it, the pause menu takes A / B and the d-pad (src/game/controls.c):
+  the original selects only with the accelerate binding, a trigger here.

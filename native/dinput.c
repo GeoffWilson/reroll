@@ -6,7 +6,15 @@
  *   accelerate is negative Z), Rx / Ry right stick, buttons A B X Y LB RB
  *   Back Start LS RS, the d-pad as POV hat 0.
  * Pads with rumble report force feedback, and the game's DirectInput effects
- * are played on the two rumble motors (see "force feedback" below). */
+ * are played on the two rumble motors (see "force feedback" below).
+ *
+ * Hot-plugging: the game finds its joysticks once, at start-up, so they are
+ * slots that pads come and go from. The pads connected at start fill the
+ * first slots; with none there is still one empty slot (unless
+ * REROLL_NO_PADS), so the game sets up a joystick (and its rumble effects)
+ * for a pad switched on later. A slot whose pad disconnects reads as
+ * centred with nothing pressed until a pad (the same or another) connects
+ * and takes the first empty slot. */
 #include "keys.h"
 #include "rumble.h"
 #include "nt.h"
@@ -70,8 +78,25 @@ struct dinput {
 
 static void **dinput_vtable, **device_vtable;
 static struct dinput the_dinput;
-static SDL_JoystickID pad_ids[MAX_PADS];
-static int pad_count = -1;
+static SDL_Gamepad *slot_pads[MAX_PADS]; /* 0: no pad in the slot now */
+static int pad_count = -1;               /* slots */
+static uint64_t scanned_at;
+
+/* puts SDL gamepad `id` in the first empty slot unless it has one */
+static void attach(SDL_JoystickID id)
+{
+    int i;
+    for (i = 0; i < pad_count; i++)
+        if (slot_pads[i] && SDL_GetGamepadID(slot_pads[i]) == id)
+            return;
+    for (i = 0; i < pad_count; i++)
+        if (!slot_pads[i]) {
+            slot_pads[i] = SDL_OpenGamepad(id);
+            if (slot_pads[i])
+                nt_log("dinput: pad %d is %s", i, SDL_GetGamepadName(slot_pads[i]));
+            return;
+        }
+}
 
 static void find_pads(void)
 {
@@ -79,13 +104,42 @@ static void find_pads(void)
     SDL_JoystickID *ids;
     if (pad_count >= 0)
         return;
-    ids = SDL_GetGamepads(&n);
     pad_count = 0;
-    for (i = 0; ids && i < n && pad_count < MAX_PADS; i++)
-        if (!getenv("REROLL_NO_PADS")) /* headless tests: leave the user's pads alone */
-            pad_ids[pad_count++] = ids[i];
+    if (getenv("REROLL_NO_PADS")) { /* headless tests: leave the user's pads alone */
+        nt_log("dinput: no gamepads (REROLL_NO_PADS)");
+        return;
+    }
+    ids = SDL_GetGamepads(&n);
+    pad_count = n < 1 ? 1 : n > MAX_PADS ? MAX_PADS : n;
+    for (i = 0; ids && i < n; i++)
+        attach(ids[i]);
     SDL_free(ids);
-    nt_log("dinput: %d gamepad(s)", pad_count);
+    nt_log("dinput: %d gamepad(s), %d slot(s)", n, pad_count);
+    scanned_at = SDL_GetTicks();
+}
+
+/* pads that went away leave their slots; new ones take empty slots (looked
+ * for twice a second while a slot is empty) */
+static void pads_refresh(void)
+{
+    uint64_t now = SDL_GetTicks();
+    int i, empty = 0;
+    for (i = 0; i < pad_count; i++) {
+        if (slot_pads[i] && !SDL_GamepadConnected(slot_pads[i])) {
+            nt_log("dinput: pad %d disconnected", i);
+            SDL_CloseGamepad(slot_pads[i]);
+            slot_pads[i] = 0;
+        }
+        empty |= !slot_pads[i];
+    }
+    if (empty && now - scanned_at >= 500) {
+        int n = 0;
+        SDL_JoystickID *ids = SDL_GetGamepads(&n);
+        scanned_at = now;
+        for (i = 0; ids && i < n; i++)
+            attach(ids[i]);
+        SDL_free(ids);
+    }
 }
 
 /* Objects are low memory; out-parameters are 4-byte slots in game memory. */
@@ -115,19 +169,30 @@ static LONG WINAPI dev_release(struct device *d)
     return --d->refs > 0 ? d->refs : 0;
 }
 
+/* the device's slot's pad now (0 while the slot is empty) */
 static void open_pad(struct device *d)
 {
-    if (d->pad >= 0 && !d->gamepad && d->pad < pad_count)
-        d->gamepad = SDL_OpenGamepad(pad_ids[d->pad]);
+    SDL_Gamepad *g;
+    if (d->pad < 0 || d->pad >= pad_count)
+        return;
+    pads_refresh();
+    g = slot_pads[d->pad];
+    if (g != d->gamepad) { /* a new pad: its motors are off */
+        d->gamepad = g;
+        d->low = d->high = 0;
+        d->logged_no_rumble = 0;
+    }
 }
 
+/* an empty slot reports force feedback too: the game makes its effects only
+ * at start-up, and they play once a pad that rumbles is there */
 static int pad_rumbles(struct device *d)
 {
     if (getenv("REROLL_NO_RUMBLE"))
         return 0;
     open_pad(d);
-    return d->gamepad && SDL_GetBooleanProperty(SDL_GetGamepadProperties(d->gamepad),
-                                                SDL_PROP_GAMEPAD_CAP_RUMBLE_BOOLEAN, false);
+    return !d->gamepad || SDL_GetBooleanProperty(SDL_GetGamepadProperties(d->gamepad),
+                                                 SDL_PROP_GAMEPAD_CAP_RUMBLE_BOOLEAN, false);
 }
 
 /* DIDEVCAPS: size, flags, dev type, axes, buttons, povs, ... */
@@ -535,6 +600,7 @@ static HRESULT WINAPI dev_send_ff_command(struct device *d, DWORD command)
 
 static HRESULT WINAPI dev_unacquire(struct device *d)
 {
+    open_pad(d);
     if (d->gamepad && (d->low || d->high)) {
         SDL_RumbleGamepad(d->gamepad, 0, 0, 0);
         d->low = d->high = 0;
@@ -566,9 +632,14 @@ static HRESULT WINAPI dev_get_device_state(struct device *d, DWORD size, uint8_t
         }
         return DI_OK;
     }
-    if (!d->gamepad)
-        dev_acquire(d);
-    rumble_update(d); /* fades and ends rumble between the game's changes */
+    open_pad(d);
+    rumble_update(d);
+    if (!d->gamepad && size >= 0x110) { /* an empty slot: centred, nothing pressed */
+        int i;
+        for (i = 0; i < 6; i++)
+            ((int32_t *)data)[i] = scale(d, i, 0.0f);
+        memset(data + 0x20, 0xff, 16); /* hats centred */
+    } /* fades and ends rumble between the game's changes */
     if (d->gamepad && size >= 0x110) {
         int32_t *axes = (int32_t *)data;
         SDL_Gamepad *g = d->gamepad;
@@ -635,7 +706,7 @@ static HRESULT WINAPI dev_ok2(struct device *d, DWORD a, DWORD b)
 static void fill_instance(uint8_t *info, int pad)
 {
     DWORD size = *(DWORD *)info ? *(DWORD *)info : 0x244;
-    const char *name = pad < 0 ? "Keyboard" : SDL_GetGamepadNameForID(pad_ids[pad]);
+    const char *name = pad < 0 ? "Keyboard" : slot_pads[pad] ? SDL_GetGamepadName(slot_pads[pad]) : 0;
     memset(info, 0, size);
     *(DWORD *)info = size;
     if (pad < 0) {
