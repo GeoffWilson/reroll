@@ -74,5 +74,7 @@ int vkr_end(struct vkr *r, uint8_t *rgba);
 /* Ends the frame by showing it in the window instead (begin with the
  * window's size). 0 if the swapchain needs recreating. */
 int vkr_present(struct vkr *r);
+/* microseconds blocked so far: acquiring images, waiting for fences, presenting */
+extern uint64_t vkr_wait_us[3];
 
 #endif

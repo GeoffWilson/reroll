@@ -74,9 +74,13 @@ static char debug_line[512];
 static uint32_t stat_uploads, stat_frames, stat_walks, stat_prims, stat_max_walks, stat_max_prims, frame_prims;
 static uint64_t stat_draw, stat_textures, stat_present, stat_last, stat_freq;
 uint64_t vkgame_sim_ticks, vkgame_game_draw_ticks;
+uint32_t vkgame_sim_steps;
 /* per frame, for the spread: interval between presents, physics, game drawing, present (us) */
 static uint32_t ft_interval[1000], ft_sim[1000], ft_game[1000], ft_present[1000];
-static uint64_t ft_last_present, ft_last_sim, ft_last_game;
+static uint8_t ft_stepped[1000]; /* a physics step ran this frame */
+static uint32_t ft_last_steps;
+static uint32_t ft_wait[3][1000]; /* in the present: acquire, fence, queue present (vkr_wait_us) */
+static uint64_t ft_last_present, ft_last_sim, ft_last_game, ft_last_wait[3];
 
 static int ft_cmp(const void *a, const void *b)
 {
@@ -96,7 +100,7 @@ static uint32_t ft_max(const uint32_t *v, uint32_t n)
 static void ft_log(uint32_t n)
 {
     static uint32_t sorted[1000];
-    uint32_t i, p50, p90, p99, max, hitches = 0, worst = 0;
+    uint32_t i, p50, p90, p99, max, hitches = 0, worst = 0, steps = 0, step_hitches = 0;
     if (!n)
         return;
     memcpy(sorted, ft_interval, n * sizeof *sorted);
@@ -106,15 +110,41 @@ static void ft_log(uint32_t n)
     p99 = sorted[n * 99 / 100];
     max = sorted[n - 1];
     for (i = 0; i < n; i++) {
-        if (ft_interval[i] > p50 * 3 / 2)
+        if (ft_stepped[i])
+            steps++;
+        if (ft_interval[i] > p50 * 3 / 2) {
             hitches++;
+            if (ft_stepped[i] || (i && ft_stepped[i - 1]))
+                step_hitches++; /* on a physics step's frame or the one after */
+        }
         if (ft_interval[i] > ft_interval[worst])
             worst = i;
     }
-    log_printf("frametime: interval p50 %u p90 %u p99 %u max %u us, %u frames over 1.5x p50; worst frame: physics %u, "
-               "game draw %u, present %u us; max physics %u, game draw %u, present %u us",
-               p50, p90, p99, max, hitches, ft_sim[worst], ft_game[worst], ft_present[worst], ft_max(ft_sim, n),
-               ft_max(ft_game, n), ft_max(ft_present, n));
+    log_printf("frametime: interval p50 %u p90 %u p99 %u max %u us, %u frames over 1.5x p50 (%u at a step; %u of %u "
+               "frames step); worst frame: physics %u, game draw %u, present %u (acquire %u, fence %u, queue %u) us; "
+               "max physics %u, game draw %u, present %u us",
+               p50, p90, p99, max, hitches, step_hitches, steps, n, ft_sim[worst], ft_game[worst], ft_present[worst],
+               ft_wait[0][worst], ft_wait[1][worst], ft_wait[2][worst], ft_max(ft_sim, n), ft_max(ft_game, n),
+               ft_max(ft_present, n));
+    {
+        /* the slow frames: where their time went, summed */
+        uint64_t sum[6] = {0};
+        for (i = 0; i < n; i++)
+            if (ft_interval[i] > p50 * 3 / 2) {
+                uint32_t inside = ft_sim[i] + ft_game[i] + ft_present[i];
+                sum[0] += ft_interval[i];
+                sum[1] += ft_wait[0][i];
+                sum[2] += ft_wait[1][i];
+                sum[3] += ft_wait[2][i];
+                sum[4] += ft_sim[i] + ft_game[i];
+                sum[5] += ft_interval[i] > inside ? ft_interval[i] - inside : 0;
+            }
+        if (hitches)
+            log_printf("frametime: slow frames average %u us: acquire %u, fence %u, queue present %u, game %u, "
+                       "outside the game and present %u us",
+                       (uint32_t)(sum[0] / hitches), (uint32_t)(sum[1] / hitches), (uint32_t)(sum[2] / hitches),
+                       (uint32_t)(sum[3] / hitches), (uint32_t)(sum[4] / hitches), (uint32_t)(sum[5] / hitches));
+    }
 }
 
 static uint64_t now(void)
@@ -747,7 +777,13 @@ int vkgame_flip(void)
             ft_sim[k] = (uint32_t)((vkgame_sim_ticks - ft_last_sim) * 1000000 / stat_freq);
             ft_game[k] = (uint32_t)((vkgame_game_draw_ticks - ft_last_game) * 1000000 / stat_freq);
             ft_present[k] = (uint32_t)((t1 - t0) * 1000000 / stat_freq);
+            for (int w = 0; w < 3; w++)
+                ft_wait[w][k] = (uint32_t)(vkr_wait_us[w] - ft_last_wait[w]);
+            ft_stepped[k] = vkgame_sim_steps != ft_last_steps;
         }
+        ft_last_steps = vkgame_sim_steps;
+        for (int w = 0; w < 3; w++)
+            ft_last_wait[w] = vkr_wait_us[w];
         ft_last_present = t1;
         ft_last_sim = vkgame_sim_ticks;
         ft_last_game = vkgame_game_draw_ticks;

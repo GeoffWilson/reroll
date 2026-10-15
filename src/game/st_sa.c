@@ -1487,6 +1487,8 @@ static void frame_failed(void)
     fatal_exit();
 }
 
+int frame_race_step_due(void); /* frame.c */
+
 /* 0x4351e0: the WinMain body (stdcall, 4 arguments): init, then the message
  * pump and frame loop until quit (0x4be460) or a display change
  * (0x4be450 == 1, 0x435607 restarts the display); returns the last
@@ -1551,7 +1553,18 @@ int32_t STDCALL game_main(uint32_t instance, uint32_t previous, char *line, int3
                 continue;
             G32(0x4be488) = 0;
             if (!G32(0x4be460) && !G32(0x4be48c)) {
-                GCALL(0x4369b5, controls_gather)();
+                int step = 1;
+#ifdef REROLL_NATIVE
+                /* Deliberate change: in a network race a frame is the
+                 * lockstep step (the network wait, the controls, the step)
+                 * only when one is due and the other players' controls are
+                 * in; the frames between only draw (frame.c). */
+                step = frame_race_step_due();
+                if (step == 2)
+                    GCALL(0x435552, frame_net_step)();
+#endif
+                if (step)
+                    GCALL(0x4369b5, controls_gather)();
                 if (G32(0x4ac984)) {
                     if (!GCALL(0x4302d0, frontend_frame)())
                         frame_failed();
@@ -1566,7 +1579,8 @@ int32_t STDCALL game_main(uint32_t instance, uint32_t previous, char *line, int3
                 }
                 if (!present_frame())
                     fatal_exit();
-                GCALL(0x435552, frame_net_step)();
+                if (step == 1)
+                    GCALL(0x435552, frame_net_step)();
             }
             if (G32(0x4be48c)) {
                 shutdown_restart();

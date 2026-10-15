@@ -19,6 +19,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 static const uint32_t vert_spv[] =
 #include "draw_vert.inc"
@@ -271,8 +272,21 @@ static void barrier(struct vkr *r, VkImage image, VkImageLayout from, VkImageLay
 
 /* After a frame's submit: on to the next frame's resources, once the GPU
  * has finished with them (the frame before last). */
+/* microseconds spent blocked in the swapchain and fence calls, for the
+ * frame-time log: acquiring an image, waiting for a frame's fence,
+ * presenting */
+uint64_t vkr_wait_us[3];
+
+static uint64_t wait_clock(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000000u + (uint64_t)ts.tv_nsec / 1000u;
+}
+
 static void next_frame(struct vkr *r)
 {
+    uint64_t t;
     static int in_flight;
     if (!in_flight) { /* REROLL_FRAMES=1: wait for each frame (for comparisons) */
         const char *e = getenv("REROLL_FRAMES");
@@ -280,7 +294,9 @@ static void next_frame(struct vkr *r)
     }
     r->frame_index = (r->frame_index + 1) % in_flight;
     r->f = &r->frames[r->frame_index];
+    t = wait_clock();
     r->vkWaitForFences(r->device, 1, &r->f->done, VK_TRUE, UINT64_MAX);
+    vkr_wait_us[1] += wait_clock() - t;
 }
 
 static void begin_commands(struct vkr *r)
@@ -1229,7 +1245,9 @@ int vkr_set_surface(struct vkr *r, VkSurfaceKHR surface, int w, int h)
     info.preTransform = caps.currentTransform;
     info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
     info.presentMode = VK_PRESENT_MODE_FIFO_KHR;
-    if (r->vsync == 0) { /* off: mailbox, else immediate; otherwise FIFO, one frame a refresh */
+    /* default (-1): mailbox, else FIFO; off (0): mailbox, else immediate;
+     * on (1): FIFO, one frame a refresh */
+    if (r->vsync != 1) {
         for (i = 0; i < mode_count; i++)
             if (modes[i] == VK_PRESENT_MODE_IMMEDIATE_KHR && r->vsync == 0)
                 info.presentMode = VK_PRESENT_MODE_IMMEDIATE_KHR;
@@ -1371,9 +1389,13 @@ int vkr_present(struct vkr *r)
     VkPresentInfoKHR present = {VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
     VkResult result;
 
+    uint64_t t;
+
     if (!r->swapchain)
         return 0;
+    t = wait_clock();
     result = r->vkAcquireNextImageKHR(r->device, r->swapchain, UINT64_MAX, r->f->acquired, VK_NULL_HANDLE, &index);
+    vkr_wait_us[0] += wait_clock() - t;
     if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
         return 0;
     begin_commands(r);
@@ -1409,7 +1431,9 @@ int vkr_present(struct vkr *r)
     present.swapchainCount = 1;
     present.pSwapchains = &r->swapchain;
     present.pImageIndices = &index;
+    t = wait_clock();
     result = r->vkQueuePresentKHR(r->queue, &present);
+    vkr_wait_us[2] += wait_clock() - t;
     next_frame(r);
     return result == VK_SUCCESS;
 }

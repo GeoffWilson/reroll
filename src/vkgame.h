@@ -28,6 +28,7 @@ int vkgame_anisotropy(void);
  * counter ticks it spends in physics steps and in the game's drawing; the
  * per-1000-frames log line reports them with the frame-interval spread. */
 extern uint64_t vkgame_sim_ticks, vkgame_game_draw_ticks;
+extern uint32_t vkgame_sim_steps; /* physics steps run (frame.c), for the frame-time log */
 
 /* The native build restarted the game in place. */
 void vkgame_restart(void);

@@ -18,7 +18,7 @@ Run natively: `~/Documents/rollcage/reroll/build/rollcage` (the intro movies, th
 set-up, front-end logic, start-up, sound engine and the remaining game
 logic: ~1350 hooked functions, checked with the Unicorn emulator tests
 (`make emu-test`) and, while the i386 build existed, in-game verification (`REROLL_VERIFY=1`; it cost
-~10 ms a frame). Render interpolation at the display's refresh rate (vsync; 120 fps with REROLL_VSYNC=0) with the
+~10 ms a frame). Render interpolation at up to 500 fps in mailbox mode (REROLL_MAX_FPS; REROLL_VSYNC=1 for one frame a refresh) with the
 physics on its original 32 ms step.
 
 **Vulkan renderer (docs/renderer/plan.md, steps 1-7):**
@@ -114,8 +114,9 @@ can't drive in a headless race.
 
 1. **Movies**: done (native plan step 8).
 2. Later: Doppler in the mixer; port the remaining original code (scene
-   drawing, front-end 3D, C runtime, platform) and then a 64-bit build;
-   network play (skipped for now).
+   drawing, front-end 3D, C runtime, platform) and then a 64-bit build.
+3. Network play: done, TCP/IP only, on our own UDP transport behind the
+   game's DirectPlay calls (native/dplayx.c; `make net-test`).
 
 Known gaps: none blocking. The pause/menus, races, sound, music, pad and
 restarts are confirmed working natively by the user.

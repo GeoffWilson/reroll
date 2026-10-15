@@ -25,9 +25,13 @@ code. On top of that:
 
 - **Any resolution, ultrawide included**: the 3D view widens (more to the
   sides, the same vertical view), and the HUD stays in the original 4:3 middle.
-- **High frame rates**: races are drawn once per display refresh with vsync
-  (240 fps on a 240 Hz screen; with `REROLL_VSYNC=0` a 120 fps cap, `REROLL_MAX_FPS`), with
-  cars and cameras blended between physics steps.
+- **High frame rates**: races are drawn at up to 500 fps (`REROLL_MAX_FPS`,
+  0 for no cap), presented in mailbox mode so the display shows the newest
+  frame at each refresh (best with variable refresh rate), with cars and
+  cameras blended between physics steps. `REROLL_VSYNC=1` locks to one frame
+  a refresh instead. (The cap keeps a fast GPU from idling down: at a locked
+  240 fps an RTX 4090 dropped to idle clocks and the compositor then missed
+  refreshes.)
 - **Longer draw distance**: the whole track and its trackside objects, instead of
   the original's distance-limited visibility lists (`REROLL_DRAW_DISTANCE`).
 - **Options > Display** (fullscreen or windowed, resolution) and **anisotropic
@@ -39,8 +43,8 @@ code. On top of that:
   when OpenAL Soft picks it, and the game's EAX 1.0 environmental audio
   (the tunnel reverb) as an EFX reverb, so Options > Sound > environmental
   audio works again (`REROLL_NO_EAX=1` turns the reverb off).
-
-Not done yet: network play.
+- **Network play over the internet** (TCP/IP only): the game's own network
+  code on a new UDP transport instead of DirectPlay; see below.
 
 ## Requirements
 
@@ -101,22 +105,47 @@ Besides the additions above:
   CD-ROM drive and otherwise disables League, Arcade and Time Attack; the
   game only reads the installed data, and the music comes from the CD
   image.
-- **No network play yet** (`fe_n.c`): Multiplayer's "Networked" is greyed out.
-  The network game is ported, but there is no transport under it yet
-  (`native/dplayx.c` reports no network).
+- **Network play** (`native/dplayx.c`, `fe_l.c`, `orig_pu.c`): TCP/IP is the
+  only connection (no IPX, serial cable or modem), on our own UDP transport;
+  a session still open when the front end loads again is closed, so the
+  other players hear about it. In a network race the local player's car
+  takes player 1's controller set-up (`setup_s.c`; the original used the
+  car's slot number, so it was mostly digital, without rumble).
 - **Parked messages** (`orig_pq.c`): message letters wholly off the game's screen
   aren't drawn. Practice parks its "pause game to change car" hint past the
   right edge, where the wide picture would show it.
-- **Frame rate** (`frame.c`, `interp.c`): physics keeps the original 32 ms steps
-  on its own clock; per-draw state (HUD flash countdowns, the trackside trigger
-  queue) still advances once per step.
+- **Frame rate** (`frame.c`, `interp.c`, `st_sa.c`): physics keeps the original
+  32 ms steps on its own clock; per-draw state (HUD flash countdowns, the
+  trackside trigger queue, the random generator) still advances once per
+  step. In network races the whole lockstep step (controls, physics, the
+  wait for the other players) runs every 32 ms, with blended draws between.
+
+## Network play
+
+Multiplayer > Networked. The original used DirectPlay: the joining player
+typed the host's address, and there was no server list. That stays the
+same, on a small UDP transport of our own (`native/dplayx.c`) that answers
+the game's DirectPlay calls:
+
+- **Host**: Start New Game. Other players connect to UDP port **47700**
+  (`REROLL_NET_PORT` to change it), so on the internet that port has to be
+  forwarded to the host's machine. Only the host needs that: everything
+  goes through the host, so the players joining can be behind NAT.
+- **Join**: Configure Connection > TCP IP Address: the host's address or
+  name, with `:port` when it isn't 47700. Left empty, Join Existing Game
+  searches the local network instead. IPv4 only.
+- Every message arrives, in order (resent when lost). Each player's
+  connection is logged every 30 s (round trip, resends) in `native.log`.
+- Everyone needs the same build. As in the original, the race runs in
+  lockstep (every game simulates every car from the players' controls),
+  and each race ends the session: host and join again for the next one.
 
 ## Layout
 
     native/         the loader (maps reroll_data.bin) and the
                     Windows layer: KERNEL32, USER32 (SDL3 window), DirectDraw /
-                    Direct3D stand-ins, DirectInput, QMixer (on OpenAL Soft)
-                    and CD audio (SDL)
+                    Direct3D stand-ins, DirectInput, QMixer (on OpenAL Soft),
+                    DirectPlay (on UDP) and CD audio (SDL)
     src/            hook installer, verifier, log, capture, the Vulkan renderer's
                     game side (vkgame.c, widescreen.c, subunit.c)
     src/game/       the reimplemented game functions

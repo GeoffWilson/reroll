@@ -28,6 +28,7 @@
 #define g_car_slots ((uint8_t *)0x6bfb80)
 #define CAR_SLOT_SIZE 0x274
 #define g_race_data GP(0x4b1960)
+#define g_seed (*(uint32_t *)0x4b11d8) /* the game's Park-Miller generator */
 
 #define MAX_OBJECTS 64 /* per car: body, camera, 4 wheels */
 #define WHEEL_POINTERS 0x390
@@ -330,6 +331,7 @@ void interp_draw(void(GAMEAPI *draw)(void), uint32_t alpha, int hud_tick)
     struct pose exact[MAX_OBJECTS];
     uint8_t hud[MAX_OBJECTS][2];
     int16_t shake[MAX_OBJECTS];
+    uint32_t seed = 0;
     int count = curr_count, i;
 
     /* HUD flash countdowns (car +0x65c, +0x65d) and the trigger queue advance
@@ -358,11 +360,13 @@ void interp_draw(void(GAMEAPI *draw)(void), uint32_t alpha, int hud_tick)
     if (!hud_tick) {
         save_trigger_queue(&triggers);
         save_draw_counters(&counters);
+        seed = g_seed;
     }
     draw();
     if (!hud_tick) {
         restore_trigger_queue(&triggers);
         restore_draw_counters(&counters);
+        g_seed = seed; /* the random generator physics shares (network races stay in step) */
     }
 
     for (i = 0; i < count; i++) {
