@@ -2,22 +2,23 @@
 
 ## Where things stand
 
-Rollcage (1999) runs as a **native 32-bit Linux program** (`build/rollcage`)
+Rollcage (1999) runs as a **native x86-64 Linux program** (`build/rollcage`;
+the i386 build was dropped on 2026-10-15, see docs/native/plan64.md)
 with a **Vulkan renderer** at native resolution (3440x1440 ultrawide), the
 original physics and feel, and about 1350 of the game's functions
 reimplemented in C. (The earlier Wine route, an injected proxy QMIXER.DLL,
 was removed on 2026-10-11; the native program is the only build.)
 
 Run natively: `~/Documents/rollcage/reroll/build/rollcage` (straight to the main menu; no launcher dialog, no intro movies yet)
-(build: `make`; needs lib32-sdl3, lib32-vulkan-icd-loader, lib32-libdecor).
+(build: `make`; needs sdl3, vulkan-icd-loader, openal, libdecor).
 
 ## Done
 
 **Reimplementation (earlier sessions):** physics, car controls, AI, race
 set-up, front-end logic, start-up, sound engine and the remaining game
 logic: ~1350 hooked functions, checked with the Unicorn emulator tests
-(`make emu-test`) and in-game verification (`REROLL_VERIFY=1`, which costs
-~10 ms a frame, so play without it). 120 fps render interpolation with the
+(`make emu-test`) and, while the i386 build existed, in-game verification (`REROLL_VERIFY=1`; it cost
+~10 ms a frame). 120 fps render interpolation with the
 physics on its original 32 ms step.
 
 **Vulkan renderer (docs/renderer/plan.md, steps 1-7):**
@@ -44,7 +45,7 @@ physics on its original 32 ms step.
    the swapchain and the widescreen culling follow the window. The screen
    is 0x7b (unused by the original); labels use the string file's markup
    "Label ~>~P0~S" (value in the right-hand column). Window decorations on
-   GNOME/Wayland need lib32-libdecor; its GTK plugin shows no title bar for
+   GNOME/Wayland need libdecor; its GTK plugin shows no title bar for
    us, so native/loader.c points libdecor at the cairo plugin alone
    (~/.cache/reroll/libdecor) unless LIBDECOR_PLUGIN_DIR is set.
 10. Anisotropic filtering (Options > Graphics, native; REROLL_ANISOTROPY=n

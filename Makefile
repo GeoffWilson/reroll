@@ -1,4 +1,4 @@
-# Builds build/rollcage: Rollcage as a native 32-bit Linux program (docs/native/plan.md),
+# Builds build/rollcage: Rollcage as a native x86-64 Linux program (docs/native/plan.md),
 # with clang (-fwrapv: signed arithmetic wraps, as in the original machine code;
 # -fno-strict-aliasing: fields are read and written at mixed widths;
 # -fixup-byte-word-insts=false: clang 23 widens "(x & ~0xff) | p[x]" into a movzx that loses x),
@@ -156,12 +156,15 @@ build/rview: tools/rview.c tools/rcapfile.c tools/rcapfile.h src/render/packets.
 	clang -O2 -g -Wall -Wextra -Wno-missing-field-initializers -Isrc -Ibuild/render tools/rview.c tools/rcapfile.c \
 	    src/render/packets.c src/render/vkr.c -o $@ $$(pkg-config --cflags --libs sdl3)
 
-# ---- Native Linux build (docs/native/plan.md): build/rollcage, i386 ----
+# ---- Native Linux build (docs/native/plan.md, plan64.md): build/rollcage, x86-64 ----
 # The reimplementation's sources (minus src/runtime.c, the C-library stand-ins the
-# emulator tests use), plus native/ (the Windows layer). -mstackrealign: the game calls us with 4-byte
-# stack alignment. (No -malign-double: system libraries such as Vulkan use the i386 layout.)
-NATIVE_FLAGS := --target=i686-linux-gnu -O2 -g -fwrapv -fno-strict-aliasing -mllvm -fixup-byte-word-insts=false \
-                -fno-pic -mstackrealign -Wall -Wextra -Wno-missing-field-initializers
+# emulator tests use), plus native/ (the Windows layer; sound on OpenAL Soft).
+# Game memory keeps its 32-bit layout below 4 GB, so our code and statics are
+# linked low too (0x8000000: clear of the game's image at 0x400000 and its
+# arena at 0x20000000, which is a section of the image so that the heap starts
+# above it: native/lowmem.c).
+NATIVE_FLAGS := --target=x86_64-linux-gnu -O2 -g -fwrapv -fno-strict-aliasing -fno-pic -mcmodel=small \
+                -Wall -Wextra -Wno-missing-field-initializers -Wno-ignored-attributes
 NATIVE_GAME_SRCS := $(filter-out src/runtime.c,$(GAME_SRCS))
 NATIVE_MODULES := native/kernel32.c native/advapi32.c native/user32.c native/gdi32.c native/winmm.c native/ole32.c native/qmixer.c native/dsound.c native/dplayx.c native/ddraw.c native/dinput.c
 NATIVE_SRCS := native/loader.c native/teb.c native/paths.c native/modules.c native/keys.c native/lowmem.c native/profile.c native/datafile.c $(NATIVE_MODULES)
@@ -170,8 +173,7 @@ NATIVE_OBJS := $(NATIVE_SRCS:native/%.c=build/native/%.o) build/native/exports.o
 
 build/native/src/%.o: src/%.c src/*.h src/game/*.h src/render/*.h Makefile build/render/draw_vert.inc build/render/draw_frag.inc
 	@mkdir -p $(dir $@)
-	$(CC) $(NATIVE_FLAGS) -DREROLL_NATIVE -fms-extensions -Wno-ignored-attributes -Wno-unknown-pragmas \
-	    -Isrc -Ibuild/render -c $< -o $@
+	$(CC) $(NATIVE_FLAGS) -DREROLL_NATIVE -fms-extensions -Wno-unknown-pragmas -Isrc -Ibuild/render -c $< -o $@
 
 build/native/%.o: native/%.c native/*.h Makefile
 	@mkdir -p $(dir $@)
@@ -185,35 +187,7 @@ build/native/exports.o: build/native/exports.c native/nt.h
 	$(CC) $(NATIVE_FLAGS) -Inative -c $< -o $@
 
 build/rollcage: $(NATIVE_OBJS) $(NATIVE_GAME_OBJS)
-	$(CC) --target=i686-linux-gnu -no-pie -o $@ $^ -lSDL3 -lvulkan -lpthread -lm
+	$(CC) --target=x86_64-linux-gnu -no-pie -Wl,-Ttext-segment=0x8000000 -Wl,--section-start=.lowmem=0x20000000 -o $@ $^ -lSDL3 -lvulkan -lopenal -lpthread -lm
 
 native: build/rollcage
 .PHONY: native
-
-# ---- 64-bit native build (docs/native/plan64.md, phase 3): build/rollcage64 ----
-# The same sources for x86-64. Game memory keeps its 32-bit layout below 4 GB,
-# so our code and statics are linked low too (0x8000000: clear of the game's
-# image at 0x400000 and its arena at 0x20000000, which is a section of the
-# image so that the heap starts above it: native/lowmem.c).
-NATIVE64_FLAGS := --target=x86_64-linux-gnu -O2 -g -fwrapv -fno-strict-aliasing -fno-pic -mcmodel=small \
-                  -Wall -Wextra -Wno-missing-field-initializers -Wno-ignored-attributes
-NATIVE64_GAME_OBJS := $(NATIVE_GAME_SRCS:src/%.c=build/native64/src/%.o)
-NATIVE64_OBJS := $(NATIVE_SRCS:native/%.c=build/native64/%.o) build/native64/exports.o
-
-build/native64/src/%.o: src/%.c src/*.h src/game/*.h src/render/*.h Makefile build/render/draw_vert.inc build/render/draw_frag.inc
-	@mkdir -p $(dir $@)
-	$(CC) $(NATIVE64_FLAGS) -DREROLL_NATIVE -fms-extensions -Wno-unknown-pragmas -Isrc -Ibuild/render -c $< -o $@
-
-build/native64/%.o: native/%.c native/*.h Makefile
-	@mkdir -p $(dir $@)
-	$(CC) $(NATIVE64_FLAGS) -D_GNU_SOURCE -Inative -c $< -o $@
-
-build/native64/exports.o: build/native/exports.c native/nt.h
-	@mkdir -p $(dir $@)
-	$(CC) $(NATIVE64_FLAGS) -Inative -c $< -o $@
-
-build/rollcage64: $(NATIVE64_OBJS) $(NATIVE64_GAME_OBJS)
-	$(CC) --target=x86_64-linux-gnu -no-pie -Wl,-Ttext-segment=0x8000000 -Wl,--section-start=.lowmem=0x20000000 -o $@ $^ -lSDL3 -lvulkan -lpthread -lm
-
-native64: build/rollcage64
-.PHONY: native64

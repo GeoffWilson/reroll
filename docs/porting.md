@@ -111,6 +111,7 @@ Budget, to keep batches quick:
 
 ## In-game verification
 
+(Historical: this needed the i386 build, dropped on 2026-10-15.)
 With `REROLL_VERIFY=1` the game runs the original, snapshots memory (the data
 section 0x4a7000-0x6d3000 and the game heap), runs ours from the same state,
 and logs differences to `reroll.log`. A `verify_call2` wrapper only suits
@@ -140,6 +141,5 @@ states, the wrapper can skip verification then (see `race_progress_entry` in
 2. `make` (warning-free), `make argcheck` (argument audit, 5 s),
    `make -j8 -k emu-test` (reruns only tests whose inputs changed;
    `make emu-test-all` for everything).
-3. One game session (`build/rollcage`) with `REROLL_VERIFY=1` for the user,
-   read `reroll.log`.
+3. One game session (`build/rollcage`) for the user, read `native.log`.
 4. Append the groups to `docs/functions.csv` and `docs/formats.md`.

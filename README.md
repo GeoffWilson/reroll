@@ -34,16 +34,17 @@ code. On top of that:
 - Modern gamepads through SDL3 (laid out as an XInput pad, triggers for the
   throttle), with the game's force feedback played as rumble
   (`REROLL_NO_RUMBLE=1` turns it off).
+- **Sound on OpenAL Soft**: 3D sound, with HRTF on headphones
+  when OpenAL Soft picks it, and the game's EAX 1.0 environmental audio
+  (the tunnel reverb) as an EFX reverb, so Options > Sound > environmental
+  audio works again (`REROLL_NO_EAX=1` turns the reverb off).
 
 Not done yet: movies (skipped), network play.
 
 ## Requirements
 
-- Linux on x86-64. Two builds: `build/rollcage64` (x86-64, being tested: SDL3,
-  the Vulkan loader and libdecor, nothing 32-bit) and `build/rollcage` (i386,
-  needs `lib32-sdl3`, `lib32-vulkan-icd-loader` and your GPU's 32-bit Vulkan
-  driver, `lib32-libdecor` for window title bars on Wayland; the emulator tests
-  use this one).
+- Linux on x86-64 with SDL3, the Vulkan loader, OpenAL Soft (`openal`) and
+  libdecor (window title bars on Wayland). Nothing 32-bit.
 - To build: clang, `glslc` (shaderc), Python 3.
 - The game: an installed copy of Rollcage. The expected executable is
   `Direct3D/Rollcage.exe`, sha256
@@ -54,8 +55,7 @@ Not done yet: movies (skipped), network play.
 
 ## Build and run
 
-    make                      # build/rollcage (i386)
-    make native64             # build/rollcage64 (x86-64)
+    make                      # build/rollcage (x86-64)
     cd "<game folder>/Direct3D"
     /path/to/reroll/build/rollcage
 
@@ -74,10 +74,7 @@ original's), `REROLL_FAR_OBJECTS=1` (trackside objects past the original's
 range; off, being reworked), `REROLL_ANISOTROPY`, `REROLL_MAX_FPS`,
 `REROLL_VSYNC`, `REROLL_WINDOW=WxH`. For tests without a window:
 `SDL_VIDEO_DRIVER=offscreen` with `REROLL_SHOT_EVERY=n` (saves frames) and
-`REROLL_KEYS="ms:Key,..."` (scripted key presses). `REROLL_NO_EXE=0` maps the
-original exe's code again instead of `reroll_data.bin` (for comparing with the
-original; `REROLL_VERIFY=1`, which runs the originals beside ours, does this
-itself).
+`REROLL_KEYS="ms:Key,..."` (scripted key presses).
 
 ## Checking against the original
 
@@ -87,11 +84,9 @@ The physics has to match bit for bit (replays and the handling depend on it):
   the original machine code in the Unicorn emulator, on random and edge-case
   inputs (`tests/emu_*.py`; needs the Python `unicorn` module,
   `EMU_PYTHON=/path/to/python` if it isn't system-wide).
-- `REROLL_VERIFY=1`: in the game, every physics step runs twice from the same
-  state, first the original, then ours; `reroll.log` lists every byte of game
-  memory that differs, annotated (`car2+1a4`, `body7+34`). The original's result
-  is kept, so the race always plays as the original. It costs about 10 ms a
-  frame.
+- In-game verification (`REROLL_VERIFY=1`, the original and ours run from the
+  same state each physics step) needed the i386 build, which was dropped once
+  the port was complete; the emulator tests remain.
 
 ## Deliberate changes from the original
 
@@ -119,7 +114,8 @@ Besides the additions above:
 
     native/         the loader (maps reroll_data.bin) and the
                     Windows layer: KERNEL32, USER32 (SDL3 window), DirectDraw /
-                    Direct3D stand-ins, DirectInput, QMixer and CD audio
+                    Direct3D stand-ins, DirectInput, QMixer (on OpenAL Soft)
+                    and CD audio (SDL)
     src/            hook installer, verifier, log, capture, the Vulkan renderer's
                     game side (vkgame.c, widescreen.c, subunit.c)
     src/game/       the reimplemented game functions
@@ -142,7 +138,7 @@ Besides the additions above:
 3. Add it to the `hooks` table in `src/main.c` (physics in `physics_hooks`,
    which the verifier switches off) with its first 8 original bytes
    (`tools/expect.py`).
-4. Test in the emulator (`tests/`), then in the game with `REROLL_VERIFY=1`.
+4. Test in the emulator (`tests/`), then in the game.
 5. Update its row in `docs/functions.csv`.
 
 See `docs/porting.md` for the full brief.
