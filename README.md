@@ -1,15 +1,14 @@
 # reroll
 
-An incremental reimplementation of **Rollcage** (Psygnosis / Attention to
+**Version 1.0.0.** An incremental reimplementation of **Rollcage** (Psygnosis / Attention to
 Detail, 1999, PC Direct3D version) as a native Linux program, in the style of
 OpenRCT2: the original `Rollcage.exe` was loaded at its own addresses and its
 functions were replaced, one at a time, with C. Now every function the game
 runs is C (about 2,500, each checked against the original machine code), and
 the game runs without any original code: only the exe's data (tables,
 strings, menu layouts) is still used, read once from your copy into
-`reroll_data.bin`. It runs on a small Windows layer built on SDL3, and
-everything is drawn by a new Vulkan renderer. Next: a 64-bit build
-(`docs/native/plan64.md`).
+`reroll_data.bin`. It is a 64-bit program on a small Windows layer built on
+SDL3, and everything is drawn by a new Vulkan renderer.
 
 **No game files are included.** This repository holds only reverse-engineered
 code, notes and tools written for the project. To play you need your own copy
@@ -46,6 +45,19 @@ code. On top of that:
 - **Network play over the internet** (TCP/IP only): the game's own network
   code on a new UDP transport instead of DirectPlay; see below.
 
+## Playing
+
+Download `reroll-1.0.0-linux-x86_64.tar.gz` from the
+[releases page](https://github.com/GeoffWilson/reroll/releases), unpack it
+and follow its `README.txt`:
+
+    sudo pacman -S sdl3 vulkan-icd-loader openal libdecor   # Arch; plus your GPU's Vulkan driver
+    ./setup.sh "/path/to/Rollcage.cue"   # once: copies the game from your CD, image or mounted disc
+    ./run.sh
+
+`setup.sh` takes a BIN/CUE image (which also gives the CD music), an ISO
+or the mounted disc. The archive holds only the program and these scripts.
+
 ## Requirements
 
 - Linux on x86-64 with SDL3, the Vulkan loader, OpenAL Soft (`openal`) and
@@ -63,6 +75,7 @@ code. On top of that:
     make                      # build/rollcage (x86-64)
     cd "<game folder>/Direct3D"
     /path/to/reroll/build/rollcage
+    make dist                 # build/reroll-<version>-linux-x86_64.tar.gz (dist/)
 
 `GAME_DIR` (Makefile) defaults to
 `~/Games/rollcage/prefix/drive_c/Program Files (x86)/Psygnosis/Rollcage`, an
@@ -77,7 +90,8 @@ reimplementation) next to the executable, keeps the registry settings in
 Useful environment variables: `REROLL_DRAW_DISTANCE` (world units, `0` = the
 original's), `REROLL_FAR_OBJECTS=0` (no trackside objects past the original's
 range), `REROLL_ANISOTROPY`, `REROLL_MAX_FPS`,
-`REROLL_VSYNC`, `REROLL_WINDOW=WxH`. For tests without a window:
+`REROLL_VSYNC`, `REROLL_WINDOW=WxH`, `REROLL_NO_RUMBLE=1`, `REROLL_NO_EAX=1`,
+`REROLL_NET_PORT`, `REROLL_DRIVE_C` (the folder that stands for C:). For tests without a window:
 `SDL_VIDEO_DRIVER=offscreen` with `REROLL_SHOT_EVERY=n` (saves frames) and
 `REROLL_KEYS="ms:Key,..."` (scripted key presses).
 
@@ -158,20 +172,25 @@ the game's DirectPlay calls:
                     (every function and its state), formats.md (data layouts),
                     renderer/ and native/ (design notes and plans)
 
-## Workflow for each function
+## Known limitations
 
-1. Find and understand it (`make decompile ADDR=...` with Ghidra,
-   `make disasm ADDR=... LEN=...`).
-2. Write it in `src/game/`, keeping the original calling convention
-   (`GAMEAPI`, cdecl) and side effects, in order. Check the callers for use of
-   eax even if Ghidra says `void`.
-3. Add it to the `hooks` table in `src/main.c` (physics in `physics_hooks`,
-   which the verifier switches off) with its first 8 original bytes
-   (`tools/expect.py`).
-4. Test in the emulator (`tests/`), then in the game.
-5. Update its row in `docs/functions.csv`.
+- A network race ends the session: everyone hosts and joins again for the
+  next race. IPv4 only, and the pause menu in a network race runs at the
+  original 31 fps.
+- The credits and league-winner movies are untested.
+- Only the original PC release's `Rollcage.exe` (the sha256 above) is
+  supported.
 
-See `docs/porting.md` for the full brief.
+## How it was made
+
+Each of the original's functions was found with Ghidra, written in C with
+the original's calling convention and side effects, hooked in place of the
+original (the tables in `src/main.c`) and checked against the original
+machine code in the emulator, then in the game. Once every function the
+game runs was C, the original code was no longer loaded at all, and the
+program became 64-bit. `docs/porting.md` is the full brief for porting a
+function, `docs/functions.csv` lists every function and its state, and
+`CLAUDE.md` is the guide for working on the code.
 
 ## Legal
 

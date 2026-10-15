@@ -1,4 +1,4 @@
-# reroll status (2026-10-11)
+# reroll status (2026-10-16: version 1.0.0)
 
 ## Where things stand
 

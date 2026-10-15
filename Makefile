@@ -12,6 +12,7 @@ GAME_DIR ?= $(HOME)/Games/rollcage/prefix/drive_c/Program Files (x86)/Psygnosis/
 IDX_DIR  := $(GAME_DIR)/IDXData
 EXE      := $(GAME_DIR)/Direct3D/Rollcage.exe
 ITER     ?= 100
+VERSION  := 1.0.0
 
 all: build/rollcage
 
@@ -187,6 +188,8 @@ build/native/%.o: native/%.c native/*.h Makefile
 	@mkdir -p $(dir $@)
 	$(CC) $(NATIVE_FLAGS) -D_GNU_SOURCE -Inative -c $< -o $@
 
+build/native/loader.o: NATIVE_FLAGS += -DREROLL_VERSION='"$(VERSION)"'
+
 build/native/exports.c: tools/native_exports.py $(NATIVE_MODULES)
 	@mkdir -p build/native
 	python3 -I tools/native_exports.py $@ $(NATIVE_MODULES)
@@ -199,3 +202,14 @@ build/rollcage: $(NATIVE_OBJS) $(NATIVE_GAME_OBJS)
 
 native: build/rollcage
 .PHONY: native
+
+# Release archive: the stripped program with the set-up and start scripts.
+# Nothing from the game goes in it (setup.sh copies the files from the player's own CD).
+DIST := reroll-$(VERSION)-linux-x86_64
+dist: build/$(DIST).tar.gz
+build/$(DIST).tar.gz: build/rollcage dist/setup.sh dist/run.sh dist/README.txt
+	rm -rf build/$(DIST) && mkdir -p build/$(DIST)
+	strip -o build/$(DIST)/rollcage build/rollcage
+	cp dist/setup.sh dist/run.sh dist/README.txt build/$(DIST)/
+	tar -C build -czf $@ --owner=0 --group=0 $(DIST)
+.PHONY: dist

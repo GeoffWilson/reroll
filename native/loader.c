@@ -291,12 +291,12 @@ static void configure(int argc, char **argv)
 }
 
 /* Window decorations on Wayland come from libdecor. Its GTK plugin (the
- * one it prefers under GNOME) loads but shows no title bar for this 32-bit
- * program; the cairo plugin does. So, unless LIBDECOR_PLUGIN_DIR is set,
+ * one it prefers under GNOME) loads but showed no title bar for us; the
+ * cairo plugin does. So, unless LIBDECOR_PLUGIN_DIR is set,
  * libdecor is pointed at a folder holding only the cairo plugin. */
 static void choose_decorations(void)
 {
-    static const char *plugin = "/usr/lib32/libdecor/plugins-1/libdecor-cairo.so";
+    static const char *plugin = "/usr/lib/libdecor/plugins-1/libdecor-cairo.so";
     const char *base = getenv("XDG_CACHE_HOME"), *home = getenv("HOME");
     char dir[512], link[600];
 
@@ -312,11 +312,9 @@ static void choose_decorations(void)
     strncat(dir, "/libdecor", sizeof dir - strlen(dir) - 1);
     mkdir(dir, 0755);
     snprintf(link, sizeof link, "%s/libdecor-cairo.so", dir);
-    if (access(link, R_OK) != 0) {
-        unlink(link);
-        if (symlink(plugin, link) != 0)
-            return;
-    }
+    unlink(link); /* also replaces a link to the 32-bit build's plugin */
+    if (symlink(plugin, link) != 0)
+        return;
     setenv("LIBDECOR_PLUGIN_DIR", dir, 1);
 }
 
@@ -325,6 +323,10 @@ int main(int argc, char **argv)
     char log_path[600], directory[512];
     char *slash;
 
+    if (argc > 1 && !strcmp(argv[1], "--version")) {
+        printf("reroll %s\n", REROLL_VERSION);
+        return 0;
+    }
     if (argc > 1 && !strcmp(argv[1], "--extract-data")) {
         char out[600];
         setenv("REROLL_NO_EXE", "0", 1);
@@ -339,7 +341,7 @@ int main(int argc, char **argv)
         nt_fatal("SDL_Init: %s", SDL_GetError());
     snprintf(log_path, sizeof log_path, "%s/native.log", nt_config.data_dir);
     log_file = fopen(log_path, "w");
-    nt_log("rollcage native: C: = %s, D: = %s", nt_config.drive_c, nt_config.drive_d);
+    nt_log("reroll %s: C: = %s, D: = %s", REROLL_VERSION, nt_config.drive_c, nt_config.drive_d);
     nt_log("command line: %s", nt_config.command_line);
 
     /* Windows (and Wine) have the low megabyte mapped; the original reads
