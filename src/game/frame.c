@@ -17,6 +17,7 @@
 #include "game.h"
 #include "interp.h"
 #include "../capture.h"
+#include "../vkgame.h"
 #include "gamefn.h"
 
 void GAMEAPI viewport_body(int32_t x, int32_t y, int32_t w, int32_t h); /* 0x41f2d0 (src/widescreen.c's viewport) */
@@ -97,17 +98,22 @@ static void clock_init(void)
         ticks_per_ms = 1;
 }
 
-/* Display frame interval from REROLL_MAX_FPS (default 120, 0 = no cap). */
+/* Display frame interval from REROLL_MAX_FPS (0 = no cap). By default
+ * none: the swapchain presents with vsync, one frame a display refresh
+ * (an even cadence; a cap under the refresh rate gave a frame two refreshes
+ * one time and three the next). With REROLL_VSYNC=0 the default is 120. */
 static uint32_t frame_ticks(void)
 {
     static int done;
     static uint32_t ticks;
     char buf[16];
-    uint32_t fps = 120, i;
+    uint32_t fps = 0, i;
 
     if (done)
         return ticks;
     done = 1;
+    if (GetEnvironmentVariableA("REROLL_VSYNC", buf, sizeof(buf)) && buf[0] == '0')
+        fps = 120;
     if (GetEnvironmentVariableA("REROLL_MAX_FPS", buf, sizeof(buf)) && buf[0]) {
         fps = 0;
         for (i = 0; buf[i] >= '0' && buf[i] <= '9'; i++)
@@ -119,8 +125,8 @@ static uint32_t frame_ticks(void)
     return ticks;
 }
 
-/* Physics step clock. */
-static uint64_t next_step, last_step, last_frame_seen, last_draw;
+/* Physics step clock; the next draw's time (with a frame cap) */
+static uint64_t next_step, last_step, last_frame_seen, next_draw;
 static uint32_t step_ticks;
 
 /* Steps due now. A gap of over 250 ms (race start, loading, pause) restarts
@@ -193,6 +199,7 @@ int32_t GAMEAPI race_frame(void)
     }
 
     holding_draws = paced;
+    now = ticks_now();
     for (i = 0; i < steps; i++) {
         result = sim_step(network, i, steps);
         if (paced)
@@ -200,6 +207,7 @@ int32_t GAMEAPI race_frame(void)
         if (!result)
             break;
     }
+    vkgame_sim_ticks += ticks_now() - now;
     holding_draws = 0;
     if (!paced || !result)
         return result;
@@ -208,12 +216,17 @@ int32_t GAMEAPI race_frame(void)
      * HUD flash countdowns advance only on draws that follow a physics step. */
     steps_since_draw += steps;
     now = ticks_now();
-    if (!g_render_enabled || now - last_draw < frame_ticks()) {
+    if (!g_render_enabled || (frame_ticks() && now < next_draw)) {
         frame_kind = FRAME_NOTHING;
         return result;
     }
-    last_draw = now;
+    /* deadlines a frame apart (not "a frame after this one"), so the
+     * cadence is the cap's; after a stall, from now */
+    next_draw += frame_ticks();
+    if (now >= next_draw)
+        next_draw = now + frame_ticks();
     interp_draw(race_draw_original, step_alpha(now), steps_since_draw > 0);
+    vkgame_game_draw_ticks += ticks_now() - now;
     steps_since_draw = 0;
     frame_kind = FRAME_DRAWN;
     return result;
@@ -234,7 +247,12 @@ int32_t GAMEAPI present_frame(void)
         nowait = 1;
     capture_present(kind != FRAME_NOTHING);
     if (kind == FRAME_NOTHING) {
-        Sleep(1);
+        /* until the next draw: whole milliseconds while over 1.5 remain, then yields */
+        uint64_t t = ticks_now();
+        if (next_draw > t && next_draw - t > (uint64_t)ticks_per_ms * 3 / 2)
+            Sleep(1);
+        else
+            Sleep(0);
         return 1;
     }
     if (kind == FRAME_DRAWN)

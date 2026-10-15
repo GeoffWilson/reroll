@@ -18,7 +18,7 @@ Run natively: `~/Documents/rollcage/reroll/build/rollcage` (straight to the main
 set-up, front-end logic, start-up, sound engine and the remaining game
 logic: ~1350 hooked functions, checked with the Unicorn emulator tests
 (`make emu-test`) and, while the i386 build existed, in-game verification (`REROLL_VERIFY=1`; it cost
-~10 ms a frame). 120 fps render interpolation with the
+~10 ms a frame). Render interpolation at the display's refresh rate (vsync; 120 fps with REROLL_VSYNC=0) with the
 physics on its original 32 ms step.
 
 **Vulkan renderer (docs/renderer/plan.md, steps 1-7):**

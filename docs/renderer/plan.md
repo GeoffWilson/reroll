@@ -329,11 +329,21 @@ launching once per step, because development runs from captured frames.
      (static objects and the cars in the visible cells) is wrapped: before
      the original's pass, it runs once more for the cells of the extra rows,
      with no dynamic lights. Then the original runs as always.
-     - Like the track's render records, object packet buffers are shared
-       between objects never visible together. Drawing a far object next to
-       a near one linked its packets twice, which looped the world table:
-       a dark, black-track view at a few fps. So the far pass's packets
-       are detached into the pool (both 0x6cd510 and 0x6cdd80).
+     - Like the track's render records, object packet sets are shared
+       between objects never visible together. The far call draws into
+       fresh ordering tables (the game's two are saved and cleared as
+       0x427a70 does); its packets are copied into the pool, the game's
+       tables put back and the copies spliced in at the head of their
+       entries; the shared packet area's fill point (0x6c1e18) is put back.
+       The first version (2026-10-12) ran the far call in the game's own
+       tables and copied out only the entries whose table word changed. A
+       link at depth z goes after whatever entry z - 1 points to, a packet
+       once something was linked at depth z + 1, so far packets linked
+       through existing packets stayed in shared packet sets; the game's
+       pass then linked them twice and the translucent list ran into the
+       world list (flicker on pickups, fog and weapons). Far objects were
+       off until the 2026-10-15 rework. REROLL_DEBUG_LEAKS=1 checks every
+       pass for it.
      - Cell chains can share tails, so objects are deduplicated one by one
        (record index). Objects the original's cells have, and cars (their
        own pass), get bit 0x400 cleared for the far call only.

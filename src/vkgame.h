@@ -21,6 +21,11 @@ int vkgame_flip(void);
 void vkgame_set_anisotropy(int samples);
 int vkgame_anisotropy(void);
 
+/* Frame-time accounting: the race loop (src/game/frame.c) adds the
+ * counter ticks it spends in physics steps and in the game's drawing; the
+ * per-1000-frames log line reports them with the frame-interval spread. */
+extern uint64_t vkgame_sim_ticks, vkgame_game_draw_ticks;
+
 /* The native build restarted the game in place. */
 void vkgame_restart(void);
 

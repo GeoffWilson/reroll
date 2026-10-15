@@ -809,16 +809,23 @@ static uint32_t *visibility(void *cell)
 static const struct hook visibility_hook = {"wide_visibility", 0x47a030, visibility,
                                             {0xa1, 0x0c, 0xe6, 0x6c, 0x00, 0x56, 0x3d, 0xa0}};
 
-/* ---- objects on the extra rows (off by default; REROLL_FAR_OBJECTS=1) ----
+/* ---- objects on the extra rows ----
  *
- * Known problem (2026-10-12): with this second object pass, the game's own
- * pass afterwards sometimes links one of its packets into both the world
- * list 0x6cd510 and the translucent list 0x6cdd80, so the translucent list
- * runs on into the world and the effects flicker (REROLL_DEBUG_LEAKS=1
- * reports it). The list is still sound after the far call and its
- * detach; why the original pass then double-links (per-object packets,
- * not the shared buffer; not the hidden-object limit) is not found yet.
- * Planned instead: draw far objects in the renderer, not through 0x459b20. */
+ * The far pass runs the game's object pass (0x459b20) for the cells of the
+ * extra rows into fresh, empty ordering tables; every packet it linked is
+ * then copied into the pool, the game's tables are put back as they were
+ * and the copies spliced in at their depths. So the game's lists and
+ * packets are never touched by it.
+ *
+ * (2026-10-12, the first version: it ran the far pass into the game's own
+ * tables and copied out only the chains of table words that had changed.
+ * But a link at depth z goes after whatever entry z - 1 points to, which
+ * once something is linked at depth z + 1 is a packet: those far packets
+ * were linked through existing packets' words, never copied, and stayed in
+ * object packet sets that are shared with other objects. When the game's
+ * own pass drew such an object, its packets were linked twice: the
+ * translucent list ran into the world list and the effects flickered.
+ * REROLL_DEBUG_LEAKS=1 still checks for that.) */
 
 /* 0x459b20 draws the objects of the cells the view's list reaches (the
  * chains 0x47dd70 gathers into 0x5d7040, light words in 0x5d6ac0) and
@@ -986,6 +993,82 @@ static void leak_report(void)
 }
 static uint32_t leak_counts[4];
 
+/* the far pass's own tables: the game's are saved, cleared as 0x427a70 does */
+#define OT_WORLD ((uint32_t *)0x6cd510)
+#define OT_TRANSLUCENT ((uint32_t *)0x6cdd80)
+static uint32_t game_ot[2][512];
+static uint32_t far_head[2][512], far_tail[2][512];
+static uint32_t far_copied, far_loops, far_overflow;
+
+static void ot_fresh(uint32_t *ot)
+{
+    uint32_t k;
+    for (k = 511; k > 0; k--)
+        ot[k] = ((uint32_t)(uintptr_t)&ot[k - 1]) | 0x80000000u;
+    ot[0] = 0xffffffffu;
+}
+
+static void far_tables_begin(void)
+{
+    memcpy(game_ot[0], OT_WORLD, sizeof game_ot[0]);
+    memcpy(game_ot[1], OT_TRANSLUCENT, sizeof game_ot[1]);
+    ot_fresh(OT_WORLD);
+    ot_fresh(OT_TRANSLUCENT);
+}
+
+/* copies each entry's packets (up to the next entry word, bit 31) into the
+ * pool as one chain per entry */
+static void far_collect(const uint32_t *ot, uint32_t *head, uint32_t *tail)
+{
+    uint32_t j;
+    if (++stamp == 0) {
+        memset(seen_stamp, 0, sizeof seen_stamp);
+        stamp = 1;
+    }
+    for (j = 0; j < 512; j++) {
+        uint32_t word = ot[j], guard = 0x4000, *link = &head[j];
+        head[j] = tail[j] = 0;
+        while (!(word & 0x80000000u) && word >= 0x10000) {
+            const uint8_t *packet = (const uint8_t *)(uintptr_t)word;
+            uint32_t size = packet_bytes(packet);
+            uint8_t *copy;
+            if (seen_before(word) || !--guard) {
+                far_loops++;
+                break;
+            }
+            if (pool_used + size > POOL_SIZE) {
+                far_overflow++;
+                break;
+            }
+            copy = pool + pool_used;
+            pool_used += (size + 3) & ~3u;
+            memcpy(copy, packet, size);
+            *link = (uint32_t)(uintptr_t)copy;
+            link = (uint32_t *)copy;
+            tail[j] = (uint32_t)(uintptr_t)copy;
+            far_copied++;
+            word = *(const uint32_t *)packet;
+        }
+    }
+}
+
+/* the game's tables back, the far packets' copies at the head of their entries */
+static void far_tables_end(void)
+{
+    uint32_t t, j;
+    uint32_t *ots[2] = {OT_WORLD, OT_TRANSLUCENT};
+    for (t = 0; t < 2; t++)
+        far_collect(ots[t], far_head[t], far_tail[t]);
+    for (t = 0; t < 2; t++) {
+        memcpy(ots[t], game_ot[t], sizeof game_ot[t]);
+        for (j = 0; j < 512; j++)
+            if (far_head[t][j]) {
+                *(uint32_t *)(uintptr_t)far_tail[t][j] = ots[t][j];
+                ots[t][j] = far_head[t][j];
+            }
+    }
+}
+
 static void objects(void)
 {
     uint32_t n = 0, i, own;
@@ -1039,14 +1122,6 @@ static void objects(void)
         STATIC_LIST[n] = 0;
         memcpy(trigger_save, (const void *)0x6b9ba0, sizeof trigger_save);
         memcpy(gte_save, (const void *)GTE_START, sizeof gte_save);
-        memcpy(saved_ot, (const void *)0x6cd510, sizeof saved_ot);
-        memcpy(saved_ot2, (const void *)0x6cdd80, sizeof saved_ot2);
-        if (far_diff) {
-            static int shown;
-            if (shown++ % 2000 == 0)
-                log_printf("leak: at the far call 0x6cdd80[0..3] = %x %x %x %x, [511] = %x; view %x", saved_ot2[0],
-                           saved_ot2[1], saved_ot2[2], saved_ot2[3], saved_ot2[511], *(uint32_t *)0x6ce60c);
-        }
         hidden_count = 0;
         memset(object_seen, 0, sizeof object_seen);
         for (i = 0; i < own; i++)
@@ -1060,12 +1135,16 @@ static void objects(void)
                 log_printf("leak: hidden %u objects (limit %u), %u far chains, %u own", most, HIDDEN_MAX, n, own);
             }
         }
-        objects_body();
-        far_buffer_end = *(uint32_t *)0x6c1e18;
-        /* objects share packet buffers between objects never seen together
-         * (as the track's records): the far ones' packets are copied out */
-        detach_table((uint32_t *)0x6cd510, saved_ot);
-        detach_table((uint32_t *)0x6cdd80, saved_ot2);
+        {
+            /* the shared packet area's fill point: the far packets there are
+             * copied out, so the game's pass gets all of its room back */
+            uint32_t area = *(uint32_t *)0x6c1e18;
+            far_tables_begin();
+            objects_body();
+            far_buffer_end = *(uint32_t *)0x6c1e18;
+            far_tables_end();
+            *(uint32_t *)0x6c1e18 = area;
+        }
         for (i = 0; i < hidden_count; i++)
             *hidden[i] |= 0x400;
         memcpy((void *)0x6b9ba0, trigger_save, sizeof trigger_save);
@@ -1086,9 +1165,11 @@ static void objects(void)
             leak_counts[2]++;
             leak_report();
         }
-        if (++leak_counts[3] % 2000 == 0)
+        if (++leak_counts[3] % 2000 == 0) {
             log_printf("leak: of %u object passes, the translucent list ran into the world list: before %u, after the far "
                        "call %u, after the original %u", leak_counts[3], leak_counts[0], leak_counts[1], leak_counts[2]);
+            log_printf("farobj: %u packets copied, %u loops, %u pool overflows", far_copied, far_loops, far_overflow);
+        }
     }
 }
 
@@ -1394,7 +1475,7 @@ void widescreen_install(float output_aspect)
      * the draw distance off they just run the original's body (orig_wa.c),
      * so no original code is left at these addresses (REROLL_NO_EXE). */
     far_objects = far_distance > 0.0f &&
-                  GetEnvironmentVariableA("REROLL_FAR_OBJECTS", value, sizeof value) && value[0] == '1';
+                  !(GetEnvironmentVariableA("REROLL_FAR_OBJECTS", value, sizeof value) && value[0] == '0');
     hook_install(&visibility_hook);
     hook_install(&objects_hook);
     hook_install(&countdown_hook);

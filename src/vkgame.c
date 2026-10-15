@@ -73,6 +73,49 @@ static int debug_frames_left = -1, debug_line_len;
 static char debug_line[512];
 static uint32_t stat_uploads, stat_frames, stat_walks, stat_prims, stat_max_walks, stat_max_prims, frame_prims;
 static uint64_t stat_draw, stat_textures, stat_present, stat_last, stat_freq;
+uint64_t vkgame_sim_ticks, vkgame_game_draw_ticks;
+/* per frame, for the spread: interval between presents, physics, game drawing, present (us) */
+static uint32_t ft_interval[1000], ft_sim[1000], ft_game[1000], ft_present[1000];
+static uint64_t ft_last_present, ft_last_sim, ft_last_game;
+
+static int ft_cmp(const void *a, const void *b)
+{
+    uint32_t x = *(const uint32_t *)a, y = *(const uint32_t *)b;
+    return x < y ? -1 : x > y;
+}
+
+static uint32_t ft_max(const uint32_t *v, uint32_t n)
+{
+    uint32_t m = 0, i;
+    for (i = 0; i < n; i++)
+        m = v[i] > m ? v[i] : m;
+    return m;
+}
+
+/* the spread of the last n frames' intervals, and their worst parts */
+static void ft_log(uint32_t n)
+{
+    static uint32_t sorted[1000];
+    uint32_t i, p50, p90, p99, max, hitches = 0, worst = 0;
+    if (!n)
+        return;
+    memcpy(sorted, ft_interval, n * sizeof *sorted);
+    qsort(sorted, n, sizeof *sorted, ft_cmp);
+    p50 = sorted[n / 2];
+    p90 = sorted[n * 9 / 10];
+    p99 = sorted[n * 99 / 100];
+    max = sorted[n - 1];
+    for (i = 0; i < n; i++) {
+        if (ft_interval[i] > p50 * 3 / 2)
+            hitches++;
+        if (ft_interval[i] > ft_interval[worst])
+            worst = i;
+    }
+    log_printf("frametime: interval p50 %u p90 %u p99 %u max %u us, %u frames over 1.5x p50; worst frame: physics %u, "
+               "game draw %u, present %u us; max physics %u, game draw %u, present %u us",
+               p50, p90, p99, max, hitches, ft_sim[worst], ft_game[worst], ft_present[worst], ft_max(ft_sim, n),
+               ft_max(ft_game, n), ft_max(ft_present, n));
+}
 
 static uint64_t now(void)
 {
@@ -694,6 +737,21 @@ int vkgame_flip(void)
     vkwin_present(&win);
     widescreen_frame_end();
     stat_present += now() - t0;
+    {
+        uint64_t t1 = now();
+        if (!stat_freq)
+            QueryPerformanceFrequency(&stat_freq);
+        if (ft_last_present && stat_frames < 1000) {
+            uint32_t k = stat_frames;
+            ft_interval[k] = (uint32_t)((t1 - ft_last_present) * 1000000 / stat_freq);
+            ft_sim[k] = (uint32_t)((vkgame_sim_ticks - ft_last_sim) * 1000000 / stat_freq);
+            ft_game[k] = (uint32_t)((vkgame_game_draw_ticks - ft_last_game) * 1000000 / stat_freq);
+            ft_present[k] = (uint32_t)((t1 - t0) * 1000000 / stat_freq);
+        }
+        ft_last_present = t1;
+        ft_last_sim = vkgame_sim_ticks;
+        ft_last_game = vkgame_game_draw_ticks;
+    }
     if (debug_frames_left < 0) {
         const char *e = getenv("REROLL_DEBUG_FRAMES"); /* "first,count": per-walk prims/blended of those frames */
         debug_frames_left = 0;
@@ -732,6 +790,7 @@ int vkgame_flip(void)
                        presents, per_frame_us(t - stat_last), per_frame_us(stat_draw), per_frame_us(stat_textures),
                        stat_uploads, per_frame_us(stat_present), stat_walks / 1000, stat_max_walks, stat_prims / 1000,
                        stat_max_prims);
+        ft_log(stat_frames);
         stat_last = t;
         stat_frames = 0;
         stat_draw = stat_textures = stat_present = 0;

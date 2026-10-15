@@ -106,7 +106,7 @@ struct vkr {
     SWAPCHAIN_FUNCTIONS(DECLARE)
 #undef DECLARE
     int windowed;
-    int vsync; /* -1 no preference (mailbox, else FIFO), 0 off (mailbox, else immediate), 1 FIFO */
+    int vsync; /* -1 no preference or 1: FIFO; 0 off (mailbox, else immediate) */
     VkPresentModeKHR present_mode;
     VkSurfaceKHR surface;
     VkSwapchainKHR swapchain;
@@ -1229,7 +1229,7 @@ int vkr_set_surface(struct vkr *r, VkSurfaceKHR surface, int w, int h)
     info.preTransform = caps.currentTransform;
     info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
     info.presentMode = VK_PRESENT_MODE_FIFO_KHR;
-    if (r->vsync != 1) {
+    if (r->vsync == 0) { /* off: mailbox, else immediate; otherwise FIFO, one frame a refresh */
         for (i = 0; i < mode_count; i++)
             if (modes[i] == VK_PRESENT_MODE_IMMEDIATE_KHR && r->vsync == 0)
                 info.presentMode = VK_PRESENT_MODE_IMMEDIATE_KHR;

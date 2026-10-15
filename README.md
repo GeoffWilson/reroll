@@ -25,7 +25,8 @@ code. On top of that:
 
 - **Any resolution, ultrawide included**: the 3D view widens (more to the
   sides, the same vertical view), and the HUD stays in the original 4:3 middle.
-- **High frame rates**: races are drawn up to 120 fps (`REROLL_MAX_FPS`), with
+- **High frame rates**: races are drawn once per display refresh with vsync
+  (240 fps on a 240 Hz screen; with `REROLL_VSYNC=0` a 120 fps cap, `REROLL_MAX_FPS`), with
   cars and cameras blended between physics steps.
 - **Longer draw distance**: the whole track and its trackside objects, instead of
   the original's distance-limited visibility lists (`REROLL_DRAW_DISTANCE`).
@@ -70,8 +71,8 @@ reimplementation) next to the executable, keeps the registry settings in
 `reroll_registry.reg` and the display settings in `reroll_display.cfg`.
 
 Useful environment variables: `REROLL_DRAW_DISTANCE` (world units, `0` = the
-original's), `REROLL_FAR_OBJECTS=1` (trackside objects past the original's
-range; off, being reworked), `REROLL_ANISOTROPY`, `REROLL_MAX_FPS`,
+original's), `REROLL_FAR_OBJECTS=0` (no trackside objects past the original's
+range), `REROLL_ANISOTROPY`, `REROLL_MAX_FPS`,
 `REROLL_VSYNC`, `REROLL_WINDOW=WxH`. For tests without a window:
 `SDL_VIDEO_DRIVER=offscreen` with `REROLL_SHOT_EVERY=n` (saves frames) and
 `REROLL_KEYS="ms:Key,..."` (scripted key presses).

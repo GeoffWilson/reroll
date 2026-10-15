@@ -191,7 +191,11 @@ Then 64-bit SDL3 and Vulkan, and no 32-bit libraries are needed.
   property sets, REROLL_EAX_LOG=1 logs the reverb mix sets, REROLL_EAX_TEST=1 sends every
   sound fully into the sewer-pipe reverb (to hear that it works). Headless tests:
   ALSOFT_CONF with `drivers=wave` writes the output to a file.
-- Far objects drawn by the renderer (REROLL_FAR_OBJECTS is off).
+- Far objects: back on by default 2026-10-15 (src/widescreen.c). The far
+  object pass now draws into fresh ordering tables and its packets are
+  copied and spliced into the game's tables, which it never touches; the
+  first version's flicker came from far packets linked through existing
+  packets' words, which its detach missed (docs/renderer/plan.md, step 8).
 - Gamepad hot-plug: done 2026-10-15 (native/dinput.c). The game's
   joysticks are slots: the pads at start fill them, with none there is one
   empty slot (so the game still makes its joystick and rumble effects); a
