@@ -17,6 +17,9 @@ int vkgame_prim(uint32_t packet);
 /* At the flip 0x4876f0: presents the frame. 1 if done (skip the original flip). */
 int vkgame_flip(void);
 
+/* Shows a surface's picture as a frame of its own (the movies). */
+int vkgame_show_surface(uint32_t surface);
+
 /* Anisotropic filtering samples (1 = off), applied from the next frame. */
 void vkgame_set_anisotropy(int samples);
 int vkgame_anisotropy(void);

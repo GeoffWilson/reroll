@@ -191,16 +191,29 @@ static void run_script(void)
     }
 }
 
+void nt_pads_open(void); /* dinput.c */
+
 void nt_pump_events(void)
 {
     SDL_Event e;
     if (script_count)
         run_script();
+    if (*(volatile uint32_t *)(uintptr_t)0x4da284) /* a movie: pads for its skip */
+        nt_pads_open();
     while (SDL_PollEvent(&e)) {
         switch (e.type) {
         case SDL_EVENT_KEY_DOWN:
         case SDL_EVENT_KEY_UP:
             key_event(&e.key);
+            break;
+        case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+            /* the movie player stops on a key (Enter, Escape, Space...): a
+             * pad's A, B or Start does it too, only while a movie plays
+             * (the player's busy flag 0x4da284; menus read the pad themselves) */
+            if (top_window && *(volatile uint32_t *)(uintptr_t)0x4da284 &&
+                (e.gbutton.button == SDL_GAMEPAD_BUTTON_SOUTH || e.gbutton.button == SDL_GAMEPAD_BUTTON_EAST ||
+                 e.gbutton.button == SDL_GAMEPAD_BUTTON_START))
+                post(handle_of(top_window), WM_KEYDOWN, 0x1b, 1 | 1 << 16);
             break;
         case SDL_EVENT_QUIT:
         case SDL_EVENT_WINDOW_CLOSE_REQUESTED:

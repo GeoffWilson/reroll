@@ -168,6 +168,28 @@ static int32_t GAMEAPI anisotropy_option(int32_t command, char *text)
     }
 }
 
+/* Options > Display: the start-up movies (Psygnosis, ATD, intro) on or
+ * off. The game's own switch: settings +0xc (saved in DataPC) stops them
+ * (0x444c50); nothing in the original's menus set it. The credits and the
+ * league's movies still play. */
+static int32_t GAMEAPI intro_movies_option(int32_t command, char *text)
+{
+    switch (command) {
+    case 0x12:
+        display_text(text, U8(g_config, 0xc) ? "Off" : "On");
+        return 1;
+    case 0x13:
+        return 1;
+    case 0x14:
+    case 0x15:
+    case 0x16:
+        U8(g_config, 0xc) = !U8(g_config, 0xc);
+        return 1;
+    default:
+        return 0;
+    }
+}
+
 static void display_menu(void)
 {
     int i;
@@ -186,6 +208,7 @@ static void display_menu(void)
      * the value (~P0~) in the right-hand column */
     GCALL(0x44c9d0, menu_add_slider)((void *)("Mode ~>~P0~S"), -3, (void *)("Mode ~>~P0~S"), -3, display_window_option, 1);
     GCALL(0x44c9d0, menu_add_slider)((void *)("Resolution ~>~P0~S"), -3, (void *)("Resolution ~>~P0~S"), -3, display_resolution_option, 1);
+    GCALL(0x44c9d0, menu_add_slider)((void *)("Intro Movies ~>~P0~S"), -3, (void *)("Intro Movies ~>~P0~S"), -3, intro_movies_option, 1);
     *(uint32_t *)0x4ca300 = P(display_apply_selected);
     menu_add(P("Apply"), -3, 0x66, 2, 1);
 }

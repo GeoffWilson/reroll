@@ -156,11 +156,7 @@ void GAMEAPI movie_play(const char *path)
     G32(0x4be2bc) = 0;
     G32(0x4be2b4) = 0;
     G32(0x4ac738) = 0xffffffff;
-#ifdef REROLL_NATIVE
-    if (0) { /* no movie player yet in the native build (docs/native/plan.md step 8): as if the file were missing */
-#else
     if (file_exists(path) != 0) {
-#endif
         uint32_t direct;
 
         flags = 0x18c04;

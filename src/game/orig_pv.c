@@ -36,6 +36,9 @@
 #include "com.h"
 #include "physics.h"
 #include "gamefn.h"
+#ifdef REROLL_NATIVE
+#include "../vkgame.h"
+#endif
 
 #define U8(p, off) (*(uint8_t *)((uint8_t *)(uintptr_t)(p) + (off)))
 #define S16(p, off) (*(int16_t *)((uint8_t *)(uintptr_t)(p) + (off)))
@@ -1100,6 +1103,11 @@ int32_t GAMEAPI movie_play_loop(uint8_t *m)
                     movie_blit24_at(m);
                 else
                     movie_blit_other_at(m);
+#ifdef REROLL_NATIVE
+                /* the frame went into the screen surface (+0x90), which the
+                 * original's display showed as it was: here it is presented */
+                vkgame_show_surface(U32(m, 0x90));
+#endif
             }
             U32(m, 0x344) = U32(m, 0x344) + 1;
             movie_frame_done_at(m);

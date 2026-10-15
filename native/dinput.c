@@ -118,6 +118,13 @@ static void find_pads(void)
     scanned_at = SDL_GetTicks();
 }
 
+/* for the movies' skip (native/user32.c): the pads opened before the game's
+ * DirectInput start-up, which comes after the start-up movies */
+void nt_pads_open(void)
+{
+    find_pads();
+}
+
 /* pads that went away leave their slots; new ones take empty slots (looked
  * for twice a second while a slot is empty) */
 static void pads_refresh(void)

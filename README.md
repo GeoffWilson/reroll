@@ -40,7 +40,7 @@ code. On top of that:
   (the tunnel reverb) as an EFX reverb, so Options > Sound > environmental
   audio works again (`REROLL_NO_EAX=1` turns the reverb off).
 
-Not done yet: movies (skipped), network play.
+Not done yet: network play.
 
 ## Requirements
 

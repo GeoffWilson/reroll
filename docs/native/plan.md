@@ -64,7 +64,17 @@ The i386 System V ABI matches MSVC for these, except:
    "Rollcage.exe /FRONTEND" and exits) becomes a restart in place: reload
    the exe's data section, reset our own state, run WinMain again with the
    same window and Vulkan device.
-8. **Movies** through the fake DirectDraw back buffer. Until then movie_play (src/game/st_sb.c) skips them natively, as if the file were missing: the exe's player waits forever at 0x492f59.
+8. **Movies**: done 2026-10-15. The game's own player (src/game/orig_pv.c,
+   decoder orig_pw.c) writes each frame into the primary surface and never
+   flips; after each frame vkgame_show_surface presents that surface. Its
+   sound is a DirectSound streaming buffer (native/dsound.c: a ring in low
+   memory played through an SDL audio stream, the play cursor where SDL
+   reads; the primary reports 8 KB, so the picture leads its sound by at
+   most ~90 ms). Keys skip as in the original; a pad's A / B / Start also
+   do while a movie plays (native/user32.c; the pads are opened then, as
+   DirectInput starts after the start-up movies). Options > Display >
+   Intro Movies (On / Off) sets the game's own switch for the start-up
+   movies, settings +0xc (saved in DataPC; the original never set it).
 
 Then the features: anisotropic filtering (sampler), force feedback (SDL
 rumble from the game's collision/force events), draw distance (far plane and

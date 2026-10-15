@@ -9,7 +9,7 @@ original physics and feel, and about 1350 of the game's functions
 reimplemented in C. (The earlier Wine route, an injected proxy QMIXER.DLL,
 was removed on 2026-10-11; the native program is the only build.)
 
-Run natively: `~/Documents/rollcage/reroll/build/rollcage` (straight to the main menu; no launcher dialog, no intro movies yet)
+Run natively: `~/Documents/rollcage/reroll/build/rollcage` (the intro movies, then the main menu; no launcher dialog)
 (build: `make`; needs sdl3, vulkan-icd-loader, openal, libdecor).
 
 ## Done
@@ -112,8 +112,7 @@ can't drive in a headless race.
 
 ## Next steps
 
-1. **Movies** (native plan step 8): the intro/FMV player through the fake
-   DirectDraw back buffer.
+1. **Movies**: done (native plan step 8).
 2. Later: Doppler in the mixer; port the remaining original code (scene
    drawing, front-end 3D, C runtime, platform) and then a 64-bit build;
    network play (skipped for now).

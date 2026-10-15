@@ -576,10 +576,10 @@ static void draw_walk(rd_read_fn read, void *ctx, uint32_t start)
     stat_draw += now() - t0;
 }
 
-/* A frame with no packets: the back buffer (the loading pictures). */
-static void draw_back_buffer(void)
+/* A frame with no packets: a surface's picture (the back buffer: the
+ * loading pictures; the primary: the movies). */
+static void draw_surface(uint32_t surface)
 {
-    uint32_t surface = G_BACK_BUFFER;
     uint8_t desc[0x6c];
     const uint8_t *pixels;
     struct rd_list list;
@@ -727,7 +727,7 @@ int vkgame_flip(void)
         frame_open = 0;
         if (!open_frame(1))
             return 1;
-        draw_back_buffer();
+        draw_surface(G_BACK_BUFFER);
         frame_walks = 0;
     }
     if (presents < 400 && (presents < 3 || presents % 100 == 0))
@@ -797,6 +797,27 @@ int vkgame_flip(void)
         stat_uploads = 0;
         stat_walks = stat_prims = stat_max_walks = stat_max_prims = 0;
     }
+    return 1;
+}
+
+/* The movie player writes each frame (and its subtitles) straight into the
+ * primary surface, as on the original's screen, and never flips: shown
+ * here after each frame (src/game/orig_pv.c). */
+int vkgame_show_surface(uint32_t surface)
+{
+    if (state == 1)
+        start();
+    if (state != 2 || !surface)
+        return 0;
+    frame_open = 0;
+    if (!open_frame(1))
+        return 1;
+    draw_surface(surface);
+    vkwin_present(&win);
+    widescreen_frame_end();
+    frame_open = 0;
+    frame_walks = 0;
+    frame_prims = 0;
     return 1;
 }
 
