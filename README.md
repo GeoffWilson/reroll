@@ -197,3 +197,6 @@ function, `docs/functions.csv` lists every function and its state, and
 Rollcage is © Psygnosis / Attention to Detail. This project is not affiliated
 with or endorsed by them or the current rights holders. It contains no game
 code, data or assets; it needs a legitimately owned copy of the game.
+
+reroll's own code, notes and tools are released under the MIT license
+(`LICENSE`).

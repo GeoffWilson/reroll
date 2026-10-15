@@ -207,9 +207,9 @@ native: build/rollcage
 # Nothing from the game goes in it (setup.sh copies the files from the player's own CD).
 DIST := reroll-$(VERSION)-linux-x86_64
 dist: build/$(DIST).tar.gz
-build/$(DIST).tar.gz: build/rollcage dist/setup.sh dist/run.sh dist/README.txt
+build/$(DIST).tar.gz: build/rollcage dist/setup.sh dist/run.sh dist/README.txt LICENSE
 	rm -rf build/$(DIST) && mkdir -p build/$(DIST)
 	strip -o build/$(DIST)/rollcage build/rollcage
-	cp dist/setup.sh dist/run.sh dist/README.txt build/$(DIST)/
+	cp dist/setup.sh dist/run.sh dist/README.txt LICENSE build/$(DIST)/
 	tar -C build -czf $@ --owner=0 --group=0 $(DIST)
 .PHONY: dist

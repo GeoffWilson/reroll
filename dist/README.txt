@@ -74,3 +74,4 @@ Useful settings (put in front of ./run.sh, e.g. REROLL_VSYNC=1 ./run.sh):
 
 Rollcage is (c) Psygnosis / Attention to Detail. This project is not
 affiliated with or endorsed by them or the current rights holders.
+reroll itself is released under the MIT license (LICENSE).
