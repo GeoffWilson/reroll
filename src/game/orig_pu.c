@@ -313,9 +313,15 @@ int32_t GAMEAPI joy_device_count_thunk(void)
 /* 0x48a600: the network state (0x5d2060..0x5d6230) cleared, the
  * connections probed (0x48a9f0), the DirectPlay object created, the
  * receive buffer (0x1000) and the inbox (0x20004) allocated, the send
- * buffer reset (0x48c990). 1, or 0 when CoCreateInstance fails. */
+ * buffer reset (0x48c990). 1, or 0 when CoCreateInstance fails.
+ * Deliberate change: a DirectPlay object still there (the front end
+ * loading again after a network race) is shut down first (0x48a8b0), so
+ * its session ends and the other players are told; the original forgot
+ * it, leaving the session open behind the game's back. */
 int32_t GAMEAPI dplay_init(void)
 {
+    if (g_dplay)
+        dplay_shutdown();
     mem_fill_at(0x5d2060, 0, 0x41d0);
     dplay_connections_probe();
     g_dplay_hr = CoCreateInstance(GMEM(0x4a40e0), 0, 1, GMEM(0x4a40d0), (uint32_t *)GMEM(0x5d2060));

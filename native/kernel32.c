@@ -920,6 +920,11 @@ BOOL WINAPI SetEvent(HANDLE h)
     return TRUE;
 }
 
+int nt_event_set(HANDLE h)
+{
+    return SetEvent(h);
+}
+
 BOOL WINAPI ResetEvent(HANDLE h)
 {
     struct nt_object *o = nt_handle_object(h, NT_EVENT);

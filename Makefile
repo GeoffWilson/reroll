@@ -25,6 +25,14 @@ test: build/test_gt20
 	python3 -I tools/rollcage_img.py hashes "$(IDX_DIR)" > build/hashes_py.txt
 	diff build/hashes_c.txt build/hashes_py.txt && echo "C and Python decoders agree on all entries"
 
+# Network play: native/dplayx.c's transport with a host and two clients on this machine.
+build/net_test: tests/net_test.c native/dplayx.c native/nt.h
+	@mkdir -p build
+	$(CC) -O2 -g -Wall -Wextra -Wno-missing-field-initializers -D_GNU_SOURCE -Inative tests/net_test.c native/dplayx.c -o $@ -lpthread
+
+net-test: build/net_test
+	./build/net_test
+
 # Whole disassembly, and call sites that use eax after the given functions.
 build/rollcage.asm:
 	@mkdir -p build
@@ -122,7 +130,7 @@ disasm:
 clean:
 	rm -rf build
 
-.PHONY: all test ghidra-names decompile calltree xrefs disasm emu-test eax-users clean function-sizes param-sizes argcheck emu-test-all
+.PHONY: all test net-test ghidra-names decompile calltree xrefs disasm emu-test eax-users clean function-sizes param-sizes argcheck emu-test-all
 
 # Renderer: capture decoder test tool (native), docs/renderer/plan.md step 2
 build/rcapdec: tools/rcapdec.c tools/rcapfile.c tools/rcapfile.h src/render/packets.c src/render/draw.h

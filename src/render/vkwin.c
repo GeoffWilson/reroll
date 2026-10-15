@@ -71,7 +71,8 @@ int vkwin_open(struct vkwin *v, HWND parent, int validation, int vsync)
     return 1;
 }
 
-/* headless: renders the frame and saves every REROLL_SHOT_EVERY-th as shot_<n>.ppm */
+/* headless: renders the frame and saves every REROLL_SHOT_EVERY-th as shot_<n>.ppm
+ * (REROLL_SHOT_PREFIX in place of "shot_": two copies of the game in one directory) */
 static int present_headless(struct vkwin *v)
 {
     static int every = -1;
@@ -89,7 +90,8 @@ static int present_headless(struct vkwin *v)
     v->pixels = realloc(v->pixels, (size_t)v->w * v->h * 4);
     if (!vkr_end(v->r, v->pixels))
         return 0;
-    snprintf(name, sizeof name, "shot_%05u.ppm", v->frames);
+    snprintf(name, sizeof name, "%.40s%05u.ppm", getenv("REROLL_SHOT_PREFIX") ? getenv("REROLL_SHOT_PREFIX") : "shot_",
+             v->frames);
     f = fopen(name, "wb");
     if (f) {
         fprintf(f, "P6\n%d %d\n255\n", v->w, v->h);

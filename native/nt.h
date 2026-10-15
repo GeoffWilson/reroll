@@ -135,6 +135,7 @@ void nt_registry_load(void);
 enum nt_handle_kind { NT_FREE, NT_FILE, NT_EVENT, NT_MUTEX, NT_THREAD, NT_FIND, NT_STD, NT_PROCESS };
 struct nt_object;
 struct nt_object *nt_handle_object(HANDLE h, int kind);
+int nt_event_set(HANDLE h); /* SetEvent for our own code */
 
 #include "display.h"
 

@@ -853,6 +853,32 @@ int32_t GAMEAPI race_setup(void)
             controller += 0x5c;
             slot += CAR_SLOT_SIZE;
         } while (i < U8(g_race, 0x54d));
+        /* Deliberate change: in a network race the cars are the players'
+         * in their table order, so the car of this machine's player (its
+         * record's +0x18) is seldom slot 0, but the loop above takes slot
+         * i's pad device, force feedback and analogue flags from player i's
+         * set-up: the local car came out digital and without rumble. It
+         * takes player 1's (whose controls this machine sends), and the
+         * other players' cars get no force feedback here (their analogue
+         * flags come from their own machines with the race start). */
+        if (*(int32_t *)0x4be47c && (*(uint8_t *)0x5d622c & 1)) {
+            int32_t local = *(int32_t *)0x5d535c, car = -1;
+
+            if (local >= 0 && local < 6)
+                car = *(int32_t *)(uintptr_t)(0x5d2cd0u + (uint32_t)local * 0x66cu + 0x18);
+            for (i = 0, slot = g_car_slots; i < cars; i++, slot += CAR_SLOT_SIZE) {
+                if (i != car) {
+                    U8(slot, 0x268) = 0;
+                    continue;
+                }
+                U16(slot, 0x26c) = (uint16_t)GCALL(0x449ca0, player_car_choice)(0);
+                U8(slot, 0x268) = 0;
+                if (!U8(g_race, 0x58c) && GCALL(0x449cd0, config_player_on)(0))
+                    U8(slot, 0x268) = (uint8_t)GCALL(0x428cc0, pad_device_bound)(0, (const int16_t *)(slot + 0x26c));
+                U16(slot, 0x26e) = (uint16_t)GCALL(0x449d00, pad_button_flags)(
+                    0, (uint32_t)GCALL(0x489fa0, device_usable)((int32_t)S16(slot, 0x26c)), 0x84, 0x82, 0x81);
+            }
+        }
     }
     /* the models of the shared objects: seven by index (0x4b1968) and 8 */
     for (index = (const uint16_t *)0x4b1968; index < (const uint16_t *)0x4b1976; index++)

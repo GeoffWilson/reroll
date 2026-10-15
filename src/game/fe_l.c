@@ -437,9 +437,6 @@ void GAMEAPI menu_screen_build(void)
         if (G32(0x4acc54) != 2)
             g_item_hide = 1;
         menu_add(0, -1, 0x2e, 1, 0x33);
-        /* Deliberate change: "Networked" greyed out, no transport yet
-         * (as multiplayer_menu, fe_n.c) */
-        g_item_hide = 1;
         menu_add(0, -1, 0x46, 1, 0x33);
         break;
     case 0x2d:
@@ -556,6 +553,10 @@ void GAMEAPI menu_screen_build(void)
     case 0x45:
     case 0x46: /* network */
         *(uint32_t *)0x4cb594 = 1;
+        /* Deliberate change: TCP/IP is the only connection (native/dplayx.c
+         * offers no IPX, serial cable or modem), so a saved choice of
+         * another one goes back to it. */
+        U8(g_config, 0x80) = 0;
         if (g_screen_new) {
             GCALL(0x48a6b0, dplay_close)();
             *(uint32_t *)0x4cb574 = 10;

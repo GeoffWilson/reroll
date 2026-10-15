@@ -59,7 +59,7 @@ TESTS = {
     "menu_return": (0x42DE50, "", True, FLAGS),
     "network_messages_title": (0x45F490, "", True, NETWORK),
     "network_messages_menu": (0x44A260, "", True, NETWORK),
-    # multiplayer_menu 0x4518a0: not compared; it greys out "Networked" on purpose (fe_n.c)
+    "multiplayer_menu": (0x4518A0, "", True, MENUS),
     "laps_menu": (0x44FFD0, "rr", True, []),
     "laps_menu_race": (0x4500F0, "r", True, []),
     "laps_menu_other": (0x4501A0, "r", True, []),

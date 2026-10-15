@@ -887,6 +887,7 @@ def g_void(st, rng):
 
 
 def g_init(st, rng):
+    st.put(0x5D2060, "<I", 0)  # an object still there is shut down first on purpose (orig_pu.c)
     st.script["CoCreateInstance"] = [(pick(rng, 0, 0, 0, 0x80004005), DP_TMP), (pick(rng, 0, 0, 0, 1), LOBBY2),
                                      (pick(rng, 0, 0, 1), DP_OBJ)]
     st.script["EnumConnections"] = [(pick(rng, 0, 0, 5), [])]

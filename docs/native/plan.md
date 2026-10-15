@@ -81,7 +81,9 @@ rumble from the game's collision/force events), draw distance (far plane and
 the visibility lists, building on the step-5 extra runs), and resolution /
 display options in the front end.
 
-Network play stays stubbed (DirectPlay creation fails, as with no network).
+Network play: native/dplayx.c answers the game's DirectPlay calls on a UDP
+transport of its own (TCP/IP only; the host relays, every message reliable
+and ordered). `make net-test` runs a host and two clients on this machine.
 
 ## Testing
 
